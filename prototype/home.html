@@ -1,0 +1,553 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sonus</title>
+<link rel="icon" href="logo.svg" type="image/svg+xml">
+
+<style>
+  :root {
+    --bg: #0e0e10;
+    --surface: #1a1a1e;
+    --text: #f5f5f7;
+    --text-dim: #a1a1aa;
+    --c1: #7c3aed;
+    --c2: #ec4899;
+    --c3: #f59e0b;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: #000; color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: flex; justify-content: center; align-items: center;
+    -webkit-tap-highlight-color: transparent;
+  }
+  button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; text-align: left; }
+  svg.lu { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+  svg.lu.solid { fill: currentColor; }
+
+  /* Moldura de celular (só no desktop) */
+  .phone {
+    width: 100%; max-width: 400px; height: 100%; max-height: 860px;
+    position: relative; overflow: clip; background: var(--home-bg, var(--bg));
+    display: flex; flex-direction: column;
+  }
+  @media (min-width: 500px) { .phone { border-radius: 36px; border: 8px solid #222; } }
+
+  /* espaço no fim da rolagem acompanha a altura do mini-player (--mini-h, ajustada no JS) */
+  .scroll { flex: 1; overflow-y: auto; scrollbar-width: none; padding: 8px 0 calc(var(--mini-h, 64px) + 32px); }
+  .scroll::-webkit-scrollbar { display: none; }
+
+  /* Topo: configurações (esq.) e busca (dir.) */
+  .head { display: flex; align-items: center; justify-content: space-between; padding: 0 12px; height: 48px; }
+  .icon-btn { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; color: var(--text); }
+  .icon-btn:active { background: var(--chip-soft); }
+
+  /* Seções */
+  section { margin-top: 18px; }
+  .intro section, .intro .soon, .intro .head { animation: homeIn .55s cubic-bezier(.2,.85,.25,1) both; }
+  .intro section:nth-of-type(1) { animation-delay: .06s; } .intro section:nth-of-type(2) { animation-delay: .12s; }
+  .intro section:nth-of-type(3) { animation-delay: .18s; } .intro .soon { animation-delay: .24s; }
+  .intro .mini { animation: miniIn .6s cubic-bezier(.2,.85,.25,1) .2s both; }
+  @keyframes homeIn { from { opacity: 0; transform: translateY(16px); } }
+  @keyframes miniIn { from { opacity: 0; transform: translateY(30px); } }
+  @media (prefers-reduced-motion: reduce) { .intro * { animation: none !important; } }
+  section:first-of-type { margin-top: 4px; }
+  .sec-head { display: flex; align-items: baseline; justify-content: space-between; padding: 0 20px; margin-bottom: 10px; }
+  .sec-head h2 { font-size: 18px; font-weight: 800; letter-spacing: -.01em; }
+  .sec-head button { font-size: 13px; font-weight: 600; color: var(--text-dim); }
+  .row { display: flex; gap: 10px; overflow-x: auto; padding: 12px 20px 20px; margin: -8px 0 -16px; scrollbar-width: none;
+         scroll-snap-type: x proximity; scroll-padding: 0 20px; }
+  .row::-webkit-scrollbar { display: none; }
+  .row { cursor: grab; user-select: none; }
+  .row:active { cursor: grabbing; }
+  .row > * { scroll-snap-align: start; flex-shrink: 0; }
+  .tap { transition: transform .12s; }
+  .tap:active { transform: scale(.96); }
+
+  /* Bloco no estilo da fila do player: capa com nome e @ dentro */
+  .blk { --s: 150px; width: var(--s); height: var(--s); border-radius: 10px; overflow: hidden; position: relative;
+         box-shadow: var(--tile-shadow); }
+  .blk.big { --s: 176px; }
+  .blk .ini { position: absolute; inset: 0; display: grid; place-items: center; padding-bottom: 28px;
+              font-size: calc(var(--s) * .3); font-weight: 800; color: rgba(255,255,255,.5); }
+  .blk .mosaic { position: absolute; inset: 0; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+  .blk .face { position: absolute; left: 50%; top: 42%; width: 54%; aspect-ratio: 1; transform: translate(-50%, -50%);
+               border-radius: 50%; display: grid; place-items: center; font-size: calc(var(--s) * .22); font-weight: 800;
+               color: rgba(255,255,255,.9); box-shadow: 0 6px 18px rgba(0,0,0,.35); }
+  .blk .meta { color: #fff; position: absolute; left: 0; right: 0; bottom: 0; padding: 22px 9px 8px;
+               background: linear-gradient(transparent, rgba(0,0,0,.7)); }
+  .blk .t { font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .blk .a { font-size: 11px; color: rgba(255,255,255,.75); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .blk .kind { color: #fff; position: absolute; top: 8px; left: 8px; height: 22px; padding: 0 8px; border-radius: 11px;
+               background: rgba(0,0,0,.45); font-size: 10.5px; font-weight: 700; display: flex; align-items: center; gap: 4px; }
+  .blk .kind svg { width: 12px; height: 12px; stroke-width: 2.6; }
+  .blk.new { background: var(--surface); box-shadow: none; border: 1.5px dashed var(--line-strong);
+             display: grid; place-items: center; }
+  .blk.new .in { display: grid; justify-items: center; gap: 8px; color: var(--text-dim); font-size: 13px; font-weight: 600; }
+  .blk.new svg { width: 30px; height: 30px; }
+
+  /* Artistas seguidos (na conta do app) */
+  .ar { width: 92px; text-align: center; }
+  .ar .pic { width: 92px; height: 92px; border-radius: 50%; display: grid; place-items: center;
+             font-size: 34px; font-weight: 800; color: rgba(255,255,255,.85); box-shadow: var(--tile-shadow); }
+  .ar .n { font-size: 12.5px; font-weight: 700; margin-top: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  .soon { margin: 26px 20px 0; height: 76px; border-radius: 14px; border: 1.5px dashed var(--line);
+          display: flex; align-items: center; justify-content: center; gap: 10px;
+          color: var(--text-dim); font-size: 14px; font-weight: 600; }
+  .soon svg { width: 20px; height: 20px; }
+
+  /* Mini-player fixo embaixo: abre o player completo */
+  .mini { position: absolute; left: 10px; right: 10px; bottom: 12px; height: 64px; border-radius: 14px;
+          background: var(--mini-bg); display: flex; flex-direction: column;
+          box-shadow: 0 10px 30px rgba(0,0,0,.5); cursor: pointer; overflow: hidden;
+          transition: height .35s cubic-bezier(.2,.9,.3,1); }
+  .mini .mrow { height: 64px; flex-shrink: 0; display: flex; align-items: center; gap: 12px; padding: 0 8px; }
+  /* letra dentro do mini-player: um trecho por vez */
+  .mlyr { flex: 1 1 0; min-height: 0; position: relative; overflow: hidden; opacity: 0; transition: opacity .25s; cursor: default; }
+  .mini.lyr-open .mlyr { opacity: 1; transition-delay: .15s; }
+  .mlyr .l { position: absolute; left: 14px; right: 14px; top: 50%; transform: translateY(-50%);
+             font-size: 19px; font-weight: 800; line-height: 1.3; color: var(--text); text-align: left;
+             animation: lineIn .38s cubic-bezier(.2,.9,.3,1) both; }
+  .mlyr .l.dim { color: var(--t-mid); }
+  .mlyr .l.out { animation: lineOut .28s ease-in both; }
+  @keyframes lineIn  { from { opacity: 0; transform: translateY(calc(-50% + 18px)); } }
+  @keyframes lineOut { to   { opacity: 0; transform: translateY(calc(-50% - 18px)); } }
+  .mlyr .empty { color: var(--text-dim); font-size: 14px; font-weight: 600; }
+  .mini .ab { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; margin-right: 2px;
+              color: var(--text-dim); transition: background .3s, color .3s; }
+  .mini .ab span { font: 800 18px Georgia, "Times New Roman", serif; }
+  .mini .ab[hidden] { display: none; }
+  .mini.lyr-open .ab { color: var(--text); background: var(--chip); }
+  .mini .cv { width: 48px; height: 48px; border-radius: 8px; flex-shrink: 0; display: grid; place-items: center;
+              font-weight: 800; font-size: 20px; color: rgba(255,255,255,.85);
+              background: linear-gradient(135deg, var(--c1), var(--c2) 60%, var(--c3)); }
+  .mini .tx { flex: 1; min-width: 0; align-self: stretch; display: flex; flex-direction: column; justify-content: center; }
+  .mini { touch-action: none; }
+  .mini .cv { position: relative; overflow: hidden; transition: transform .12s; }
+  .mini .cv:active { transform: scale(.92); }
+  .mini .cv .plus { position: absolute; inset: 0; display: grid; place-items: center; font-size: 30px; font-weight: 500;
+                    background: rgba(0,0,0,.45); color: #fff; opacity: 0; transform: scale(.6); transition: opacity .2s, transform .25s; }
+  .mini .cv.pop .plus { opacity: 1; transform: none; }
+  /* itens que viajam entre o mini-player e o player */
+  .mini .cv { view-transition-name: cover; }
+  #miniLyr { view-transition-name: btn-lyrics; }
+  #miniPrev { view-transition-name: btn-prev; }
+  #miniPP { view-transition-name: btn-play; }
+  #miniNext { view-transition-name: btn-next; }
+  #miniT { view-transition-name: track-title; width: fit-content; max-width: 100%; }
+  #miniA { view-transition-name: track-artist; width: fit-content; }
+  .mini.dragging { transition: none; }
+  .mini .t { font-size: 14px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mini .a { font-size: 12px; color: var(--text-dim); }
+  .native .mini:not(.has-track) { display: none; }      /* no app: sem música, sem mini-player */
+  .mini .ctrl { display: flex; align-items: center; gap: 2px; }
+  .mini .sk { width: 36px; height: 44px; display: grid; place-items: center; }
+  .mini .sk svg { width: 21px; height: 21px; stroke-width: 2.5; }
+  .mini .sk:active { transform: scale(.9); }
+  /* mesmo botão multifunção do player, em tamanho menor */
+  .mini .pp { width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; flex-shrink: 0;
+              background: var(--text); color: var(--bg); touch-action: none; user-select: none; transition: transform .1s; }
+  .mini .pp:active { transform: scale(.92); }
+  .mini .pp .icon { display: flex; align-items: center; justify-content: center; }
+  .mini .pp svg { width: 22px; height: 22px; stroke-width: 2.5; }
+  .mini .pp .combo svg { width: 15px; height: 15px; stroke-width: 3; }
+  .mini .pp .slash { font-size: 13px; opacity: .3; margin: 0 1px; }
+  .mini .bar { position: absolute; left: 0; bottom: 0; height: 3px; width: 0; transition: height .2s;
+               background: linear-gradient(90deg, var(--c1), var(--c2), var(--c3)); }
+  /* modo scrub: segurar o play e arrastar para o lado */
+  .mini .time { display: none; font-size: 20px; font-weight: 900; font-variant-numeric: tabular-nums; }
+  .mini.scrub .time { display: block; }
+  .mini.scrub .t, .mini.scrub .a { display: none; }
+  .mini.scrub .bar { height: 6px; }
+</style>
+<link rel="stylesheet" href="search.css">
+<link rel="stylesheet" href="add.css">
+<link rel="stylesheet" href="transitions.css">
+<script src="native.js"></script>
+<script src="data.js"></script>
+<script src="add.js"></script>
+<link rel="stylesheet" href="settings.css">
+<link rel="stylesheet" href="theme.css">
+<script src="settings.js"></script>
+<link rel="stylesheet" href="pages.css">
+<script src="pages.js"></script>
+</head>
+<body>
+<div class="phone" id="phone">
+<script>
+  // abriu a tela do zero (sem transição vinda do player)? então os blocos entram em cascata
+  addEventListener("pagereveal", e => {
+    if (!e.viewTransition) document.getElementById("phone").classList.add("intro");
+    else e.viewTransition.types.add("close");           // voltando do player: ele desce
+  });
+</script>
+  <div class="scroll">
+    <div class="head">
+      <button class="icon-btn" id="gearBtn" aria-label="Configurações">
+        <svg class="lu" viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+      </button>
+      <svg class="brand-letter" viewBox="0 0 64 64" role="img" aria-label="Sonus"><path d="M44.7 20.6A17 17 0 1 0 47.4 39.2V33.5H35"/></svg>
+      <!-- Busca: o motor próprio cruza a pesquisa com o que a pessoa segue e ouve -->
+      <button class="icon-btn" id="searchBtn" aria-label="Buscar">
+        <svg class="lu" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      </button>
+    </div>
+
+    <!-- Recentes: músicas, playlists e artistas (quando a música foi aberta pelo perfil do artista) -->
+    <section>
+      <div class="sec-head"><h2>Ouvidos recentemente</h2></div>
+      <div class="row" id="recent"></div>
+    </section>
+
+    <section>
+      <div class="sec-head"><h2>Artistas que você segue</h2><button>Ver tudo</button></div>
+      <div class="row" id="artists"></div>
+    </section>
+
+    <section>
+      <div class="sec-head"><h2>Suas playlists</h2><button>Ver tudo</button></div>
+      <div class="row" id="playlists"></div>
+    </section>
+
+    <div class="soon">
+      <svg class="lu" viewBox="0 0 24 24"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/></svg>
+      Mais recursos em breve
+    </div>
+  </div>
+
+  <div class="mini" id="mini">
+    <div class="mlyr" id="mlyr"></div>
+    <div class="mrow">
+    <!-- capa = mesmo botão "+" do player (adicionar à playlist) -->
+    <button class="cv" id="miniCv" aria-label="Adicionar à playlist"><span id="miniIni">L</span><span class="plus">+</span></button>
+    <!-- nome = abre o player completo -->
+    <div class="tx" id="miniOpen"><div class="t" id="miniT"></div><div class="a" id="miniA"></div><div class="time" id="miniTime"></div></div>
+    <div class="ctrl">
+      <!-- A = letra: o mini-player cresce para cima e mostra a letra sincronizada -->
+      <button class="ab" id="miniLyr" aria-label="Letra"><span>A</span></button>
+      <button class="sk" id="miniPrev" aria-label="Voltar">
+        <svg class="lu solid" viewBox="0 0 24 24"><polygon points="19 20 9 12 19 4 19 20"/><line x1="5" x2="5" y1="19" y2="5"/></svg>
+      </button>
+      <!-- toque = play/pause · segurar e soltar = repetição · segurar + arrastar p/ cima ou baixo = aleatório
+           segurar + arrastar p/ o lado = avançar/voltar na música -->
+      <button class="pp" id="miniPP" aria-label="Tocar"><span class="icon" id="miniIcon"></span></button>
+      <button class="sk" id="miniNext" aria-label="Avançar">
+        <svg class="lu solid" viewBox="0 0 24 24"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" x2="19" y1="5" y2="19"/></svg>
+      </button>
+    </div>
+    </div>
+    <div class="bar" id="miniBar"></div>
+  </div>
+</div>
+
+<script>
+// ---- Dados de exemplo (os mesmos do player) ----
+const NAMES = [["Luz da Cidade","Banda Exemplo"],["Maré Alta","Coletivo Demo"],["Faixa Sem Letra","Artista Teste"],
+ ["Neon Azul","Os Placeholders"],["Poeira de Estrada","Duo Fictício"],["Noite Lenta","Lo-Fi Amostra"],
+ ["Verde Musgo","Grupo Modelo"],["Último Trem","Banda Exemplo"],["Sal e Areia","Coletivo Demo"],
+ ["Céu de Vidro","Trio Protótipo"],["Fim de Tarde","Lo-Fi Amostra"],["Chuva Fina","Duo Fictício"],
+ ["Rádio Velho","Os Placeholders"],["Asfalto Quente","MC Mockup"],["Lua Cheia","Grupo Modelo"],
+ ["Vento Norte","Trio Protótipo"],["Café Frio","Lo-Fi Amostra"],["Ponte Aérea","MC Mockup"],
+ ["Girassol","Coletivo Demo"],["Garoa","Banda Exemplo"],["Mar Aberto","Duo Fictício"],["Eco","Os Placeholders"],
+ ["Outono","Artista Teste"],["Faísca","MC Mockup"]];
+const FIXED = [["#7c3aed", "#ec4899", "#f59e0b"], ["#06b6d4", "#22c55e", "#a3e635"]];
+const tracks = NAMES.map(([title, artist], i) => {
+  const h = ((i - 2) * 47 + 20 + 3600) % 360;
+  return { title, artist, c: FIXED[i] || [`hsl(${h} 70% 42%)`, `hsl(${(h + 40) % 360} 75% 52%)`, `hsl(${(h + 80) % 360} 85% 60%)`] };
+});
+// Letras de exemplo (mesmas do player)
+const LRC = {
+  0: [[0,"♪"],[8,"Acendo a rua com a luz do meu olhar"],[16,"Cada esquina guarda um verso pra contar"],[25,"O vento leva o que eu não sei dizer"],[33,"E a cidade inteira dança pra você"],[42,"♪"],[50,"Se a noite é longa, eu fico até o fim"],[58,"Toda canção começa e termina em mim"],[67,"Luz da cidade, me leva daqui"],[75,"Luz da cidade, eu sempre volto aqui"]],
+  1: [[0,"♪"],[6,"A maré subiu e eu nem vi"],[13,"Fiquei olhando o céu de abril"],[21,"Tudo que eu quero é ficar aqui"],[29,"Na beira do mar, longe do frio"]],
+};
+const grad = c => `linear-gradient(135deg,${c[0]},${c[1]} 60%,${c[2]})`;
+const toHandle = name => "@" + name.normalize("NFD").replace(/[̀-ͯ]/g, "")
+  .toLowerCase().trim().replace(/\s+/g, "_").replace(/[^a-z0-9._]/g, "");
+const artistColors = a => tracks.find(x => x.artist === a).c;
+const $ = id => document.getElementById(id);
+
+// Playlists da conta do app (capa automática: mosaico das 4 primeiras faixas)
+let playlists = SounosData.getPlaylists();
+// Artistas seguidos no app
+const followed = ["Banda Exemplo", "Lo-Fi Amostra", "Coletivo Demo", "Duo Fictício", "MC Mockup", "Trio Protótipo", "Os Placeholders"];
+// Histórico (mais recente primeiro). Guarda DE ONDE a pessoa ouviu:
+// música solta, playlist, ou artista (música aberta pelo perfil do artista)
+const recent = [
+  { type: "track", t: 0 },
+  { type: "playlist", p: 1 },
+  { type: "artist", a: "MC Mockup" },
+  { type: "track", t: 1 },
+  { type: "playlist", p: 0 },
+  { type: "track", t: 20 },
+  { type: "artist", a: "Lo-Fi Amostra" },
+  { type: "track", t: 9 },
+];
+
+const ICON = {
+  playlist: '<svg class="lu" viewBox="0 0 24 24"><path d="M3 6h13M3 12h13M3 18h9"/><circle cx="19" cy="17" r="2"/><path d="M21 17V8"/></svg>',
+  artist:   '<svg class="lu" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>',
+};
+const mosaic = p => `<div class="mosaic">${[0, 1, 2, 3].map(k => p.tracks[Math.min(k, p.tracks.length - 1)]).map(t => `<i style="background:${grad(tracks[t].c)}"></i>`).join("")}</div>`;
+const meta = (t, a) => `<div class="meta"><div class="t">${t}</div><div class="a">${a}</div></div>`;
+
+// (no app, quem desenha as seções é o home-native.js com os dados reais)
+$("recent").innerHTML = (window.Sounos?.native ? [] : recent).map(r => {
+  if (r.type === "track") {
+    const t = tracks[r.t];
+    return `<button class="blk big tap" data-t="${r.t}" style="background:${grad(t.c)}">
+      <div class="ini">${t.title[0]}</div>${meta(t.title, toHandle(t.artist))}</button>`;
+  }
+  if (r.type === "playlist") {
+    const p = playlists[r.p];
+    return `<button class="blk big tap" data-p="${r.p}">${mosaic(p)}
+      <span class="kind">${ICON.playlist}Playlist</span>${meta(p.name, p.tracks.length + " músicas")}</button>`;
+  }
+  const c = artistColors(r.a);
+  return `<button class="blk big tap" data-a="${r.a}" style="background:linear-gradient(160deg,${c[0]}55,#18181b)">
+    <div class="face" style="background:${grad(c)}">${r.a[0]}</div>
+    <span class="kind">${ICON.artist}Artista</span>${meta(toHandle(r.a), "Perfil do artista")}</button>`;
+}).join("");
+
+$("artists").innerHTML = (window.Sounos?.native ? [] : followed).map(a => `<button class="ar tap" data-a="${a}" style="text-align:center">
+  <div class="pic" style="background:${grad(artistColors(a))}">${a[0]}</div><div class="n">${toHandle(a)}</div></button>`).join("");
+
+function renderPlaylists() {
+  $("playlists").innerHTML = `<button class="blk new tap" aria-label="Nova playlist"><span class="in">
+    <svg class="lu" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Nova playlist</span></button>`
+  + playlists.map((p, i) => `<button class="blk tap" data-p="${i}">${mosaic(p)}${meta(p.name, p.tracks.length === 1 ? "1 música" : p.tracks.length + " músicas")}</button>`).join("");
+}
+if (!window.Sounos?.native) renderPlaylists();   // no app: home-native.js desenha (as músicas são objetos, não índices)
+
+// Carrosséis: no celular o dedo rola sozinho; com o MOUSE, arrastar também passa (com inércia).
+// Um arrasto não conta como toque (não abre música sem querer).
+let dragMoved = false;
+document.querySelectorAll(".row").forEach(row => {
+  const d = { on: false, x: 0, sl: 0, v: 0, lx: 0, lt: 0, raf: 0 };
+  row.addEventListener("pointerdown", e => {
+    if (e.pointerType !== "mouse" || e.button !== 0) return;
+    cancelAnimationFrame(d.raf);
+    Object.assign(d, { on: true, x: e.clientX, sl: row.scrollLeft, v: 0, lx: e.clientX, lt: performance.now() });
+    dragMoved = false;
+    row.style.scrollSnapType = "none";
+  });
+  window.addEventListener("pointermove", e => {
+    if (!d.on) return;
+    const dx = e.clientX - d.x;
+    if (Math.abs(dx) > 5) dragMoved = true;
+    row.scrollLeft = d.sl - dx;
+    const now = performance.now(); if (now > d.lt) d.v = .8 * (e.clientX - d.lx) / (now - d.lt) + .2 * d.v;
+    d.lx = e.clientX; d.lt = now;
+  });
+  window.addEventListener("pointerup", () => {
+    if (!d.on) return;
+    d.on = false;
+    let v = d.v, last = performance.now();
+    const glide = now => {
+      const dt = now - last; last = now;
+      row.scrollLeft -= v * dt; v *= Math.pow(.94, dt / 16);
+      if (Math.abs(v) > .02) d.raf = requestAnimationFrame(glide); else row.style.scrollSnapType = "";
+    };
+    d.raf = requestAnimationFrame(glide);
+  });
+});
+document.addEventListener("click", e => { if (dragMoved && e.target.closest(".row")) { e.stopImmediatePropagation(); e.preventDefault(); dragMoved = false; } }, true);
+document.querySelectorAll(".row").forEach(r => r.addEventListener("dragstart", e => e.preventDefault()));
+
+// Navegação para o player (protótipo): música → ?t=índice · playlist → ?p=índice
+document.addEventListener("click", e => {
+  if (e.target.closest("#mini")) return;
+  const el = e.target.closest("[data-t],[data-p]");
+  if (!el) return;
+  if (el.dataset.t) location.href = `player.html?t=${el.dataset.t}`;
+  else location.href = `player.html?p=${el.dataset.p}`;
+});
+
+// Abre o player completo. A animação é a transição entre telas (view transition):
+// o mini-player vira a tela do player, a capinha vira a capa grande e o nome/@ deslizam para o lugar
+function openPlayer() { location.href = "player.html"; }
+$("miniOpen").onclick = () => { if (!sw.dragged) openPlayer(); };
+
+// Deslizar para cima: o mini-player acompanha o dedo; soltando acima de 90px abre o player, senão volta
+const sw = { y: 0, on: false, base: 64, dragged: false };
+$("mini").addEventListener("pointerdown", e => {
+  if (e.target.closest(".ctrl")) return;
+  Object.assign(sw, { y: e.clientY, on: true, base: $("mini").offsetHeight, dragged: false });
+});
+window.addEventListener("pointermove", e => {
+  if (!sw.on) return;
+  const dy = Math.max(0, sw.y - e.clientY);
+  if (dy > 6) { sw.dragged = true; $("mini").classList.add("dragging"); }
+  if (sw.dragged) window.__playerShell ? window.__playerShell.peek(dy) : $("mini").style.height = sw.base + dy * .9 + "px";
+});
+["pointerup", "pointercancel"].forEach(t => window.addEventListener(t, e => {
+  if (!sw.on) return;
+  sw.on = false;
+  $("mini").classList.remove("dragging");
+  if (sw.dragged && sw.y - e.clientY > 90 && t === "pointerup") openPlayer();
+  else if (sw.dragged && window.__playerShell) window.__playerShell.close();
+  else fitMini();                                   // volta ao tamanho normal com animação
+  setTimeout(() => sw.dragged = false, 0);
+}));
+
+// Capa = botão "+": abre a janela de adicionar à playlist (a mesma do player)
+const add = SounosAdd.attach($("phone"), { onChange: list => { playlists = list; renderPlaylists(); } });
+let currentForAdd = () => order[cur];
+$("miniCv").onclick = () => { if (!sw.dragged) add.open(currentForAdd()); };
+
+// ---- Mini-player: mesmas regras do player completo ----
+const fmt = x => `${Math.floor(x / 60)}:${String(Math.floor(x % 60)).padStart(2, "0")}`;
+const root = document.documentElement.style;
+let order = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9], cur = 0, pos = 40, playing = false, shuffle = false, repeat = "off", scrubbing = false, last = 0;
+const durOf = i => 160 + (i * 37) % 110;
+// ---- Movimento: pequenas animações de troca (ícone, faixa) ----
+const EASE = "cubic-bezier(.2,.85,.25,1)";
+const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+function swapIn(el, from, ms = 320) {
+  if (reduceMotion || !el.animate) return;
+  el.animate([from, { opacity: 1, transform: "none" }], { duration: ms, easing: EASE });
+}
+let miniFirst = true;
+function loadMini() {
+  const t = tracks[order[cur]];
+  t.c.forEach((c, k) => root.setProperty(`--c${k + 1}`, c));
+  $("miniIni").textContent = t.title[0];
+  $("miniT").textContent = t.title;
+  $("miniA").textContent = toHandle(t.artist);
+  if (!miniFirst) {
+    swapIn($("miniCv"), { opacity: .3, transform: "scale(.85)" });
+    swapIn($("miniT"), { opacity: 0, transform: "translateX(12px)" });
+    swapIn($("miniA"), { opacity: 0, transform: "translateX(12px)" }, 360);
+  }
+  miniFirst = false;
+  buildMiniLyrics();
+}
+// ---- Letra no mini-player ----
+const lyricsOffset = () => SounosSettings.get().lyricsOffset;
+let lyrOpen = false, lastLine = -1;
+function showLine(text, cls = "") {
+  const box = $("mlyr");
+  [...box.children].forEach(el => { el.classList.add("out"); setTimeout(() => el.remove(), 300); });
+  const d = document.createElement("div");
+  d.className = "l " + cls; d.textContent = text;
+  box.appendChild(d);
+  fitMini();
+}
+// Altura do mini-player = linha de controles + altura do trecho atual (1, 2, 3 linhas…), sem sobra
+const MINI_ROW = 64, LYR_PAD = 26;
+function fitMini() {
+  const line = [...$("mlyr").children].filter(el => !el.classList.contains("out")).pop();
+  const h = lyrOpen && line ? MINI_ROW + line.offsetHeight + LYR_PAD : MINI_ROW;
+  $("mini").style.height = h + "px";
+  $("phone").style.setProperty("--mini-h", h + "px");
+}
+function buildMiniLyrics() { lastLine = null; syncMiniLyrics(); }
+// Mostra só o trecho atual; antes da primeira linha, mostra a primeira apagada
+function syncMiniLyrics() {
+  const l = LRC[order[cur]];
+  if (!l) { if (lastLine !== "none") { lastLine = "none"; showLine("Letra indisponível para esta faixa", "empty"); } return; }
+  let ln = -1; l.forEach(([s], i) => { if (pos + lyricsOffset() >= s) ln = i; });   // + ajuste de sincronia das configurações
+  if (ln === lastLine) return;
+  lastLine = ln;
+  showLine(l[Math.max(ln, 0)][1], ln < 0 ? "dim" : "");
+}
+$("miniLyr").onclick = () => {
+  lyrOpen = !lyrOpen;
+  $("mini").classList.toggle("lyr-open", lyrOpen);
+  fitMini();
+};
+const LU = {
+  play:    '<svg class="lu solid" viewBox="0 0 24 24" style="margin-left:2px"><polygon points="6 3 20 12 6 21 6 3"/></svg>',
+  pause:   '<svg class="lu solid" viewBox="0 0 24 24"><rect x="14" y="4" width="4" height="16" rx="1"/><rect x="6" y="4" width="4" height="16" rx="1"/></svg>',
+  shuffle: '<svg class="lu" viewBox="0 0 24 24"><path d="M2 18h1.4c1.3 0 2.5-.6 3.3-1.7l6.1-8.6c.7-1.1 2-1.7 3.3-1.7H22"/><path d="m18 2 4 4-4 4"/><path d="M2 6h1.9c1.5 0 2.9.9 3.6 2.2"/><path d="M22 18h-5.9c-1.3 0-2.6-.7-3.3-1.8l-.5-.8"/><path d="m18 14 4 4-4 4"/></svg>',
+  repeat:  '<svg class="lu" viewBox="0 0 24 24"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>',
+  repeat1: '<svg class="lu" viewBox="0 0 24 24"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/><path d="M11 10h1v4"/></svg>',
+};
+// Ícone mostra o estado: tocando = pausa; pausado = play, ou o modo ativo (aleatório / repetir / os dois)
+function renderMiniIcon() {
+  const rep = repeat === "one" ? LU.repeat1 : LU.repeat, el = $("miniIcon");
+  // sempre play/pausa; ao trocar um modo, o ícone dele aparece por um instante (apagado = desligou)
+  const modes = shuffle + "|" + repeat;
+  if (renderMiniIcon.modes != null && modes !== renderMiniIcon.modes) {
+    const sh = String(shuffle) !== renderMiniIcon.modes.split("|")[0];
+    renderMiniIcon.flash = { html: `<span style="display:flex;opacity:${(sh ? !shuffle : repeat === "off") ? .35 : 1}">${sh ? LU.shuffle : rep}</span>`, until: performance.now() + 850 };
+  }
+  renderMiniIcon.modes = modes;
+  const fl = renderMiniIcon.flash;
+  let html = playing ? LU.pause : LU.play, combo = false;
+  if (fl && performance.now() < fl.until) html = fl.html;
+  if (el.dataset.src !== html) {
+    const first = !el.dataset.src; el.innerHTML = html; el.dataset.src = html;
+    if (!first) swapIn(el, { opacity: 0, transform: "scale(.5) rotate(-12deg)" }, 260);
+  }
+  el.classList.toggle("combo", combo);
+}
+function step(d) {
+  if (d < 0 && pos > 3) { pos = 0; return; }
+  cur = (cur + d + order.length) % order.length; pos = 0; loadMini();
+}
+$("miniPrev").onclick = () => step(-1);
+$("miniNext").onclick = () => step(1);   // (step é trocado no modo app)
+
+// Gestos do botão (mesma lógica do player)
+const g = { x: 0, y: 0, holding: false, moved: false, startedScrub: false, dir: null, shuffled: false, holdT: 0, idleT: 0 };
+const pp = $("miniPP");
+function setScrub(v) { scrubbing = v; $("mini").classList.toggle("scrub", v); }
+function resetIdle() { clearTimeout(g.idleT); g.idleT = setTimeout(() => setScrub(false), 10000); }
+function scrubBy(dx) { const d = durOf(order[cur]); pos = Math.max(0, Math.min(d, pos + dx * 0.002 * d)); }
+function doShuffle() { shuffle = !shuffle; }
+function doRepeat() { repeat = { off: "all", all: "one", one: "off" }[repeat]; }
+function doToggle() { playing = !playing; }
+pp.addEventListener("pointerdown", e => {
+  try { pp.setPointerCapture(e.pointerId); } catch {}
+  Object.assign(g, { x: e.clientX, y: e.clientY, holding: false, moved: false, startedScrub: false, dir: null, shuffled: false });
+  if (scrubbing) clearTimeout(g.idleT);
+  g.holdT = setTimeout(() => g.holding = true, 200);
+});
+pp.addEventListener("pointermove", e => {
+  if (!pp.hasPointerCapture(e.pointerId)) return;
+  const dx = e.clientX - g.x, dy = e.clientY - g.y;
+  if (!g.dir && Math.hypot(dx, dy) > 10) { g.moved = true; g.dir = Math.abs(dx) > Math.abs(dy) ? "h" : "v"; }
+  if (g.dir === "v" && !g.shuffled && Math.abs(dy) > 32) { doShuffle(); g.shuffled = true; clearTimeout(g.holdT); return; }
+  if (g.holding) {
+    if ((g.dir === "h" || !g.dir) && Math.abs(dx) > 5) { if (!scrubbing) { setScrub(true); g.startedScrub = true; } scrubBy(dx); g.x = e.clientX; resetIdle(); }
+  } else if (scrubbing) { scrubBy(dx); g.x = e.clientX; resetIdle(); }
+});
+pp.addEventListener("pointerup", () => {
+  clearTimeout(g.holdT);
+  if (scrubbing) { if (!g.startedScrub && !g.moved) setScrub(false); else resetIdle(); }
+  else if (g.moved) { /* deslizar: gesto, nunca pausa */ }
+  else if (g.holding) doRepeat();
+  else doToggle();
+  g.holding = false;
+});
+pp.addEventListener("pointercancel", () => { clearTimeout(g.holdT); g.holding = false; });
+
+let curDur = () => durOf(order[cur]);          // no app: duração real da música
+let atEnd = () => { if (repeat === "one") pos = 0; else step(1); };   // no app: quem decide é o player nativo
+(function tick(now) {
+  const d = curDur();
+  if (playing && last) {
+    pos += (now - last) / 1000;
+    if (pos >= d) atEnd();
+  }
+  last = now;
+  $("miniBar").style.width = (pos / d * 100) + "%";
+  $("miniTime").textContent = `${fmt(pos)} / ${fmt(d)}`;
+  renderMiniIcon();
+  syncMiniLyrics();
+  requestAnimationFrame(tick);
+})(0);
+loadMini();
+</script>
+<script src="home-native.js"></script>
+<script src="search.js"></script>
+<script>
+window.homeSearch = SounosSearch.attach(document.getElementById("searchBtn"), document.getElementById("phone"));
+SounosSettings.attach(document.getElementById("gearBtn"), document.getElementById("phone"));
+</script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+# compilação
+build/
+.gradle/
+android/local.properties
+*.iml
+.idea/
+
+# APKs: versão só é publicada quando o Guilherme decidir
+apk/
+*.apk
+
+# chave de assinatura: NUNCA no repositório
+*.jks
+*.keystore
+sonus.properties
+Sonus-chave/

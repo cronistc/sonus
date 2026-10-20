@@ -1,0 +1,81 @@
+/* Temas do Sonus: Gradiente (padrão), Escuro e Claro.
+   Azul é a cor da marca: aparece nos destaques e é o fundo do Gradiente quando nada está tocando. */
+:root {
+  --brand: #2f6bff;
+  --brand-deep: #1d4ed8;
+  --c1: #2f6bff;
+  --c2: #1d4ed8;
+  --c3: #60a5fa;
+
+  /* Escuro */
+  --bg: #0e0e10;
+  --surface: #1a1a1e;
+  --surface-2: #232328;
+  --sheet: #1a1a1f;
+  --text: #f5f5f7;
+  --text-dim: #a1a1aa;
+  --line: rgba(255,255,255,.10);
+  --line-strong: rgba(255,255,255,.24);
+  --chip: rgba(255,255,255,.12);
+  --chip-soft: rgba(255,255,255,.06);
+  --field: rgba(0,0,0,.35);
+  --t-faint: rgba(255,255,255,.32);
+  --t-mid: rgba(255,255,255,.55);
+  --mini-bg: color-mix(in srgb, var(--c1) 35%, #18181b);
+  --phone-bg: linear-gradient(180deg, color-mix(in srgb, var(--c1) 40%, var(--bg)) 0%, var(--bg) 65%);
+  --tile-shadow: 0 6px 16px rgba(0,0,0,.38);
+  color-scheme: dark;
+}
+html[data-theme="light"] {
+  --bg: #f4f4f6;
+  --surface: #ffffff;
+  --surface-2: #e9e9ee;
+  --sheet: #ffffff;
+  --text: #111114;
+  --text-dim: #6b6b76;
+  --line: rgba(0,0,0,.08);
+  --line-strong: rgba(0,0,0,.22);
+  --chip: rgba(0,0,0,.07);
+  --chip-soft: rgba(0,0,0,.04);
+  --field: rgba(0,0,0,.05);
+  --t-faint: rgba(17,17,20,.28);
+  --t-mid: rgba(17,17,20,.5);
+  --mini-bg: color-mix(in srgb, var(--c1) 16%, #ffffff);
+  --phone-bg: linear-gradient(180deg, color-mix(in srgb, var(--c1) 22%, var(--bg)) 0%, var(--bg) 60%);
+  --tile-shadow: 0 4px 12px rgba(17,17,20,.10), 0 1px 3px rgba(17,17,20,.08);
+  color-scheme: light;
+}
+html[data-theme="gradient"] {
+  --bg: color-mix(in srgb, var(--c1) 18%, #0b0b0d);
+  --surface: rgba(255,255,255,.09);
+  --surface-2: rgba(255,255,255,.13);
+  --sheet: color-mix(in srgb, var(--c1) 28%, #141418);
+  --text-dim: rgba(245,245,247,.62);
+  --mini-bg: color-mix(in srgb, var(--c2) 30%, rgba(20,20,24,.85));
+  --phone-bg: linear-gradient(170deg, color-mix(in srgb, var(--c1) 58%, #0b0b0d) 0%,
+                                     color-mix(in srgb, var(--c2) 32%, #0b0b0d) 55%,
+                                     color-mix(in srgb, var(--c3) 20%, #0b0b0d) 100%);
+  --home-bg: var(--phone-bg);
+}
+
+/* o fundo troca de cor suavemente quando a música muda */
+@property --c1 { syntax: "<color>"; inherits: true; initial-value: #2f6bff; }
+@property --c2 { syntax: "<color>"; inherits: true; initial-value: #1d4ed8; }
+@property --c3 { syntax: "<color>"; inherits: true; initial-value: #60a5fa; }
+@property --cover-size { syntax: "<length>"; inherits: true; initial-value: 300px; }
+@property --tile { syntax: "<length>"; inherits: true; initial-value: 116px; }
+:root { transition: --c1 .8s ease, --c2 .8s ease, --c3 .8s ease,
+                    --cover-size .45s cubic-bezier(.2,.85,.25,1), --tile .45s cubic-bezier(.2,.85,.25,1); }
+
+/* Troca de tema suave: só durante a troca, as cores fazem fade */
+html.theming, html.theming *, html.theming *::before, html.theming *::after {
+  transition: background-color .5s ease, background .5s ease, color .5s ease, border-color .5s ease,
+              outline-color .5s ease, fill .5s ease, stroke .5s ease !important;
+}
+
+/* No topo do app aparece só a letra (o ícone azul é o da tela inicial do celular) */
+.brand-letter { width: 28px; height: 28px; color: var(--text); display: block; }
+.brand-letter path { fill: none; stroke: currentColor; stroke-width: 6.5; stroke-linecap: round; stroke-linejoin: round; }
+
+/* No celular a tela do app ocupa a altura toda (a moldura de 860px é só para ver no computador) */
+@media (max-width: 499px) { .phone { max-height: none !important; } }

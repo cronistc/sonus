@@ -1,0 +1,24 @@
+/* Transição entre a tela inicial e o player (as duas páginas incluem este arquivo).
+   Abrir:  a tela do player SOBE de baixo, inteira, como uma folha; a tela inicial recua e escurece de leve.
+           Ao mesmo tempo, cada item do mini-player (capa, nome, @, A, voltar, play, passar) voa até o seu lugar no player.
+   Fechar: o caminho inverso — o player DESCE e os itens voltam para o mini-player.
+   O tipo (open/close) é marcado pela página que está entrando (evento pagereveal). */
+@view-transition { navigation: auto; }
+
+::view-transition-group(*) { animation-duration: .52s; animation-timing-function: cubic-bezier(.2,.85,.25,1); }
+/* itens que voam: só a forma se mexe, sem "piscar" no meio */
+::view-transition-old(*), ::view-transition-new(*) { animation-duration: .3s; }
+
+html:active-view-transition-type(open)::view-transition-old(root) { animation: vt-recede .52s cubic-bezier(.2,.85,.25,1) both; }
+html:active-view-transition-type(open)::view-transition-new(root) { animation: vt-rise .52s cubic-bezier(.2,.85,.25,1) both; }
+html:active-view-transition-type(close)::view-transition-old(root) { animation: vt-fall .46s cubic-bezier(.4,0,.2,1) both; z-index: 2; }
+html:active-view-transition-type(close)::view-transition-new(root) { animation: vt-return .46s cubic-bezier(.2,.85,.25,1) both; z-index: 1; }
+
+@keyframes vt-rise   { from { transform: translateY(100%); } }
+@keyframes vt-fall   { to   { transform: translateY(100%); } }
+@keyframes vt-recede { to   { opacity: .55; transform: scale(.965); } }
+@keyframes vt-return { from { opacity: .55; transform: scale(.965); } }
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
+}

@@ -1,0 +1,1166 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sonus · Tocando</title>
+<link rel="icon" href="logo.svg" type="image/svg+xml">
+
+<style>
+  :root {
+    --bg: #0e0e10;
+    --surface: #1a1a1e;
+    --text: #f5f5f7;
+    --text-dim: #a1a1aa;
+    --c1: #5b21b6;
+    --c2: #db2777;
+    --c3: #f59e0b;
+    --fade: .28s;               /* duração de cada metade da troca info ⇄ letra */
+    --tile: 116px;              /* tamanho dos blocos da fila */
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: #000;
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: flex; justify-content: center; align-items: center;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Moldura de celular (só no desktop) */
+  .phone {
+    width: 100%; max-width: 400px; height: 100%; max-height: 860px;
+    position: relative; overflow: clip;
+    background: var(--phone-bg);
+    transition: background .6s;
+    display: flex; flex-direction: column;
+    padding: 10px 24px 10px;
+  }
+  @media (min-width: 500px) { .phone { border-radius: 36px; border: 8px solid #222; } }
+  /* itens que viajam entre o mini-player e o player */
+  .cover { view-transition-name: cover; }
+  #lyricsBtn { view-transition-name: btn-lyrics; }
+  #prev { view-transition-name: btn-prev; }
+  #play { view-transition-name: btn-play; }
+  #next { view-transition-name: btn-next; }
+  #title { view-transition-name: track-title; width: fit-content; max-width: 100%; }
+  #artist { view-transition-name: track-artist; width: fit-content; }
+
+  /* Topo: configurações (esq.) e busca (dir.) */
+  .top { display: flex; align-items: center; justify-content: space-between; height: 40px; margin: 0 -10px; flex-shrink: 0;
+          position: relative; transition: height .45s cubic-bezier(.2,.85,.25,1); }
+  .top .icon-btn { transition: opacity .3s ease, transform .45s cubic-bezier(.2,.85,.25,1); }
+  .top .brand-letter { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+                       transition: transform .45s cubic-bezier(.2,.85,.25,1), opacity .3s ease; }
+  /* Tela cheia (deslizar para cima ou abrir a letra): engrenagem, G e busca somem e a capa sobe até o topo */
+  .phone.immersive .top { height: 0; }
+  .phone.immersive .top .icon-btn, .phone.immersive .top .brand-letter { opacity: 0; pointer-events: none; }
+  .phone.immersive .top .icon-btn { transform: translateY(-16px); }
+  .phone.immersive .top .brand-letter { transform: translate(-50%, calc(-50% - 16px)); }
+  .icon-btn { width: 44px; height: 40px; border-radius: 12px; color: var(--text); }
+  .icon-btn:active { background: var(--chip-soft); }
+  /* áreas onde dá para puxar o player para baixo */
+  .top, .cover-area, .info { touch-action: none; }
+  .icon-btn svg { width: 24px; height: 24px; stroke-width: 2.2; }
+
+  button { background: none; border: 0; color: inherit; cursor: pointer; display: grid; place-items: center; }
+  svg { width: 24px; height: 24px; fill: currentColor; }
+
+
+  /* Capa + anel de progresso. Tamanho calculado em fitCover(): o maior quadrado que cabe */
+  .cover-area { flex-shrink: 0; margin-top: 8px; display: flex; justify-content: center; }
+  .cover-box { width: var(--cover-size, 100%); flex-shrink: 0; }
+  .ring { position: relative; width: 100%; aspect-ratio: 1 / 1; touch-action: none; }
+  .ring svg.prog { position: absolute; overflow: visible; pointer-events: none; z-index: 2; }
+  .ring .track-path { fill: none; stroke: var(--line); stroke-width: 6; }
+  .ring .fill-path { fill: none; stroke: url(#ringGrad); stroke-width: 6; stroke-linecap: butt; }
+  .ring .hit { fill: none; stroke: transparent; stroke-width: 30; pointer-events: stroke; cursor: pointer; }
+  .ring .knob { fill: #fff; r: 0; transition: r .15s; pointer-events: none; }
+  .ring.drag .knob { r: 6px; }
+  .cover {
+    position: relative; width: 100%; height: 100%;
+    border-radius: 10px;
+    background: linear-gradient(135deg, var(--c1), var(--c2) 60%, var(--c3));
+    box-shadow: 0 20px 50px rgba(0,0,0,.5);
+    display: grid; place-items: center;
+    font-size: 80px; font-weight: 800; color: rgba(255,255,255,.85);
+    transition: background .6s;
+    user-select: none;
+  }
+  .times { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-dim);
+           margin-top: 10px; font-variant-numeric: tabular-nums; }
+
+  /* Área abaixo da capa */
+  .below { position: relative; flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  .below > .main-ui { flex: 1; display: flex; flex-direction: column; }
+  .spacer { flex: 1; }
+
+  /* Info da faixa */
+  .info { position: relative; display: flex; align-items: center; gap: 12px; margin-top: 12px; height: 52px; }
+  .info .txt { flex: 1; min-width: 0; }
+  .info h1 { font-size: 22px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .info p { font-size: 15px; color: var(--text-dim); margin-top: 4px; }
+  .actions { display: flex; align-items: center; gap: 6px; }
+  .act[hidden] { display: none; }               /* "A" só aparece com letra sincronizada */
+  .act { width: 40px; height: 40px; border-radius: 12px; color: var(--text-dim); transition: background .3s, color .3s; }
+  .act:active { transform: scale(.92); }
+  .act.on { color: var(--text); background: var(--chip); }
+  .act .letter { font-size: 21px; font-weight: 800; line-height: 1; font-family: Georgia, "Times New Roman", serif; }
+  .act svg { width: 26px; height: 26px; }
+  /* botão de baixar */
+  .dl-ic { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+  .dl-track { stroke: currentColor; stroke-width: 2; opacity: .9; transition: opacity .3s; }
+  .dl-prog { stroke: var(--text); stroke-width: 2.4; stroke-dasharray: 0 100; transform: rotate(-90deg); transform-origin: 12px 12px;
+             opacity: 0; transition: stroke-dasharray .25s linear, opacity .2s; }
+  .dl-fill { fill: var(--text); transform: scale(0); transform-origin: 12px 12px; transition: transform .38s cubic-bezier(.3,1.4,.5,1); }
+  .dl-arrow { stroke: currentColor; stroke-width: 2.2; transition: stroke .3s; }
+  .act.dl.loading { color: var(--text); }
+  .act.dl.loading .dl-track { opacity: .25; }
+  .act.dl.loading .dl-prog { opacity: 1; }
+  .act.dl.loading .dl-arrow { animation: dlNudge 1s ease-in-out infinite; }
+  @keyframes dlNudge { 50% { transform: translateY(1.5px); } }
+  .act.dl.done { color: var(--text); }
+  .act.dl.done .dl-fill { transform: scale(1); }
+  .act.dl.done .dl-arrow { stroke: var(--bg); }
+  .act.dl.done .dl-track { opacity: 0; }
+
+  /* Troca info ⇄ letra em sequência: primeiro um sai, depois o outro entra (sem sobrepor) */
+  .fadeable { transition: opacity var(--fade) ease var(--fade), transform var(--fade) ease var(--fade); }
+  .phone.lyr-mode .fadeable { opacity: 0; transform: translateY(8px); pointer-events: none;
+                              transition-delay: 0s; }
+
+  /* Fila de reprodução (carrossel): nome e @ ficam dentro do bloco */
+  .queue-wrap { margin: 4px -24px -10px; }
+  /* altura fixa (bloco + respiro): a fila nunca cresce por cima do player */
+  .queue { display: flex; gap: 10px; overflow-x: auto; overflow-y: visible; padding: 14px 24px 16px; height: calc(var(--tile) + 30px);
+           scrollbar-width: none; touch-action: none; user-select: none; cursor: grab; }
+  .queue::-webkit-scrollbar { display: none; }
+  .qi { flex: 0 0 var(--tile); width: var(--tile); height: var(--tile); position: relative; border-radius: 10px;
+        overflow: hidden; transition: opacity .3s, transform .2s, box-shadow .2s, outline-color .3s;
+        box-shadow: var(--tile-shadow); outline: 2px solid transparent; outline-offset: 2px; }
+  .qi .ini { position: absolute; inset: 0; display: grid; place-items: center; padding-bottom: 26px;
+             font-size: calc(var(--tile) * .33); font-weight: 800; color: rgba(255,255,255,.5); }
+  .qi .meta { color: #fff; position: absolute; left: 0; right: 0; bottom: 0; padding: 20px 8px 7px;
+              background: linear-gradient(transparent, rgba(0,0,0,.65)); }
+  .qi .qt { font-size: calc(10px + var(--tile) * .02); font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .qi .qa { font-size: calc(9px + var(--tile) * .015); color: rgba(255,255,255,.72); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .qi.played { opacity: .45; }
+  .qi.now { outline-color: var(--text); }
+  .qi.lift { z-index: 5; opacity: 1; transform: scale(1.08); box-shadow: 0 12px 28px rgba(0,0,0,.6); }
+  /* barrinhas "tocando agora" no bloco atual */
+  .eq { position: absolute; right: 8px; top: 8px; display: none; gap: 2px; align-items: flex-end; height: 14px; }
+  .qi.now .eq { display: flex; }
+  .eq i { width: 3px; background: #fff; border-radius: 1px; height: 4px; }
+  .phone:not(.paused) .qi.now .eq i { animation: eq .9s ease-in-out infinite; }
+  .eq i:nth-child(2) { animation-delay: -.3s !important; } .eq i:nth-child(3) { animation-delay: -.6s !important; }
+  @keyframes eq { 0%,100% { height: 4px } 50% { height: 14px } }
+
+  /* Renovação da fila: gira rápido para a esquerda e os novos blocos entram pela direita */
+  .queue.spin-out .qi { animation: spinOut .18s ease-in forwards; }
+  .queue.spin-in  .qi { animation: spinIn .38s cubic-bezier(.2,.9,.3,1) backwards; animation-delay: calc(var(--i) * 35ms); }
+  @keyframes spinOut { to { transform: translateX(-140px) scale(.9); opacity: 0; } }
+  @keyframes spinIn  { from { transform: translateX(160px) scale(.9); opacity: 0; } }
+
+  /* Controles */
+  .controls { position: relative; display: flex; align-items: center; justify-content: space-between; height: 96px; margin: 22px 0 18px; }  /* fila→play (6+22) = play→fim da tela (18+10) */
+  .controls .skip { width: 64px; overflow: hidden; transition: width .7s, opacity .5s; }
+  .controls .skip svg { width: 32px; height: 32px; }
+  /* mesmo estilo de traço para todos os ícones do player (padrão lucide) */
+  .lu { fill: none; stroke: currentColor; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+  .lu.solid { fill: currentColor; }
+  .controls.scrubbing .skip { width: 0; opacity: 0; }
+  .play {
+    width: 96px; height: 96px; border-radius: 48px; flex-shrink: 0;
+    background: var(--text); color: var(--bg);
+    position: relative; overflow: hidden; touch-action: none; user-select: none;
+    box-shadow: 0 16px 40px rgba(0,0,0,.45);
+    transition: width .7s, height .7s, border-radius .7s, transform .1s;
+  }
+  .play:active:not(.scrub), .skip:active { transform: scale(.92); }
+  #play { touch-action: none; }
+  .play.scrub { width: 100%; height: 80px; border-radius: 24px; }
+  .play .icon { display: flex; align-items: center; justify-content: center; gap: 2px; }
+  .play .icon svg { width: 44px; height: 44px; }
+  .play .icon .lu { width: 40px; height: 40px; }
+  .play .icon.combo .lu { width: 28px; height: 28px; stroke-width: 3; }
+  .play .icon.combo .slash { font-size: 22px; font-weight: 300; opacity: .3; margin: 0 1px; }
+  .play.scrub .icon { display: none; }
+
+  /* Scrubber: forma de onda que corre sob uma lente central */
+  .scrubber { position: absolute; inset: 0; opacity: 0; transition: opacity .4s; pointer-events: none; overflow: hidden; }
+  .play.scrub .scrubber { opacity: 1; }
+  .wave { position: absolute; top: 0; height: 100%; left: 50%; display: flex; align-items: center; }
+  .wave i { flex-shrink: 0; border-radius: 2px; background: var(--bg); }
+  .wave.dim { opacity: .25; }
+  .wave.dim i { width: 2px; margin-right: 10px; }
+  .lens { position: absolute; left: 50%; top: 50%; width: 96px; height: 85%; transform: translate(-50%, -50%);
+          border-radius: 16px; overflow: hidden; z-index: 2;
+          background: color-mix(in srgb, var(--bg) 8%, transparent); border: 1px solid color-mix(in srgb, var(--bg) 20%, transparent);
+          backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
+  .lens .wave.big { left: 48px; }
+  .lens .wave.big i { width: 2px; margin-right: 10px; }
+  .needle { position: absolute; left: 50%; top: 50%; width: 2px; height: 75%; transform: translate(-50%, -50%);
+            background: var(--c2); border-radius: 2px; z-index: 3; }
+  /* tempo do scrub: flutua acima da barra, sem ocupar espaço */
+  .scrub-time { position: absolute; left: 50%; top: -6px; transform: translate(-50%, -100%);
+                font-weight: 900; font-size: 18px; font-variant-numeric: tabular-nums;
+                background: color-mix(in srgb, var(--bg) 85%, transparent); padding: 2px 10px; border-radius: 8px;
+                opacity: 0; transition: opacity .5s; pointer-events: none; }
+  .scrub-time.show { opacity: 1; }
+
+  /* Compartilhar letra */
+  .share-btn { position: absolute; left: -8px; top: 50%; margin-top: -20px;
+               width: 40px; height: 40px; border-radius: 12px; color: var(--text);
+               transition: opacity var(--fade) ease, transform var(--fade) ease, background .3s; }
+  .share-btn svg { width: 24px; height: 24px; }
+  .share-btn.on { background: var(--chip); }
+  .share-btn:active { transform: scale(.95); }
+  .phone:not(.lyr-mode) .share-btn, .share-btn.hidden { opacity: 0; transform: scale(.9); pointer-events: none; }
+  .phone.lyr-mode .share-btn:not(.hidden) { transition-delay: var(--fade); }
+
+  .lyr.selecting .line { color: var(--t-faint); transition: color .2s, background .2s; }
+  .lyr.selecting .line.sel { color: var(--text); background: var(--chip); }
+  .lyr.selecting .line.note { opacity: .25; pointer-events: none; }
+  .selbar { position: absolute; left: -8px; right: -8px; bottom: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between;
+            padding: 22px 8px 6px; background: linear-gradient(transparent, var(--bg) 45%);
+            opacity: 0; transform: translateY(10px); pointer-events: none; transition: opacity .25s, transform .25s; }
+  .lyr.selecting .selbar { opacity: 1; transform: none; pointer-events: auto; }
+  .selbar .link { font-size: 14px; font-weight: 600; color: var(--text-dim); padding: 8px 4px; }
+  .selbar .count { font-size: 13px; color: var(--text-dim); font-variant-numeric: tabular-nums; transition: color .2s; }
+  .selbar .count.full { color: var(--text); font-weight: 700; }
+  .selbar .go { height: 38px; padding: 0 18px; border-radius: 19px; background: var(--text); color: var(--bg);
+                font-size: 14px; font-weight: 700; transition: opacity .2s; }
+  .selbar .go:disabled { opacity: .35; cursor: default; }
+  @keyframes nudge { 0%,100% { transform: none } 25% { transform: translateX(-4px) } 75% { transform: translateX(4px) } }
+  .count.nudge { animation: nudge .25s; }
+
+  /* Folha com a imagem gerada */
+  .sheet { position: absolute; inset: 0; z-index: 20; background: rgba(0,0,0,.78); backdrop-filter: blur(6px);
+           display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; padding: 24px;
+           opacity: 0; pointer-events: none; transition: opacity .25s; }
+  .sheet.open { opacity: 1; pointer-events: auto; }
+  /* fechadas = fora do desenho (senão o WebView continua pintando camadas de tela cheia invisíveis) */
+  .sheet:not(.open) { visibility: hidden; transition: opacity .25s, visibility 0s .25s; }
+  .phone:not(.lyr-mode) .lyr { visibility: hidden; transition: opacity var(--fade) ease, transform var(--fade) ease, visibility 0s var(--fade); }
+  .sheet img { width: min(100%, 300px); border-radius: 14px; box-shadow: 0 20px 50px rgba(0,0,0,.6);
+               transform: scale(.94); transition: transform .3s cubic-bezier(.2,.9,.3,1); }
+  .sheet.open img { transform: none; }
+  .sheet .row { display: flex; gap: 10px; }
+  .sheet .row button { height: 42px; padding: 0 18px; border-radius: 21px; font-size: 14px; font-weight: 700;
+                       background: rgba(255,255,255,.14); color: var(--text); }
+  .sheet .row button.primary { background: var(--text); color: var(--bg); }
+  .styles { display: flex; gap: 8px; }
+  .styles button { height: 36px; padding: 0 14px 0 6px; border-radius: 18px; display: flex; align-items: center; gap: 8px;
+                   font-size: 13px; font-weight: 600; color: var(--text-dim); background: rgba(255,255,255,.08);
+                   outline: 2px solid transparent; transition: outline-color .2s, color .2s; }
+  .styles button.on { color: var(--text); outline-color: rgba(255,255,255,.85); }
+  .styles .sw { width: 24px; height: 24px; border-radius: 50%; }
+  .styles .sw.grad { background: linear-gradient(135deg, var(--c1), var(--c2) 60%, var(--c3)); }
+  .styles .sw.dark { background: #3a3a3f; border: 1px solid rgba(255,255,255,.25); }
+  .styles .sw.light { background: #f4f4f5; }
+  .sheet .close { position: absolute; top: 14px; right: 14px; width: 40px; height: 40px; }
+
+  /* Letra (substitui nome, artista, fila e botões) */
+  .lyr { position: absolute; left: 0; right: 0; top: 64px; bottom: 0;
+         opacity: 0; transform: translateY(8px); pointer-events: none;
+         transition: opacity var(--fade) ease, transform var(--fade) ease; }
+  .phone.lyr-mode .lyr { opacity: 1; transform: none; pointer-events: auto; transition-delay: var(--fade); }
+  .lyr .lines { height: 100%; overflow-y: auto; scrollbar-width: none; padding: 20% 8px 60%; margin: 0 -8px;
+                -webkit-mask-image: linear-gradient(transparent, #000 18%, #000 78%, transparent);
+                        mask-image: linear-gradient(transparent, #000 18%, #000 78%, transparent); }
+  .lyr .lines::-webkit-scrollbar { display: none; }
+  .lyr .line { font-size: 22px; font-weight: 700; line-height: 1.35; margin-bottom: 16px; cursor: pointer;
+               padding: 2px 8px; margin-left: -8px; border-radius: 8px;
+               color: var(--t-faint); transition: color .4s ease; }
+  .lyr .line.past { color: var(--t-mid); }
+  .lyr .line.now { color: var(--text); }
+  .lyr.plain .line { color: var(--text); cursor: default; }     /* letra sem tempo: mostra inteira */
+  .lyr .empty { color: var(--text-dim); font-size: 16px; padding-top: 20px; }
+</style>
+<script>
+// promessa resolvida quando a transição de abertura terminar (ou na hora, se não houver transição)
+window.__afterReveal = new Promise(res => addEventListener("pagereveal", e => {
+  if (e.viewTransition) e.viewTransition.finished.then(res, res); else res();
+}, { once: true }));
+</script>
+<script src="native.js"></script>
+<link rel="stylesheet" href="search.css">
+<link rel="stylesheet" href="transitions.css">
+<link rel="stylesheet" href="add.css">
+<script src="data.js"></script>
+<script src="add.js"></script>
+<link rel="stylesheet" href="settings.css">
+<link rel="stylesheet" href="theme.css">
+<script src="settings.js"></script>
+</head>
+<body>
+<div class="phone paused" id="phone">
+
+  <div class="top" id="top">
+    <button class="icon-btn" id="gearBtn" aria-label="Configurações"><svg class="lu" viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></button>
+    <svg class="brand-letter" viewBox="0 0 64 64" role="img" aria-label="Sonus"><path d="M44.7 20.6A17 17 0 1 0 47.4 39.2V33.5H35"/></svg>
+    <button class="icon-btn" id="searchBtn" aria-label="Buscar"><svg class="lu" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></button>
+  </div>
+
+  <div class="cover-area" id="coverArea">
+    <div class="cover-box">
+      <div class="ring" id="ring">
+        <!-- Barra de progresso = borda da capa: começa no topo-centro e contorna no sentido horário até fechar -->
+        <svg class="prog" id="ringSvg">
+          <defs>
+            <linearGradient id="ringGrad" gradientUnits="objectBoundingBox" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0"   stop-color="var(--c1)"/>
+              <stop offset=".35" stop-color="var(--c2)"/>
+              <stop offset=".7"  stop-color="var(--c3)"/>
+              <stop offset="1"   stop-color="var(--c1)"/>
+            </linearGradient>
+            <!-- esfumaçado: transparente no ponto exato da ponta → opaco a FADE_PX de distância -->
+            <radialGradient id="fadeGrad">
+              <stop offset="0"   stop-color="#000"/>
+              <stop offset=".25" stop-color="#1a1a1a"/>
+              <stop offset=".5"  stop-color="#777"/>
+              <stop offset=".75" stop-color="#d4d4d4"/>
+              <stop offset="1"   stop-color="#fff"/>
+            </radialGradient>
+            <mask id="ringMask" maskUnits="userSpaceOnUse">
+              <rect id="maskBg" fill="#fff"/>
+              <circle id="fadeStart" fill="url(#fadeGrad)"/>
+              <circle id="fadeHead"  fill="url(#fadeGrad)"/>
+            </mask>
+          </defs>
+          <path id="ringPath" class="track-path" pathLength="1000"/>
+          <path id="ringFill" class="fill-path" pathLength="1000" stroke-dasharray="0 2000" mask="url(#ringMask)"/>
+          <path id="ringHit" class="hit"/>
+          <circle id="knob" class="knob"/>
+        </svg>
+        <div class="cover" id="cover">A</div>
+      </div>
+      <div class="times" id="times"><span id="cur">0:00</span><span id="dur">0:00</span></div>
+    </div>
+  </div>
+
+  <div class="below">
+    <div class="info" id="info">
+      <button class="share-btn" id="shareBtn" aria-label="Compartilhar letra">
+          <svg class="lu" viewBox="0 0 24 24" style="stroke-width:2.2"><path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"/><path d="m16 6-4-4-4 4"/><path d="M12 2v13"/></svg>
+        </button>
+      <div class="txt fadeable"><h1 id="title">—</h1><p id="artist">—</p></div>
+      <div class="actions">
+        <button class="act" id="lyricsBtn" aria-label="Letra"><span class="letter">A</span></button>
+        <!-- baixar: um toque, sem janela; o anel mostra o progresso e o ícone fica cheio quando termina -->
+        <button class="act dl" id="dlBtn" aria-label="Baixar música">
+          <svg viewBox="0 0 24 24" class="dl-ic">
+            <circle class="dl-track" cx="12" cy="12" r="9.5"/>
+            <circle class="dl-prog" cx="12" cy="12" r="9.5" pathLength="100"/>
+            <circle class="dl-fill" cx="12" cy="12" r="10.6"/>
+            <path class="dl-arrow" d="M12 7.5v8M8.5 12.2 12 15.7l3.5-3.5"/>
+          </svg>
+        </button>
+        <button class="act" id="addBtn" aria-label="Adicionar">
+          <svg viewBox="0 0 24 24"><path d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6z"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="main-ui fadeable">
+      <!-- Fila: playlist (ou ela embaralhada) · lista aleatória (música pesquisada) · sugeridas (repetir faixa).
+           toque = tocar · arrastar = rolar · segurar o bloco e arrastar = reordenar -->
+      <div class="queue-wrap" id="queueWrap"><div class="queue" id="queue"></div></div>
+      <div class="spacer"></div>
+
+      <div class="controls" id="controls">
+        <button class="skip" id="prev" aria-label="Voltar">
+          <svg class="lu solid" viewBox="0 0 24 24"><polygon points="19 20 9 12 19 4 19 20"/><line x1="5" x2="5" y1="19" y2="5"/></svg>
+        </button>
+        <!-- Botão multifunção:
+             toque = play/pause · segurar e soltar = ciclo de repetição
+             segurar + arrastar p/ cima ou baixo = aleatório · segurar + arrastar p/ o lado = modo scrub -->
+        <button class="play" id="play" aria-label="Tocar">
+          <span class="icon" id="playIcon"></span>
+          <div class="scrubber" id="scrubber">
+            <div class="wave dim" id="waveDim"></div>
+            <div class="lens"><div class="needle"></div><div class="wave big" id="waveBig"></div></div>
+          </div>
+        </button>
+        <button class="skip" id="next" aria-label="Avançar">
+          <svg class="lu solid" viewBox="0 0 24 24"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" x2="19" y1="5" y2="19"/></svg>
+        </button>
+        <div class="scrub-time" id="scrubTime">0:00</div>
+      </div>
+    </div>
+
+    <!-- Letra sincronizada: aparece no lugar do nome, artista, fila e botões -->
+    <div class="lyr" id="lyr">
+      <div class="lines" id="lines"></div>
+      <!-- seleção de trechos para compartilhar (até 10 linhas) -->
+      <div class="selbar">
+        <button class="link" id="selCancel">Cancelar</button>
+        <span class="count" id="selCount">0/10</span>
+        <button class="go" id="selGo" disabled>Gerar imagem</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Imagem da letra compartilhada -->
+  <div class="sheet" id="sheet">
+    <button class="close" id="sheetClose" aria-label="Fechar"><svg class="lu" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+    <img id="cardImg" alt="Imagem da letra">
+    <div class="styles" id="cardStyles">
+      <button data-style="grad" class="on"><span class="sw grad"></span>Gradiente</button>
+      <button data-style="dark"><span class="sw dark"></span>Escuro</button>
+      <button data-style="light"><span class="sw light"></span>Claro</button>
+    </div>
+    <div class="row">
+      <button id="saveCard">Salvar imagem</button>
+      <button id="sendCard" class="primary">Compartilhar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// marca se a página entrou com a transição animada (para conferir no protótipo)
+addEventListener("pagereveal", e => {
+  window.__enteredWithTransition = !!e.viewTransition;
+  e.viewTransition?.types.add("open");                 // o player está entrando: sobe
+});
+// ---- Dados de exemplo (faixas e letras fictícias) ----
+// c = cores predominantes da capa (no app virão da extração de cor da imagem real)
+const tracks = [
+  { title: "Luz da Cidade", artist: "Banda Exemplo", dur: 214, c: ["#7c3aed", "#ec4899", "#f59e0b"],
+    lrc: [[0,"♪"],[8,"Acendo a rua com a luz do meu olhar"],[16,"Cada esquina guarda um verso pra contar"],[25,"O vento leva o que eu não sei dizer"],[33,"E a cidade inteira dança pra você"],[42,"♪"],[50,"Se a noite é longa, eu fico até o fim"],[58,"Toda canção começa e termina em mim"],[67,"Luz da cidade, me leva daqui"],[75,"Luz da cidade, eu sempre volto aqui"]] },
+  { title: "Maré Alta", artist: "Coletivo Demo", dur: 187, c: ["#06b6d4", "#22c55e", "#a3e635"],
+    lrc: [[0,"♪"],[6,"A maré subiu e eu nem vi"],[13,"Fiquei olhando o céu de abril"],[21,"Tudo que eu quero é ficar aqui"],[29,"Na beira do mar, longe do frio"]] },
+];
+// Catálogo fictício extra (para playlist, lista aleatória e sugestões)
+[["Faixa Sem Letra","Artista Teste"],["Neon Azul","Os Placeholders"],["Poeira de Estrada","Duo Fictício"],
+ ["Noite Lenta","Lo-Fi Amostra"],["Verde Musgo","Grupo Modelo"],["Último Trem","Banda Exemplo"],
+ ["Sal e Areia","Coletivo Demo"],["Céu de Vidro","Trio Protótipo"],["Fim de Tarde","Lo-Fi Amostra"],
+ ["Chuva Fina","Duo Fictício"],["Rádio Velho","Os Placeholders"],["Asfalto Quente","MC Mockup"],
+ ["Lua Cheia","Grupo Modelo"],["Vento Norte","Trio Protótipo"],["Café Frio","Lo-Fi Amostra"],
+ ["Ponte Aérea","MC Mockup"],["Girassol","Coletivo Demo"],["Garoa","Banda Exemplo"],
+ ["Mar Aberto","Duo Fictício"],["Eco","Os Placeholders"],["Outono","Artista Teste"],["Faísca","MC Mockup"]]
+ .forEach(([title, artist], i) => {
+   const h = (i * 47 + 20) % 360;
+   tracks.push({ title, artist, dur: 160 + (i * 37) % 110, lrc: null,
+     c: [`hsl(${h} 70% 42%)`, `hsl(${(h + 40) % 360} 75% 52%)`, `hsl(${(h + 80) % 360} 85% 60%)`] });
+ });
+const PLAYLIST = { name: "Minha playlist", tracks: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9] };
+
+// Nome do artista → @ estilo Instagram: minúsculo, sem acento, espaço vira "_"
+function toHandle(name) {
+  return "@" + name.normalize("NFD").replace(/[̀-ͯ]/g, "")
+    .toLowerCase().trim().replace(/\s+/g, "_").replace(/[^a-z0-9._]/g, "");
+}
+
+// ---- Estado ----
+// context: "playlist" = a pessoa deu play numa playlist
+//          "radio"    = pesquisou/tocou uma música solta → lista aleatória
+// base = a lista principal (playlist ou aleatória) e a posição nela
+// sugg = sugestões, mostradas no lugar da lista enquanto "repetir faixa" estiver ligado
+let context = "playlist";
+let base = { order: [...PLAYLIST.tracks], cur: 0 };
+let sugg = [];
+let nowT = base.order[0];                 // faixa tocando agora (índice em tracks)
+let pos = 0, playing = false, shuffle = false;
+let repeat = "off"; // off → all → one
+let lastTick = 0, gradAngle = 0;
+
+const $ = id => document.getElementById(id);
+const fmt = s => `${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,"0")}`;
+const track = () => tracks[nowT];
+// "repetir faixa" mostra as sugeridas; enquanto elas ainda não chegaram, mostra a fila normal (nunca fica vazio)
+const queueMode = () => repeat === "one" && sugg.length ? "sugg" : "base";
+const shownList = () => queueMode() === "sugg" ? sugg : base.order;
+function shuffled(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+  return a;
+}
+// mocks do motor de recomendação (no app: seção 5 do design)
+const randomTracks = (n, exclude) => shuffled(tracks.map((_, i) => i).filter(i => !exclude.includes(i))).slice(0, n);
+const suggestionsFor = ti => randomTracks(10, [ti]);
+
+// ---- Anel de progresso ----
+const ringPath = $("ringPath");
+const SW = 6, RADIUS = 10;             // espessura da barra e raio da borda da capa
+const FADE_PX = 34;                    // comprimento do esfumaçado nas pontas
+let RING_LEN = 0, ringPts = [];
+// Monta o contorno em pixels, encostado do lado de fora da borda da capa
+function layoutRing() {
+  const c = $("cover"), w = c.offsetWidth, h = c.offsetHeight, o = SW / 2, r = RADIUS + o, pad = 20;
+  const svg = $("ringSvg");
+  Object.assign(svg.style, { left: -(o + pad) + "px", top: -(o + pad) + "px",
+    width: w + 2 * (o + pad) + "px", height: h + 2 * (o + pad) + "px" });
+  const vb = [-o - pad, -o - pad, w + 2 * (o + pad), h + 2 * (o + pad)];
+  svg.setAttribute("viewBox", vb.join(" "));
+  const L = -o, T = -o, R = w + o, B = h + o;
+  const d = `M${w/2} ${T} H${R - r} A${r} ${r} 0 0 1 ${R} ${T + r} V${B - r} A${r} ${r} 0 0 1 ${R - r} ${B}`
+          + ` H${L + r} A${r} ${r} 0 0 1 ${L} ${B - r} V${T + r} A${r} ${r} 0 0 1 ${L + r} ${T} Z`;
+  ["ringPath", "ringFill", "ringHit"].forEach(id => $(id).setAttribute("d", d));
+  ["x", "y", "width", "height"].forEach((k, i) => { $("maskBg").setAttribute(k, vb[i]); $("ringMask").setAttribute(k, vb[i]); });
+  $("fadeStart").setAttribute("cx", w / 2); $("fadeStart").setAttribute("cy", T);
+  RING_LEN = ringPath.getTotalLength();
+  ringPts = null;
+}
+// Barra + pontas esfumaçadas (máscara radial no início e na ponta que avança)
+function drawRingFill(P) {
+  P = Math.max(0, P);
+  $("ringFill").setAttribute("stroke-dasharray", `${P} 2000`);
+  const r = Math.max(0, Math.min(FADE_PX, P / 1000 * RING_LEN / 2));   // barra curta → esfumaçado menor
+  const head = ringPath.getPointAtLength(P / 1000 * RING_LEN);
+  $("fadeHead").setAttribute("cx", head.x); $("fadeHead").setAttribute("cy", head.y);
+  $("fadeHead").setAttribute("r", r); $("fadeStart").setAttribute("r", r);
+}
+
+// ---- Movimento: pequenas animações de troca (ícone, faixa) ----
+const EASE = "cubic-bezier(.2,.85,.25,1)";
+const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+function swapIn(el, from, ms = 320) {
+  if (reduceMotion || !el.animate) return;
+  el.animate([from, { opacity: 1, transform: "none" }], { duration: ms, easing: EASE });
+}
+
+// ---- Faixa atual ----
+let firstLoad = true;
+function loadCurrent() {
+  pos = 0;
+  const t = track(), root = document.documentElement.style;
+  t.c.forEach((col, k) => root.setProperty(`--c${k+1}`, col));
+  $("cover").textContent = t.title[0];
+  $("title").textContent = t.title;
+  $("artist").textContent = toHandle(t.artist);
+  // troca de música: capa "assenta" e nome/@ entram deslizando (na 1ª carga quem anima é a transição entre telas)
+  if (!firstLoad) {
+    swapIn($("cover"), { opacity: .35, transform: "scale(.94)" }, 420);
+    swapIn($("title"), { opacity: 0, transform: "translateX(14px)" });
+    swapIn($("artist"), { opacity: 0, transform: "translateX(14px)" }, 380);
+  }
+  firstLoad = false;
+  $("dur").textContent = fmt(t.dur);
+  buildLyrics(); buildWave(); markQueue(); centerQueue(); render();
+  if (typeof renderDl === "function") renderDl();
+}
+
+function render() {
+  const t = track(), f = Math.min(pos / t.dur, 1);
+  drawRingFill(f * 1000);
+  const p = ringPath.getPointAtLength(f * RING_LEN);
+  $("knob").setAttribute("cx", p.x); $("knob").setAttribute("cy", p.y);
+  $("cur").textContent = fmt(pos);
+  renderPlayIcon();
+  if (scrubbing) { moveWave(); $("scrubTime").textContent = fmt(pos); }
+  $("phone").classList.toggle("paused", !playing);
+  syncLyrics();
+}
+
+function setPlaying(v) { playing = v; lastTick = performance.now(); render(); }
+
+// Toca a posição i da lista principal (sem reconstruir a fila: só move o "cursor")
+function playBase(i) { base.cur = i; nowT = base.order[i]; loadCurrent(); }
+
+// Toca uma sugestão: ela entra na lista principal logo depois da atual
+function playSuggestion(ti) {
+  const existing = base.order.indexOf(ti);
+  if (existing !== -1) { base.order.splice(existing, 1); if (existing < base.cur) base.cur--; }
+  base.order.splice(base.cur + 1, 0, ti);
+  base.cur++; nowT = ti;
+  sugg = suggestionsFor(ti);
+  refreshQueue(true);
+  loadCurrent();
+}
+
+function next(auto = false) {
+  if (repeat === "one") {
+    if (auto) { pos = 0; sugg = suggestionsFor(nowT); refreshQueue(true); return render(); }  // repete e renova as sugeridas
+    return playSuggestion(sugg[0]);
+  }
+  if (base.cur + 1 < base.order.length) return playBase(base.cur + 1);
+  if (context === "radio") {                 // lista aleatória nunca acaba: renova e continua
+    base = { order: [nowT, ...randomTracks(12, [nowT])], cur: 0 };
+    refreshQueue(true);
+    return playBase(1);
+  }
+  if (repeat === "all" || !auto) return playBase(0);
+  setPlaying(false); pos = 0; render();
+}
+
+function prev() {
+  if (pos > 3 || repeat === "one") { pos = 0; return render(); }
+  playBase(base.cur > 0 ? base.cur - 1 : (repeat === "all" ? base.order.length - 1 : 0));
+}
+
+// ---- Fila (carrossel) ----
+const queue = $("queue");
+function buildQueue() {
+  queue.innerHTML = shownList().map((ti, i) => {
+    const t = tracks[ti];
+    return `<div class="qi" data-t="${ti}" style="--i:${i};background:linear-gradient(135deg,${t.c[0]},${t.c[1]} 60%,${t.c[2]})">
+      <div class="ini">${t.title[0]}</div>
+      <span class="eq"><i></i><i></i><i></i></span>
+      <div class="meta"><div class="qt">${t.title}</div><div class="qa">${toHandle(t.artist)}</div></div></div>`;
+  }).join("");
+  markQueue();
+}
+function markQueue() {
+  const isBase = queueMode() === "base";
+  [...queue.children].forEach((el, i) => {
+    el.classList.toggle("now", isBase ? i === base.cur : +el.dataset.t === nowT);
+    el.classList.toggle("played", isBase && i < base.cur);
+  });
+}
+function centerQueue(smooth = true) {
+  if (qg.mode) return;
+  if (queueMode() === "sugg") return queue.scrollTo({ left: 0, behavior: smooth ? "smooth" : "auto" });
+  const el = queue.children[base.cur]; if (!el) return;
+  queue.scrollTo({ left: el.offsetLeft - queue.clientWidth / 2 + el.offsetWidth / 2, behavior: smooth ? "smooth" : "auto" });
+}
+// Reconstrói a fila; com animação = "giro" rápido: os blocos saem pela esquerda e os novos entram pela direita
+let spinT = 0;
+function refreshQueue(animated) {
+  clearTimeout(spinT);
+  if (!animated) { buildQueue(); return centerQueue(false); }
+  queue.classList.remove("spin-in");
+  queue.classList.add("spin-out");
+  spinT = setTimeout(() => {
+    queue.classList.remove("spin-out");
+    buildQueue(); centerQueue(false);
+    queue.classList.add("spin-in");
+    spinT = setTimeout(() => queue.classList.remove("spin-in"), 900);
+  }, 180);
+}
+
+// Gestos da fila: toque, rolagem com inércia e reordenar segurando o bloco
+const qg = { mode: null, x: 0, y: 0, sl: 0, item: null, holdT: 0, vx: 0, lastX: 0, lastT: 0, grab: 0, raf: 0 };
+const contentX = clientX => clientX - queue.getBoundingClientRect().left + queue.scrollLeft;
+
+queue.addEventListener("pointerdown", e => {
+  cancelAnimationFrame(qg.raf);
+  try { queue.setPointerCapture(e.pointerId); } catch {}
+  const item = e.target.closest(".qi");
+  Object.assign(qg, { mode: "pending", x: e.clientX, y: e.clientY, sl: queue.scrollLeft, item,
+                      vx: 0, lastX: e.clientX, lastT: performance.now() });
+  if (item) qg.holdT = setTimeout(() => startDrag(e.clientX), 350);
+});
+queue.addEventListener("pointermove", e => {
+  if (!qg.mode) return;
+  const dx = e.clientX - qg.x;
+  if (qg.mode === "pending" && Math.hypot(dx, e.clientY - qg.y) > 8) { clearTimeout(qg.holdT); qg.mode = "scroll"; }
+  if (qg.mode === "scroll") {
+    queue.scrollLeft = qg.sl - dx;
+    const now = performance.now(), dt = now - qg.lastT;
+    if (dt > 0) qg.vx = .8 * ((e.clientX - qg.lastX) / dt) + .2 * qg.vx;
+    qg.lastX = e.clientX; qg.lastT = now;
+  } else if (qg.mode === "drag") {
+    qg.lastX = e.clientX; moveDrag();
+  }
+});
+function endQueueGesture(tap) {
+  clearTimeout(qg.holdT);
+  const mode = qg.mode; qg.mode = null;
+  if (mode === "pending" && tap && qg.item) {
+    const i = [...queue.children].indexOf(qg.item), ti = +qg.item.dataset.t;
+    if (queueMode() === "sugg") { if (ti !== nowT) playSuggestion(ti); }
+    else if (i !== base.cur) playBase(i);
+    setPlaying(true);
+  } else if (mode === "scroll") {
+    momentum(qg.vx);
+  } else if (mode === "drag") {
+    endDrag();
+  }
+}
+queue.addEventListener("pointerup", () => endQueueGesture(true));
+queue.addEventListener("pointercancel", () => endQueueGesture(false));
+
+function momentum(v) {
+  let last = performance.now();
+  const step = now => {
+    const dt = now - last; last = now;
+    queue.scrollLeft -= v * dt;
+    v *= Math.pow(.94, dt / 16);
+    if (Math.abs(v) > .02) qg.raf = requestAnimationFrame(step);
+  };
+  qg.raf = requestAnimationFrame(step);
+}
+
+function startDrag(clientX) {
+  if (qg.mode !== "pending") return;
+  qg.mode = "drag";
+  const el = qg.item;
+  el.classList.add("lift");
+  qg.grab = contentX(clientX) - (el.offsetLeft + el.offsetWidth / 2);
+  qg.lastX = clientX;
+  if (navigator.vibrate) navigator.vibrate(15);
+  edgeScroll();
+}
+function moveDrag() {
+  const el = qg.item, want = contentX(qg.lastX) - qg.grab;   // centro desejado do bloco arrastado
+  const others = [...queue.children].filter(c => c !== el);
+  let idx = others.findIndex(c => c.offsetLeft + c.offsetWidth / 2 > want);
+  if (idx === -1) idx = others.length;
+  const curIdx = [...queue.children].indexOf(el);
+  if (idx !== curIdx) {
+    // FLIP: guarda posições, move no DOM e anima os vizinhos até o novo lugar
+    const before = new Map(others.map(c => [c, c.offsetLeft]));
+    queue.insertBefore(el, others[idx] || null);
+    others.forEach(c => {
+      const d = before.get(c) - c.offsetLeft; if (!d) return;
+      c.style.transition = "none"; c.style.transform = `translateX(${d}px)`;
+      requestAnimationFrame(() => { c.style.transition = "transform .2s ease"; c.style.transform = ""; });
+    });
+  }
+  el.style.transition = "none";
+  el.style.transform = `translateX(${want - (el.offsetLeft + el.offsetWidth / 2)}px) scale(1.08)`;
+}
+// Segurando perto da borda, a fila rola sozinha
+function edgeScroll() {
+  if (qg.mode !== "drag") return;
+  const r = queue.getBoundingClientRect(), edge = 48;
+  let v = 0;
+  if (qg.lastX < r.left + edge) v = -(r.left + edge - qg.lastX) / 4;
+  else if (qg.lastX > r.right - edge) v = (qg.lastX - (r.right - edge)) / 4;
+  if (v) { queue.scrollLeft += v; moveDrag(); }
+  requestAnimationFrame(edgeScroll);
+}
+function endDrag() {
+  const el = qg.item;
+  el.classList.remove("lift");
+  el.style.transition = "transform .2s ease"; el.style.transform = "";
+  const newOrder = [...queue.children].map(c => +c.dataset.t);
+  if (queueMode() === "sugg") sugg = newOrder;
+  else { base.order = newOrder; base.cur = newOrder.indexOf(nowT); }   // a faixa atual continua tocando
+  markQueue();
+}
+
+// Protótipo: simula a origem da reprodução
+function setContext(c) {
+  context = c;
+  if (c === "radio") base = { order: [nowT, ...randomTracks(12, [nowT])], cur: 0 };
+  else {
+    const order = shuffle ? [nowT, ...shuffled(PLAYLIST.tracks.filter(i => i !== nowT))] : [...PLAYLIST.tracks];
+    if (!order.includes(nowT)) order.unshift(nowT);
+    base = { order, cur: order.indexOf(nowT) };
+  }
+  if (queueMode() === "base") refreshQueue(true);
+}
+// tecla C: alterna a simulação
+document.addEventListener("keydown", e => {
+  if (e.code === "KeyC") setContext(context === "playlist" ? "radio" : "playlist");
+});
+
+// ---- Letras ----
+const lyricsOffset = () => SounosSettings.get().lyricsOffset;
+addEventListener("sounos:settings", () => { lastLine = -1; syncLyrics(); });
+function buildLyrics() {
+  const box = $("lines"), t = track();
+  box.innerHTML = ""; lastLine = -1; box.scrollTop = 0;
+  exitSelect();
+  $("shareBtn").classList.toggle("hidden", !t.lrc);
+  if (!t.lrc) { box.innerHTML = '<div class="empty">Letra indisponível para esta faixa</div>'; return; }
+  t.lrc.forEach(([s, txt], i) => {
+    const d = document.createElement("div");
+    d.className = "line" + (isNote(txt) ? " note" : ""); d.textContent = txt;
+    d.onclick = () => selecting ? toggleLine(i) : (pos = s, render());
+    box.appendChild(d);
+  });
+}
+let lastLine = -1;
+function syncLyrics() {
+  const t = track(); if (!t.lrc) return;
+  let ln = -1; t.lrc.forEach(([s], i) => { if (pos + lyricsOffset() >= s) ln = i; });   // + ajuste de sincronia das configurações
+  const els = $("lines").children;
+  [...els].forEach((e, i) => { e.classList.toggle("now", i === ln); e.classList.toggle("past", i < ln); });
+  if (ln !== lastLine && ln >= 0 && lyricsMode && !selecting) {
+    const box = $("lines");
+    box.scrollTo({ top: els[ln].offsetTop - box.clientHeight * .35, behavior: "smooth" });
+  }
+  lastLine = ln;
+}
+
+// ---- Loop: reprodução simulada + gradiente girando devagar no anel ----
+function tick(now) {
+  const dt = (now - lastTick) / 1000;
+  if (playing) {
+    pos += dt;
+    gradAngle = (gradAngle + dt * 6) % 360;    // giro lento (6°/s) só enquanto toca
+    $("ringGrad").setAttribute("gradientTransform", `rotate(${gradAngle} .5 .5)`);
+    if (pos >= track().dur) { pos = track().dur; next(true); }
+    render();
+  }
+  lastTick = now;
+  requestAnimationFrame(tick);
+}
+
+// ---- Eventos ----
+$("next").onclick = () => next(false);
+$("prev").onclick = prev;
+
+// ---- Botão multifunção ----
+// Ícones (mesmos traços do lucide)
+const LU = {
+  play:    '<svg class="lu solid" viewBox="0 0 24 24" style="margin-left:4px"><polygon points="6 3 20 12 6 21 6 3"/></svg>',
+  pause:   '<svg class="lu solid" viewBox="0 0 24 24"><rect x="14" y="4" width="4" height="16" rx="1"/><rect x="6" y="4" width="4" height="16" rx="1"/></svg>',
+  shuffle: '<svg class="lu" viewBox="0 0 24 24"><path d="M2 18h1.4c1.3 0 2.5-.6 3.3-1.7l6.1-8.6c.7-1.1 2-1.7 3.3-1.7H22"/><path d="m18 2 4 4-4 4"/><path d="M2 6h1.9c1.5 0 2.9.9 3.6 2.2"/><path d="M22 18h-5.9c-1.3 0-2.6-.7-3.3-1.8l-.5-.8"/><path d="m18 14 4 4-4 4"/></svg>',
+  repeat:  '<svg class="lu" viewBox="0 0 24 24"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>',
+  repeat1: '<svg class="lu" viewBox="0 0 24 24"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/><path d="M11 10h1v4"/></svg>',
+};
+let lastIconKey = "", lastModes = null, flash = null;
+// O botão mostra sempre play/pausa. Ao trocar um modo (aleatório / repetir), o ícone do modo aparece
+// por um instante (apagado = desligou) e volta para play/pausa — a música não para.
+function renderPlayIcon() {
+  const modes = shuffle + "|" + repeat;
+  if (lastModes !== null && modes !== lastModes) {
+    const [s0, r0] = lastModes.split("|");
+    const html = String(shuffle) !== s0 ? LU.shuffle : (repeat === "one" ? LU.repeat1 : LU.repeat);
+    const off = String(shuffle) !== s0 ? !shuffle : repeat === "off";
+    flash = { key: "m" + modes, html: `<span style="display:flex;opacity:${off ? .35 : 1}">${html}</span>`, until: performance.now() + 850 };
+  }
+  lastModes = modes;
+  let key, html, combo = false;
+  if (flash && performance.now() < flash.until) { key = flash.key; html = flash.html; }
+  else if (playing) { flash = null; key = "pause"; html = LU.pause; }
+  else              { flash = null; key = "play"; html = LU.play; }
+  if (key === lastIconKey) return;
+  lastIconKey = key;
+  const el = $("playIcon"), first = !el.innerHTML; el.innerHTML = html; el.classList.toggle("combo", combo);
+  if (!first) swapIn(el, { opacity: 0, transform: "scale(.5) rotate(-12deg)" }, 260);   // ícone troca com giro curto
+}
+
+// Forma de onda (mock: no app virá da amplitude real do áudio)
+const BARS = 151, BAR_STEP = 12;   // 2px de barra + 10px de espaço
+function buildWave() {
+  const hs = Array.from({ length: BARS }, () => Math.random() * 25 + 5);
+  $("waveDim").innerHTML = hs.map(h => `<i style="height:${h}px"></i>`).join("");
+  $("waveBig").innerHTML = hs.map(h => `<i style="height:${h}px"></i>`).join("");
+}
+function moveWave() {
+  const off = (pos / track().dur) * (BARS - 1) * BAR_STEP;
+  $("waveDim").style.transform = `translateX(${-off}px)`;
+  const big = $("waveBig");
+  big.style.transformOrigin = `${off}px 50%`;
+  big.style.transform = `translateX(${-off}px) scale(1.8)`;
+}
+
+let scrubbing = false;
+function setScrubbing(v) {
+  scrubbing = v;
+  $("play").classList.toggle("scrub", v);
+  $("controls").classList.toggle("scrubbing", v);
+  $("scrubTime").classList.toggle("show", v);
+  render();
+}
+// Repetir faixa liga → a fila vira "sugeridas"; desliga → volta a lista principal
+function cycleRepeat() {
+  const before = queueMode();
+  repeat = { off: "all", all: "one", one: "off" }[repeat];
+  if (queueMode() === "sugg" && before !== "sugg") sugg = suggestionsFor(nowT);
+  if (queueMode() !== before) refreshQueue(true);
+  render();
+}
+// Aleatório: toda vez que liga, reembaralha o que ainda vai tocar; desligar na playlist volta à ordem original
+function toggleShuffle() {
+  shuffle = !shuffle;
+  if (shuffle) base.order = [...base.order.slice(0, base.cur + 1), ...shuffled(base.order.slice(base.cur + 1))];
+  else if (context === "playlist") base.order = PLAYLIST.tracks.includes(nowT) ? [...PLAYLIST.tracks] : [nowT, ...PLAYLIST.tracks];
+  base.cur = base.order.indexOf(nowT);
+  if (queueMode() === "base") refreshQueue(true);
+  render();
+}
+// arrastar 1px = 0,1% da faixa
+function scrubBy(dx) { pos = Math.max(0, Math.min(track().dur, pos + dx * 0.001 * track().dur)); render(); }
+
+const g = { x: 0, y: 0, holding: false, moved: false, startedScrub: false, dir: null, shuffled: false, holdT: 0, idleT: 0 };
+function resetIdle() { clearTimeout(g.idleT); g.idleT = setTimeout(() => setScrubbing(false), 10000); }
+
+const playBtn = $("play");
+playBtn.addEventListener("pointerdown", e => {
+  try { playBtn.setPointerCapture(e.pointerId); } catch {}
+  Object.assign(g, { x: e.clientX, y: e.clientY, holding: false, moved: false, startedScrub: false, dir: null, shuffled: false });
+  if (scrubbing) clearTimeout(g.idleT);
+  g.holdT = setTimeout(() => g.holding = true, 200);
+});
+playBtn.addEventListener("pointermove", e => {
+  if (!playBtn.hasPointerCapture(e.pointerId)) return;
+  const dx = e.clientX - g.x, dy = e.clientY - g.y;
+  if (!g.dir && Math.hypot(dx, dy) > 10) { g.moved = true; g.dir = Math.abs(dx) > Math.abs(dy) ? "h" : "v"; }
+  // deslizar para cima/baixo = aleatório (segurando ou não)
+  if (g.dir === "v" && !g.shuffled && Math.abs(dy) > 32) { toggleShuffle(); g.shuffled = true; clearTimeout(g.holdT); return; }
+  if (g.holding) {
+    if ((g.dir === "h" || !g.dir) && Math.abs(dx) > 5) {
+      if (!scrubbing) { setScrubbing(true); g.startedScrub = true; }
+      scrubBy(dx); g.x = e.clientX; resetIdle();
+    }
+  } else if (scrubbing) {
+    scrubBy(dx); g.x = e.clientX; resetIdle();
+  }
+});
+playBtn.addEventListener("pointerup", () => {
+  clearTimeout(g.holdT);
+  if (scrubbing) {
+    if (!g.startedScrub && !g.moved) setScrubbing(false); else resetIdle();
+  } else if (g.moved) {
+    // foi gesto (deslizar), não toque: nunca pausa
+  } else if (g.holding) {
+    cycleRepeat();
+  } else {
+    setPlaying(!playing);
+  }
+  g.holding = false;
+});
+playBtn.addEventListener("pointercancel", () => { clearTimeout(g.holdT); g.holding = false; });
+
+// ---- Baixar: um toque e pronto (sem janela, sem aviso). No app: baixa áudio + capa + metadados + letra
+// para o armazenamento privado; a partir daí a música toca offline. Aqui o progresso é simulado. ----
+const dl = { timer: 0, track: -1, p: 0 };
+function renderDl() {
+  const b = $("dlBtn"), done = !!SounosData.getDownloads()[nowT], loading = dl.track === nowT && !done;
+  b.classList.toggle("done", done);
+  b.classList.toggle("loading", loading);
+  b.querySelector(".dl-prog").style.strokeDasharray = `${loading ? dl.p : 0} 100`;
+  b.setAttribute("aria-label", done ? "Baixada" : loading ? "Baixando" : "Baixar música");
+}
+$("dlBtn").onclick = () => {
+  if (SounosData.getDownloads()[nowT] || dl.track === nowT) return;
+  clearInterval(dl.timer);
+  Object.assign(dl, { track: nowT, p: 0 });
+  dl.timer = setInterval(() => {
+    dl.p = Math.min(100, dl.p + 6 + Math.random() * 10);
+    if (dl.p >= 100) { clearInterval(dl.timer); SounosData.markDownloaded(dl.track); dl.track = -1; }
+    renderDl();
+  }, 180);
+  renderDl();
+};
+
+// "+": janela de adicionar à playlist / criar playlist
+const add = SounosAdd.attach($("phone"));
+$("addBtn").onclick = () => add.open(nowT);
+
+// Botão "A": esconde nome/artista/fila/botões e mostra a letra no lugar
+let lyricsMode = false;
+// Tela cheia (ver CSS ".immersive")
+let immersiveByLyrics = false;
+function setImmersive(on) {
+  $("phone").classList.toggle("immersive", on);
+  fitCover();
+}
+const isImmersive = () => $("phone").classList.contains("immersive");
+$("lyricsBtn").onclick = () => {
+  lyricsMode = !lyricsMode;
+  // abrir a letra também entra em tela cheia; fechar sai (se foi a letra que entrou)
+  if (lyricsMode && !isImmersive()) { immersiveByLyrics = true; setImmersive(true); }
+  else if (!lyricsMode && immersiveByLyrics) { immersiveByLyrics = false; setImmersive(false); }
+  $("phone").classList.toggle("lyr-mode", lyricsMode);
+  $("lyricsBtn").classList.toggle("on", lyricsMode);
+  if (lyricsMode) { lastLine = -1; syncLyrics(); } else exitSelect();
+};
+
+// ---- Compartilhar letra: escolher até 10 linhas → imagem com faixa, @artista e trechos ----
+const MAX_LINES = 10;
+let selecting = false, selected = new Set();
+const isNote = txt => !txt.replace(/[♪♫\s]/g, "");
+function enterSelect() { selecting = true; selected.clear(); updateSel(); $("lyr").classList.add("selecting"); $("shareBtn").classList.add("on"); }
+function exitSelect() { selecting = false; selected.clear(); $("lyr").classList.remove("selecting"); $("shareBtn").classList.remove("on"); updateSel(); }
+function toggleLine(i) {
+  if (selected.has(i)) selected.delete(i);
+  else if (selected.size < MAX_LINES) selected.add(i);
+  else { const c = $("selCount"); c.classList.remove("nudge"); void c.offsetWidth; c.classList.add("nudge"); return; }
+  updateSel();
+}
+function updateSel() {
+  [...$("lines").children].forEach((el, i) => el.classList.toggle("sel", selected.has(i)));
+  $("selCount").textContent = `${selected.size}/${MAX_LINES}`;
+  $("selCount").classList.toggle("full", selected.size === MAX_LINES);
+  $("selGo").disabled = selected.size === 0;
+}
+$("shareBtn").onclick = () => selecting ? exitSelect() : enterSelect();
+$("selCancel").onclick = exitSelect;
+
+// Desenha o bloco de imagem (1080×1350) no canvas, do zero
+function wrapLines(ctx, text, maxW) {
+  const words = text.split(" "), out = []; let line = "";
+  words.forEach(w => {
+    const test = line ? line + " " + w : w;
+    if (ctx.measureText(test).width > maxW && line) { out.push(line); line = w; } else line = test;
+  });
+  if (line) out.push(line);
+  return out;
+}
+// Estilos do bloco: fundo, cor do texto e da capinha
+const CARD_STYLES = {
+  grad:  t => ({ bg: t.c, shade: .38, text: "#fff", sub: "rgba(255,255,255,.75)", thumb: t.c, ini: "rgba(255,255,255,.85)" }),
+  dark:  () => ({ bg: ["#3f3f45", "#323237", "#26262a"], shade: 0, text: "#fff", sub: "rgba(255,255,255,.7)",
+                  thumb: ["#8a8a90", "#6a6a70", "#55555a"], ini: "rgba(255,255,255,.9)" }),
+  light: () => ({ bg: ["#fafafa", "#f1f1f3", "#e7e7ea"], shade: 0, text: "#111113", sub: "rgba(17,17,19,.6)",
+                  thumb: ["#d4d4d8", "#c4c4c9", "#b4b4ba"], ini: "rgba(255,255,255,.95)" }),
+};
+// Desenha o bloco no canvas. Largura fixa (1080); a ALTURA acompanha o tamanho dos trechos escolhidos.
+function makeCard(style = "grad") {
+  const t = track(), st = CARD_STYLES[style](t), W = 1080, P = 90, S = 132, MAX_H = 1920;
+  const font = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+  const meas = document.createElement("canvas").getContext("2d");
+  // monta as linhas (trechos separados ganham um respiro); só diminui a fonte se passar da altura máxima
+  const idx = [...selected].sort((a, b) => a - b), maxW = W - 2 * P, top = P + S + 80;
+  let size = 68, layout, textH;
+  for (; size >= 34; size -= 2) {
+    meas.font = `800 ${size}px ${font}`;
+    const lh = size * 1.22;
+    layout = []; let y = 0;
+    idx.forEach((li, k) => {
+      if (k && li !== idx[k - 1] + 1) { layout.push(["...", y, true]); y += lh; }   // trechos não sequenciais
+      wrapLines(meas, t.lrc[li][1], maxW).forEach(l => { layout.push([l, y]); y += lh; });
+    });
+    textH = y;
+    if (top + textH + P <= MAX_H) break;
+  }
+  const H = Math.round(top + textH + P);
+
+  const cv = document.createElement("canvas"); cv.width = W; cv.height = H;
+  const ctx = cv.getContext("2d");
+  const grad = (x0, y0, x1, y1, c) => { const g = ctx.createLinearGradient(x0, y0, x1, y1);
+    g.addColorStop(0, c[0]); g.addColorStop(.6, c[1]); g.addColorStop(1, c[2]); return g; };
+  ctx.fillStyle = grad(0, 0, W, H, st.bg); ctx.fillRect(0, 0, W, H);
+  if (st.shade) { ctx.fillStyle = `rgba(0,0,0,${st.shade})`; ctx.fillRect(0, 0, W, H); }
+  // cabeçalho: capinha + nome da faixa + @artista
+  ctx.beginPath(); ctx.roundRect(P, P, S, S, 14); ctx.fillStyle = grad(P, P, P + S, P + S, st.thumb); ctx.fill();
+  ctx.fillStyle = st.ini; ctx.font = `800 64px ${font}`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText(t.title[0], P + S / 2, P + S / 2 + 2);
+  ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+  const tx = P + S + 32, tw = W - tx - P;
+  ctx.fillStyle = st.text; ctx.font = `800 46px ${font}`;
+  ctx.fillText(wrapLines(ctx, t.title, tw)[0], tx, P + 60);
+  ctx.fillStyle = st.sub; ctx.font = `500 34px ${font}`;
+  ctx.fillText(toHandle(t.artist), tx, P + 108);
+  // trechos
+  ctx.font = `800 ${size}px ${font}`;
+  layout.forEach(([l, y, sep]) => { ctx.fillStyle = sep ? st.sub : st.text; ctx.fillText(l, P, top + y + size); });
+  return cv;
+}
+let cardCanvas = null, cardStyle = "grad";
+function renderCard() {
+  cardCanvas = makeCard(cardStyle);
+  $("cardImg").src = cardCanvas.toDataURL("image/png");
+  [...$("cardStyles").children].forEach(b => b.classList.toggle("on", b.dataset.style === cardStyle));
+}
+$("cardStyles").onclick = e => {
+  const b = e.target.closest("button"); if (!b) return;
+  cardStyle = b.dataset.style; renderCard();
+};
+$("selGo").onclick = () => { renderCard(); $("sheet").classList.add("open"); };
+const closeSheet = () => $("sheet").classList.remove("open");
+$("sheetClose").onclick = closeSheet;
+$("sheet").onclick = e => { if (e.target === $("sheet")) closeSheet(); };
+const cardName = () => `${track().title} - letra.png`;
+function saveCard() {
+  const a = document.createElement("a");
+  a.href = cardCanvas.toDataURL("image/png"); a.download = cardName(); a.click();
+}
+$("saveCard").onclick = saveCard;
+// Compartilhar pelo sistema (Android abre a folha de apps); sem suporte → salva a imagem
+$("sendCard").onclick = () => cardCanvas.toBlob(async blob => {
+  const file = new File([blob], cardName(), { type: "image/png" });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try { await navigator.share({ files: [file], title: track().title }); } catch {}
+  } else saveCard();
+});
+
+// Arrastar no anel para avançar/voltar
+const ring = $("ring");
+function seekFrom(e) {
+  const r = $("cover").getBoundingClientRect();
+  const x = e.clientX - r.left, y = e.clientY - r.top;
+  let best = 0, bd = Infinity;
+  if (!ringPts) ringPts = Array.from({ length: 600 }, (_, i) => ringPath.getPointAtLength(i / 600 * RING_LEN));
+  ringPts.forEach((p, i) => { const d = (p.x - x) ** 2 + (p.y - y) ** 2; if (d < bd) { bd = d; best = i; } });
+  pos = best / ringPts.length * track().dur; render();
+}
+$("ringHit").style.pointerEvents = "stroke";
+$("ringHit").addEventListener("pointerdown", e => { ring.setPointerCapture(e.pointerId); ring.classList.add("drag"); seekFrom(e); });
+ring.addEventListener("pointermove", e => { if (ring.classList.contains("drag")) seekFrom(e); });
+ring.addEventListener("pointerup", () => ring.classList.remove("drag"));
+
+document.addEventListener("keydown", e => {
+  if (e.code === "Space") { e.preventDefault(); setPlaying(!playing); }
+  if (e.code === "ArrowRight") next(false);
+  if (e.code === "ArrowLeft") prev();
+});
+
+// Capa = maior quadrado que cabe (largura quase total). A altura que ainda sobrar vai para os blocos da fila.
+const TILE_MIN = 116, TILE_MAX = 260;
+function fitCover() {
+  const ph = $("phone"), cs = getComputedStyle(ph), root = document.documentElement.style;
+  const outer = el => { const st = getComputedStyle(el); return el.offsetHeight + parseFloat(st.marginTop) + parseFloat(st.marginBottom); };
+  const innerH = ph.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+  const maxW = ph.clientWidth - 28;            // deixa 14px de cada lado para a barra de progresso
+  // capa e blocos têm SEMPRE o mesmo tamanho (em tela cheia também): só a posição muda
+  const fixed = 40 + 8 + outer($("times"))
+    + ["info", "controls"].reduce((a, id) => a + outer($(id)), 0)
+    + 24;                                      // fila sem o bloco: margens (4 − 10) + respiro (14 + 16)
+  const cover = Math.max(160, Math.min(maxW, innerH - fixed - TILE_MIN));
+  const tile = Math.max(TILE_MIN, Math.min(TILE_MAX, innerH - fixed - cover));
+  root.setProperty("--cover-size", cover + "px");
+  root.setProperty("--tile", tile + "px");
+}
+fitCover();
+new ResizeObserver(fitCover).observe($("phone"));
+layoutRing();
+new ResizeObserver(() => { layoutRing(); render(); }).observe($("cover"));
+// Vindo da tela inicial: ?t=faixa (música solta → lista aleatória) · ?p=playlist
+const qp = new URLSearchParams(location.search);
+if (!window.Sounos?.native) {
+  if (qp.has("t")) { nowT = +qp.get("t"); setContext("radio"); }
+  buildQueue();
+  loadCurrent();
+  if (qp.has("t") || qp.has("p")) setPlaying(true);
+}
+requestAnimationFrame(t => { lastTick = t; tick(t); });
+</script>
+<script src="search.js"></script>
+<script>
+const search = SounosSearch.attach(document.getElementById("searchBtn"), document.getElementById("phone"));
+const settings = SounosSettings.attach(document.getElementById("gearBtn"), document.getElementById("phone"));
+
+// ---- Voltar para a tela inicial: puxar o player para baixo, "voltar" do celular ou Esc ----
+// (com a transição entre telas, o player encolhe de volta para o mini-player)
+const EMBED = window.parent !== window && !!window.parent.__playerShell;
+function goHome() {
+  if (EMBED) return window.parent.__playerShell.close();
+  if (document.referrer.includes("home.html") && window.history.length > 1) window.history.back();
+  else location.href = "home.html";
+}
+const phoneEl = document.getElementById("phone");
+const pd = { y: 0, on: false, dy: 0 };
+phoneEl.addEventListener("pointerdown", e => {
+  if (search.isOpen() || add.isOpen() || settings.isOpen() || e.target.closest(".queue, .controls, .lyr, .hit, .sheet, .search-ov, .add-ov, .set-ov, button")) return;
+  Object.assign(pd, { y: e.screenY, on: true, dy: 0 });
+});
+window.addEventListener("pointermove", e => {
+  if (!pd.on) return;
+  pd.raw = e.screenY - pd.y;                   // screenY: continua certo enquanto o quadro do player se move
+  pd.dy = Math.max(0, pd.raw);
+  if (pd.dy < 6 || isImmersive()) return;
+  if (EMBED) return window.parent.__playerShell.drag(pd.dy);
+  // o player desce acompanhando o dedo, encolhendo de leve
+  phoneEl.style.transition = "none";
+  phoneEl.style.transform = `translateY(${pd.dy * .9}px) scale(${1 - Math.min(pd.dy, 500) / 5000})`;
+});
+["pointerup", "pointercancel"].forEach(t => window.addEventListener(t, () => {
+  if (!pd.on) return;
+  pd.on = false;
+  if (t === "pointerup" && pd.raw < -40 && !isImmersive()) { immersiveByLyrics = false; setImmersive(true); }
+  else if (t === "pointerup" && pd.raw > 40 && isImmersive()) { immersiveByLyrics = false; setImmersive(false); pd.raw = 0; return; }
+  else if (pd.dy > 140 && t === "pointerup" && !isImmersive()) return goHome();
+  pd.raw = 0;
+  if (EMBED) { if (pd.dy >= 6) window.parent.__playerShell.snap(); return; }
+  phoneEl.style.transition = "transform .4s cubic-bezier(.2,.85,.25,1)";   // não passou do ponto: volta para cima
+  phoneEl.style.transform = "";
+}));
+document.addEventListener("keydown", e => {
+  if (e.key !== "Escape") return;
+  if (add.isOpen()) return add.close();
+  if (settings.isOpen()) return settings.close();
+  if (!search.isOpen()) goHome();
+});
+</script>
+<script src="player-native.js"></script>
+</body>
+</html>

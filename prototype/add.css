@@ -1,0 +1,79 @@
+/* Janela do "+": adicionar a música a uma playlist ou criar uma nova */
+.add-ov { position: absolute; inset: 0; z-index: 60; pointer-events: none; }
+.add-ov.open { pointer-events: auto; }
+.add-ov:not(.open) { visibility: hidden; transition: visibility 0s .5s; }   /* fechada: não é desenhada */
+.add-ov .dim { position: absolute; inset: 0; background: rgba(0,0,0,.55); opacity: 0; transition: opacity .35s ease; }
+.add-ov.open .dim { opacity: 1; }
+
+.add-sheet { position: absolute; left: 0; right: 0; bottom: 0; max-height: 82%; display: flex; flex-direction: column;
+             background: var(--sheet, #1a1a1f); border-radius: 22px 22px 0 0; box-shadow: 0 -10px 40px rgba(0,0,0,.45);
+             transform: translateY(105%); transition: transform .46s cubic-bezier(.2,.9,.25,1); color: var(--text, #f5f5f7);
+             font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+.add-ov.open .add-sheet { transform: none; }
+.add-sheet.dragging { transition: none; }
+
+.add-grab { padding: 10px 0 4px; touch-action: none; cursor: grab; }
+.add-grab i { display: block; width: 38px; height: 4px; border-radius: 2px; background: var(--line-strong, rgba(255,255,255,.25)); margin: 0 auto; }
+.add-head { display: flex; align-items: center; gap: 12px; padding: 8px 20px 14px; touch-action: none; }
+.add-head .cv { width: 52px; height: 52px; border-radius: 8px; flex-shrink: 0; display: grid; place-items: center;
+                font-weight: 800; font-size: 22px; color: rgba(255,255,255,.85); }
+.add-head .k { font-size: 12px; color: var(--text-dim, #a1a1aa); font-weight: 600; }
+.add-head .t { font-size: 17px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.add-head .a { font-size: 13px; color: var(--text-dim, #a1a1aa); }
+.add-head > div:last-child { min-width: 0; }
+
+.add-list { flex: 1; overflow-y: auto; scrollbar-width: none; padding-bottom: 8px; }
+.add-list::-webkit-scrollbar { display: none; }
+.add-row { display: flex; align-items: center; gap: 12px; width: 100%; padding: 8px 20px; background: none; border: 0;
+           color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.add-row:active { background: var(--chip-soft, rgba(255,255,255,.05)); }
+.add-row .cv { width: 52px; height: 52px; border-radius: 8px; flex-shrink: 0; overflow: hidden;
+               display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+.add-row .tx { flex: 1; min-width: 0; }
+.add-row .t { font-size: 15px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.add-row .a { font-size: 12.5px; color: var(--text-dim, #a1a1aa); margin-top: 2px; }
+/* entrada em cascata quando a janela abre */
+.add-ov.open .add-row, .add-ov.open .add-new { animation: addIn .4s cubic-bezier(.2,.9,.25,1) both; animation-delay: calc(.12s + var(--i, 0) * 35ms); }
+@keyframes addIn { from { opacity: 0; transform: translateY(14px); } }
+
+/* círculo de marcação */
+.chk { width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0; border: 2px solid var(--line-strong, rgba(255,255,255,.35));
+       display: grid; place-items: center; transition: background .25s, border-color .25s; }
+.chk svg { width: 15px; height: 15px; fill: none; stroke: var(--bg, #0e0e10); stroke-width: 3.2; stroke-linecap: round; stroke-linejoin: round;
+           stroke-dasharray: 24; stroke-dashoffset: 24; transition: stroke-dashoffset .3s ease .05s; }
+.add-row.on .chk { background: var(--text, #f5f5f7); border-color: var(--text, #f5f5f7); animation: pop .32s cubic-bezier(.3,1.6,.5,1); }
+.add-row.on .chk svg { stroke-dashoffset: 0; }
+@keyframes pop { 50% { transform: scale(1.18); } }
+/* playlist recém-criada entra abrindo espaço */
+.add-row.born { animation: born .45s cubic-bezier(.2,.9,.25,1) both !important; }
+@keyframes born { from { opacity: 0; max-height: 0; padding-top: 0; padding-bottom: 0; } to { max-height: 80px; } }
+
+/* "Nova playlist": a linha se abre num campo de nome */
+.add-new { margin: 0 20px 6px; border-radius: 12px; background: var(--chip-soft, rgba(255,255,255,.06)); overflow: hidden; }
+.add-new .open-btn { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 12px; background: none; border: 0;
+                     color: inherit; font: 700 15px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; cursor: pointer; text-align: left; }
+.add-new .plus { width: 40px; height: 40px; border-radius: 8px; display: grid; place-items: center; background: var(--chip, rgba(255,255,255,.1));
+                 transition: transform .35s cubic-bezier(.2,.9,.25,1); }
+.add-new .plus svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; }
+.add-new.editing .plus { transform: rotate(45deg); }
+.add-new .form { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .35s cubic-bezier(.2,.9,.25,1); }
+.add-new.editing .form { grid-template-rows: 1fr; }
+.add-new .form > div { overflow: hidden; }
+.add-new .fi { display: flex; gap: 8px; padding: 0 12px 12px; }
+.add-new input { flex: 1; min-width: 0; height: 42px; border-radius: 10px; border: 0; outline: 2px solid transparent; padding: 0 12px;
+                 background: var(--field, rgba(0,0,0,.35)); color: var(--text, #f5f5f7); font: 500 15px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+                 transition: outline-color .2s; }
+.add-new input:focus { outline-color: var(--line-strong, rgba(255,255,255,.35)); }
+.add-new .create { height: 42px; padding: 0 16px; border-radius: 10px; border: 0; background: var(--text, #f5f5f7); color: var(--bg, #0e0e10);
+                   font: 700 14px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; cursor: pointer; transition: opacity .2s; }
+.add-new .create:disabled { opacity: .35; cursor: default; }
+
+.add-foot { padding: 10px 20px 18px; }
+.add-foot button { width: 100%; height: 48px; text-align: center; border-radius: 24px; border: 0; background: var(--text, #f5f5f7); color: var(--bg, #0e0e10);
+                   font: 800 15px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; cursor: pointer; transition: transform .12s; }
+.add-foot button:active { transform: scale(.97); }
+
+@media (prefers-reduced-motion: reduce) {
+  .add-sheet, .add-ov .dim { transition-duration: .01s; }
+  .add-ov.open .add-row, .add-ov.open .add-new { animation: none; }
+}

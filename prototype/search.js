@@ -1,0 +1,390 @@
+// Busca do Sonus (protótipo) — compartilhada entre a tela inicial e o player.
+// Uso: SounosSearch.attach(botaoDaLupa, elementoDoCelular)
+//
+// Como o ranking funciona (versão local do motor descrito no DESIGN.md, seção 5):
+//   pontuação = quanto o texto bate (prefixo > contém > com erro de digitação)
+//             + afinidade da pessoa (artistas seguidos, ouvidas recentemente, playlists dela)
+// O "corretor" é o mesmo cálculo: com tolerância a erros, "neom asul" ainda encontra "Neon Azul",
+// e entre vários candidatos parecidos ganha o que tem mais a ver com o gosto da pessoa.
+(() => {
+  // ---------- Catálogo de exemplo (o mesmo das outras telas) ----------
+  const D = window.SounosData;
+  const NATIVE = !!window.Sounos?.native;
+  const { tracks, artists, followed, recentPlays } = D;
+  const loadPlaylists = () => D.getPlaylists().map((p, i) => ({ ...p, i }));
+  let playlists = loadPlaylists();
+
+  const artistAff = {}, trackAff = {};
+  followed.forEach(a => artistAff[a] = (artistAff[a] || 0) + 1);
+  recentPlays.forEach((t, k) => {
+    const w = 1 - k / (recentPlays.length * 1.5);          // mais recente pesa mais
+    trackAff[t] = (trackAff[t] || 0) + w;
+    artistAff[tracks[t].artist] = (artistAff[tracks[t].artist] || 0) + w * .5;
+  });
+  playlists.forEach(p => p.tracks.forEach(t => trackAff[t] = (trackAff[t] || 0) + .2));
+  const maxA = Math.max(...Object.values(artistAff)), maxT = Math.max(...Object.values(trackAff));
+  const affArtist = a => (artistAff[a] || 0) / maxA;
+  const affTrack = t => .6 * (trackAff[t.i] || 0) / maxT + .4 * affArtist(t.artist);
+
+  // ---------- Texto: normalização e comparação tolerante a erros ----------
+  const norm = s => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+  // mesma regra das outras telas: minúsculo, sem acento, espaço vira "_", o resto sai
+  const toHandle = name => "@" + name.normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase().trim().replace(/\s+/g, "_").replace(/[^a-z0-9._]/g, "");
+  function lev(a, b, max) {                                 // distância de edição (com transposição)
+    if (Math.abs(a.length - b.length) > max) return max + 1;
+    const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+    for (let j = 1; j <= b.length; j++) d[0][j] = j;
+    for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) {
+      d[i][j] = Math.min(d[i-1][j] + 1, d[i][j-1] + 1, d[i-1][j-1] + (a[i-1] === b[j-1] ? 0 : 1));
+      if (i > 1 && j > 1 && a[i-1] === b[j-2] && a[i-2] === b[j-1]) d[i][j] = Math.min(d[i][j], d[i-2][j-2] + 1);
+    }
+    return d[a.length][b.length];
+  }
+  const tolerance = n => n >= 7 ? 2 : n >= 3 ? 1 : 0;
+  // 0..1: quanto a busca bate com o texto do candidato
+  function textScore(query, text) {
+    const q = norm(query), t = norm(text);
+    if (!q) return 0;
+    if (t === q) return 1;
+    if (t.startsWith(q)) return .95;
+    const qt = q.split(" "), tt = t.split(" ");
+    let sum = 0;
+    for (let k = 0; k < qt.length; k++) {
+      const w = qt[k], last = k === qt.length - 1, tol = tolerance(w.length);
+      let best = 0;
+      for (const c of tt) {
+        let s = 0;
+        if (c === w) s = 1;
+        else if (last && c.startsWith(w)) s = .9;                         // ainda digitando a palavra
+        else if (c.includes(w) && w.length >= 3) s = .6;
+        else if (tol && lev(w, c, tol) <= tol) s = .7;                    // erro de digitação
+        else if (last && tol && lev(w, c.slice(0, w.length), tol) <= tol) s = .6;
+        best = Math.max(best, s);
+      }
+      if (!best) return 0;                                                // toda palavra precisa bater
+      sum += best;
+    }
+    return .9 * sum / qt.length;
+  }
+
+  // ---------- Motor: sugestões e resultados ----------
+  const W_TEXT = 1, W_TASTE = .35;
+  function candidates(q) {
+    const out = [];
+    tracks.forEach(t => {
+      const s = Math.max(textScore(q, t.title), .85 * textScore(q, t.title + " " + t.artist));
+      if (s) out.push({ type: "t", item: t, label: t.title, sub: toHandle(t.artist), text: s, score: W_TEXT * s + W_TASTE * affTrack(t) });
+    });
+    artists.forEach(a => {
+      const s = textScore(q, a.name);
+      if (s) out.push({ type: "a", item: a, label: toHandle(a.name), sub: "Artista", text: s, score: W_TEXT * s + W_TASTE * affArtist(a.name) + .03 });
+    });
+    playlists.forEach(p => {
+      const s = textScore(q, p.name);
+      if (s) out.push({ type: "p", item: p, label: p.name, sub: "Sua playlist", text: s, score: W_TEXT * s + W_TASTE * .6 });
+    });
+    return out.sort((a, b) => b.score - a.score);
+  }
+
+  // ---------- Histórico de pesquisas (no app: Room; aqui: armazenamento do navegador) ----------
+  const KEY = "sounos.searchHistory";
+  let history = [];
+  try { history = JSON.parse(localStorage.getItem(KEY)) || []; } catch {}
+  if (!history.length && !NATIVE) history = [{ type: "q", text: "lofi para estudar" }, { type: "a", name: "MC Mockup" }, { type: "t", i: 3 }, { type: "q", text: "chuva" }];
+  const saveHistory = () => { try { localStorage.setItem(KEY, JSON.stringify(history.slice(0, 15))); } catch {} };
+  const sameEntry = (a, b) => a.type === b.type && (a.text ?? a.name ?? a.i) === (b.text ?? b.name ?? b.i);
+  function remember(entry) { history = [entry, ...history.filter(h => !sameEntry(h, entry))].slice(0, 15); saveHistory(); }
+
+  // ---------- Interface ----------
+  const ICON = {
+    back:   '<svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>',
+    search: '<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>',
+    x:      '<svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>',
+    clock:  '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
+    fill:   '<svg viewBox="0 0 24 24"><path d="M7 17 17 7M8 7h9v9"/></svg>',
+  };
+  const grad = c => `linear-gradient(135deg,${c[0]},${c[1]} 60%,${c[2]})`;
+  const esc = s => s.replace(/[&<>"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
+  // destaca em negrito o que a pessoa ainda não digitou (como nos buscadores)
+  function emphasize(label, q) {
+    const qq = norm(q);
+    if (label.startsWith("@")) {
+      const qh = qq.replace(/ /g, "_");
+      return qh && label.slice(1).startsWith(qh)
+        ? `<span class="typed">${esc(label.slice(0, qh.length + 1))}</span><b>${esc(label.slice(qh.length + 1))}</b>` : `<b>${esc(label)}</b>`;
+    }
+    const n = norm(label);
+    if (qq && n.startsWith(qq)) return `<span class="typed">${esc(label.slice(0, qq.length))}</span><b>${esc(label.slice(qq.length))}</b>`;
+    return `<b>${esc(label)}</b>`;
+  }
+  function cover(type, item, extra = "") {
+    if (type === "t") return `<div class="ic ${extra}" style="background:${grad(item.c)}">${esc(item.title[0])}</div>`;
+    if (type === "a") return `<div class="ic round ${extra}" style="background:${grad(item.c)}">${esc(item.name[0])}</div>`;
+    if (type === "p") return `<div class="ic ${extra}" style="background:${grad(tracks[item.tracks[0]].c)}">${esc(item.name[0])}</div>`;
+    return `<div class="ic ${extra}">${ICON.clock}</div>`;
+  }
+
+  function attach(button, phone) {
+    const ov = document.createElement("div");
+    ov.className = "search-ov";
+    ov.innerHTML = `
+      <div class="veil"></div>
+      <div class="sbar collapsed idle">
+        <button class="s-back" aria-label="Fechar busca">${ICON.back}</button>
+        <input type="search" placeholder="Músicas, artistas, playlists" autocomplete="off" enterkeyhint="search">
+        <button class="s-clear" aria-label="Limpar">${ICON.x}</button>
+        <button class="s-icon" aria-label="Buscar">${ICON.search}</button>
+      </div>
+      <div class="sbody"></div>`;
+    phone.appendChild(ov);
+    const bar = ov.querySelector(".sbar"), input = ov.querySelector("input"), body = ov.querySelector(".sbody");
+    let isOpen = false, view = "";
+
+    // posição da lupa dentro do celular (a barra nasce ali)
+    // A lupa nunca se mexe: a barra é presa pela DIREITA e pelo CENTRO vertical da lupa e só cresce para a esquerda.
+    // A lupa de dentro da barra fica pixel a pixel em cima da lupa da tela, então a troca entre as duas é invisível.
+    function iconRect() {
+      const p = phone.getBoundingClientRect(), b = button.getBoundingClientRect();
+      return { right: p.left + phone.clientLeft + phone.clientWidth - b.right, cy: b.top - p.top - phone.clientTop + b.height / 2,
+               width: b.width, height: b.height };
+    }
+    function place(r) {
+      Object.assign(bar.style, { left: "auto", right: r.right + "px", top: (r.cy - r.height / 2) + "px", width: r.width + "px", height: r.height + "px" });
+    }
+    function syncIcon() {                                       // mesma largura e mesmo tamanho de ícone da lupa da tela
+      const b = button.getBoundingClientRect(), svg = button.querySelector("svg")?.getBoundingClientRect();
+      bar.style.setProperty("--icon-w", b.width + "px");
+      if (svg) bar.style.setProperty("--icon-size", svg.width + "px");
+    }
+
+    function open() {
+      if (isOpen) return;
+      isOpen = true;
+      playlists = loadPlaylists();
+      const r = iconRect();
+      syncIcon();
+      place(r);
+      bar.classList.remove("idle");
+      bar.classList.add("collapsed");
+      void bar.offsetWidth;                                     // aplica a posição inicial antes de animar
+      ov.classList.add("open");
+      bar.classList.remove("collapsed");
+      place({ right: r.right, cy: r.cy, width: phone.clientWidth - r.right - 12, height: 46 });
+      input.value = ""; bar.classList.remove("has-text");
+      showRecent();
+      setTimeout(() => input.focus({ preventScroll: true }), 200);
+      history_push();
+    }
+    function close(fromPop = false) {
+      if (!isOpen) return;
+      isOpen = false;
+      input.blur();
+      ov.classList.remove("open");
+      bar.classList.add("collapsed");
+      place(iconRect());
+      setTimeout(() => { if (!isOpen) bar.classList.add("idle"); }, 400);
+      if (!fromPop && pushed) { pushed = false; window.history.back(); }
+    }
+    // o "voltar" do celular fecha a busca antes de sair da tela
+    let pushed = false;
+    function history_push() { window.history.pushState({ search: true }, ""); pushed = true; }
+    window.addEventListener("popstate", () => { if (isOpen && !history.state?.search) { pushed = false; close(true); } });
+
+    function setPanel(html, name) {
+      view = name;
+      body.innerHTML = `<div class="spanel">${html}</div>`;
+      [...body.firstElementChild.children].forEach((c, k) => c.style.setProperty("--k", Math.min(k, 12)));
+    }
+
+    // ---- recentes ----
+    function showRecent() {
+      if (!history.length) return setPanel('<div class="s-empty">Suas pesquisas aparecem aqui.</div>', "recent");
+      setPanel(`<div class="s-head"><h3>Pesquisas recentes</h3><button data-act="clear-all">Limpar</button></div>` +
+        history.map((h, k) => {
+          let ic, t, a;
+          if (h.type === "q") { ic = cover("q"); t = esc(h.text); a = "Pesquisa"; }
+          else if (h.type === "t" && h.track) { ic = realCover(h.track); t = esc(h.track.title); a = "Música · " + toHandle(h.track.artist); }
+          else if (h.type === "a" && NATIVE) { ic = realArtist(h); t = toHandle(h.name); a = "Artista"; }
+          else if (h.type === "t") { const x = tracks[h.i]; ic = cover("t", x); t = esc(x.title); a = "Música · " + toHandle(x.artist); }
+          else if (h.type === "a") { const x = artists.find(y => y.name === h.name); ic = cover("a", x); t = toHandle(x.name); a = "Artista"; }
+          else { const x = playlists[h.i]; ic = cover("p", x); t = esc(x.name); a = "Playlist"; }
+          return `<button class="s-row" data-hist="${k}">${ic}<div class="tx"><div class="t">${t}</div><div class="a">${a}</div></div>
+            <span class="x" data-act="rm" data-k="${k}">${ICON.x}</span></button>`;
+        }).join(""), "recent");
+    }
+
+    // ---- sugestões enquanto digita (corretor + gosto) ----
+    function showSuggestions(q) {
+      if (NATIVE) return nativeSuggestions(q);
+      const pastQ = history.filter(h => h.type === "q" && norm(h.text).startsWith(norm(q)) && norm(h.text) !== norm(q)).slice(0, 2);
+      const seen = new Set(), list = [];
+      candidates(q).forEach(c => { const k = norm(c.label); if (!seen.has(k) && list.length < 7) { seen.add(k); list.push(c); } });
+      if (!list.length && !pastQ.length) {
+        return setPanel(`<button class="s-row sug" data-q="${esc(q)}">${cover("q")}<div class="tx"><div class="t"><b>${esc(q)}</b></div></div></button>`, "sug");
+      }
+      setPanel(
+        pastQ.map(h => `<button class="s-row sug" data-q="${esc(h.text)}">${cover("q")}<div class="tx"><div class="t">${emphasize(h.text, q)}</div></div>
+          <span class="fill" data-fill="${esc(h.text)}">${ICON.fill}</span></button>`).join("") +
+        list.map(c => `<button class="s-row sug" data-pick="${c.type}" data-id="${c.type === "a" ? esc(c.item.name) : c.item.i}">
+          ${cover(c.type, c.item)}<div class="tx"><div class="t">${emphasize(c.label, q)}</div><div class="a">${c.sub}</div></div>
+          <span class="fill" data-fill="${esc(c.label)}">${ICON.fill}</span></button>`).join(""), "sug");
+    }
+
+    // ---- resultados ----
+    function showResults(q) {
+      if (NATIVE) return nativeResults(q);
+      const all = candidates(q).filter(c => c.text >= .45);
+      if (!all.length) return setPanel(`<div class="s-empty">Nada encontrado para “${esc(q)}”.</div>`, "res");
+      const best = all[0];
+      const songs = all.filter(c => c.type === "t").slice(0, 6);
+      const arts = all.filter(c => c.type === "a").slice(0, 6);
+      const pls = all.filter(c => c.type === "p").slice(0, 6);
+      // artistas encontrados também puxam as músicas deles, ordenadas pelo gosto
+      if (best.type === "a") tracks.filter(t => t.artist === best.item.name && !songs.some(s => s.item === t))
+        .sort((x, y) => affTrack(y) - affTrack(x)).slice(0, 6 - songs.length)
+        .forEach(t => songs.push({ type: "t", item: t }));
+      const bestCv = best.type === "p" ? tracks[best.item.tracks[0]].c : best.item.c;
+      setPanel(`
+        <div class="s-head"><h3>Melhor resultado</h3></div>
+        <button class="s-best" data-pick="${best.type}" data-id="${best.type === "a" ? esc(best.item.name) : best.item.i}">
+          <div class="cv ${best.type === "a" ? "round" : ""}" style="background:${grad(bestCv)}">${esc((best.type === "a" ? best.item.name : best.label)[0])}</div>
+          <div><div class="t">${esc(best.label)}</div><div class="a">${best.type === "t" ? "Música · " + best.sub : best.sub}</div></div>
+        </button>` +
+        (songs.length ? `<div class="s-head"><h3>Músicas</h3></div>` + songs.map(c => `
+          <button class="s-row" data-pick="t" data-id="${c.item.i}">${cover("t", c.item)}
+            <div class="tx"><div class="t">${esc(c.item.title)}</div><div class="a">${toHandle(c.item.artist)}</div></div></button>`).join("") : "") +
+        (arts.length ? `<div class="s-head"><h3>Artistas</h3></div><div class="s-hrow">` + arts.map(c => `
+          <button class="s-art" data-pick="a" data-id="${esc(c.item.name)}"><div class="pic" style="background:${grad(c.item.c)}">${esc(c.item.name[0])}</div>
+            <div class="n">${toHandle(c.item.name)}</div></button>`).join("") + `</div>` : "") +
+        (pls.length ? `<div class="s-head"><h3>Playlists</h3></div><div class="s-hrow">` + pls.map(c => `
+          <button class="s-pl" data-pick="p" data-id="${c.item.i}">${c.item.tracks.slice(0, 4).map(t => `<i style="background:${grad(tracks[t].c)}"></i>`).join("")}
+            <div class="meta"><div class="t">${esc(c.item.name)}</div></div></button>`).join("") + `</div>` : ""), "res");
+    }
+
+    function runSearch(q) {
+      q = q.trim(); if (!q) return showRecent();
+      input.value = q; bar.classList.add("has-text");
+      remember({ type: "q", text: q });
+      input.blur();
+      showResults(q);
+    }
+    function pick(type, id) {
+      if (type === "nt") return playTrack(resultTracks[+id]);
+      if (type === "na") { const a = resultArtists[+id]; remember({ type: "a", name: a.name, thumb: a.thumb }); return openArtist(a.name) || (input.value = toHandle(a.name), bar.classList.add("has-text"), showResults(a.name)); }
+      if (type === "t") { remember({ type: "t", i: +id }); location.href = `player.html?t=${id}`; }
+      else if (type === "p") { remember({ type: "p", i: +id }); location.href = `player.html?p=${id}`; }
+      else { remember({ type: "a", name: id }); input.value = toHandle(id); bar.classList.add("has-text"); showResults(id); }   // perfil do artista: próxima tela
+    }
+
+    // ---- eventos ----
+    button.addEventListener("click", open);
+    ov.querySelector(".s-back").addEventListener("click", () => close());
+    ov.querySelector(".s-icon").addEventListener("click", () => runSearch(input.value));
+    ov.querySelector(".s-clear").addEventListener("click", () => { input.value = ""; bar.classList.remove("has-text"); showRecent(); input.focus(); });
+    input.addEventListener("input", () => {
+      const q = input.value;
+      bar.classList.toggle("has-text", !!q);
+      q.trim() ? showSuggestions(q) : showRecent();
+    });
+    input.addEventListener("keydown", e => { if (e.key === "Enter") runSearch(input.value); if (e.key === "Escape") close(); });
+    body.addEventListener("click", e => {
+      const act = e.target.closest("[data-act]");
+      if (act?.dataset.act === "clear-all") { history = []; saveHistory(); return showRecent(); }
+      if (act?.dataset.act === "rm") { history.splice(+act.dataset.k, 1); saveHistory(); return showRecent(); }
+      const fill = e.target.closest("[data-fill]");                 // seta: completa a barra sem buscar ainda
+      if (fill) { input.value = fill.dataset.fill + " "; bar.classList.add("has-text"); showSuggestions(input.value); input.focus(); return; }
+      const h = e.target.closest("[data-hist]");
+      if (h) {
+        const x = history[+h.dataset.hist];
+        if (x.type === "q") return runSearch(x.text);
+        if (x.type === "t" && x.track) return playTrack(x.track);
+        if (x.type === "a" && NATIVE && openArtist(x.name)) return;
+        if (x.type === "a" && NATIVE) { input.value = toHandle(x.name); bar.classList.add("has-text"); return showResults(x.name); }
+        return pick(x.type, x.type === "a" ? x.name : x.i);
+      }
+      const q = e.target.closest("[data-q]"); if (q) return runSearch(q.dataset.q);
+      const p = e.target.closest("[data-pick]"); if (p) return pick(p.dataset.pick, p.dataset.id);
+    });
+    // ---------------- dentro do app: busca de verdade (NewPipe) + gosto da pessoa ----------------
+    let resultTracks = [], resultArtists = [], sugT = 0;
+    const realCover = t => `<div class="ic" style="background:url('${Sounos.coverUrl(t)}') center/cover no-repeat, ${grad(Sounos.hashColors(t.id))}"></div>`;
+    const realArtist = a => `<div class="ic round" style="background:${a.thumb ? `url('${a.thumb}') center/cover no-repeat,` : ""} ${grad(Sounos.hashColors(a.name))}"></div>`;
+    // gosto: quanto você ouve cada artista e cada música (histórico do app, mais recente pesa mais)
+    function taste() {
+      const h = Sounos.call("getHistory"), artists = {}, songs = {};
+      (Array.isArray(h) ? h : []).forEach((e, k) => { const w = 1 / (1 + k / 15); artists[e.track.artist] = (artists[e.track.artist] || 0) + w; songs[e.track.id] = w; });
+      const maxA = Math.max(1, ...Object.values(artists));
+      return { artist: a => (artists[a] || 0) / maxA, song: id => songs[id] || 0, history: Array.isArray(h) ? h.map(e => e.track) : [] };
+    }
+    // página do artista: na tela inicial abre por cima da busca; dentro do player, o player desce e ela abre
+    function openArtist(name) {
+      if (window.SounosPages) { window.SounosPages.openArtist(name); return true; }
+      const P = window.parent !== window && window.parent.SounosPages;
+      if (!P) return false;
+      close(); window.parent.__playerShell.closeThen(() => P.openArtist(name)); return true;
+    }
+    function playTrack(t) {
+      if (!t) return;
+      remember({ type: "t", track: t });
+      Sounos.call("playSingle", { track: t, context: { type: "radio" } });
+      if (location.pathname.endsWith("player.html")) close();
+      else if (window.__playerShell) {                // tela inicial: o player sobe por cima, no lugar da busca
+        const had = pushed; pushed = false; close(true); window.__playerShell.open({ replace: had });
+      } else location.href = "player.html";
+    }
+    function nativeSuggestions(q) {
+      const T = taste();
+      const pastQ = history.filter(h => h.type === "q" && norm(h.text).startsWith(norm(q)) && norm(h.text) !== norm(q)).slice(0, 2);
+      // músicas que você já ouviu e batem com o que está digitando (com tolerância a erro), as que você mais ouve primeiro
+      const mine = T.history.map(t => ({ t, s: Math.max(textScore(q, t.title), .85 * textScore(q, t.title + " " + t.artist)) }))
+        .filter(x => x.s >= .45).map(x => ({ ...x, s: x.s + .35 * T.artist(x.t.artist) + .2 * T.song(x.t.id) }))
+        .sort((a, b) => b.s - a.s).filter((x, i, arr) => arr.findIndex(y => y.t.id === x.t.id) === i).slice(0, 3);
+      resultTracks = mine.map(x => x.t);
+      const draw = server => setPanel(
+        pastQ.map(h => `<button class="s-row sug" data-q="${esc(h.text)}">${cover("q")}<div class="tx"><div class="t">${emphasize(h.text, q)}</div></div>
+          <span class="fill" data-fill="${esc(h.text)}">${ICON.fill}</span></button>`).join("") +
+        mine.map((x, i) => `<button class="s-row sug" data-pick="nt" data-id="${i}">${realCover(x.t)}
+          <div class="tx"><div class="t">${emphasize(x.t.title, q)}</div><div class="a">${toHandle(x.t.artist)}</div></div></button>`).join("") +
+        server.filter(t => !pastQ.some(h => norm(h.text) === norm(t))).slice(0, 6).map(t => `<button class="s-row sug" data-q="${esc(t)}"><div class="ic">${ICON.search}</div>
+          <div class="tx"><div class="t">${emphasize(t, q)}</div></div><span class="fill" data-fill="${esc(t)}">${ICON.fill}</span></button>`).join("")
+        || `<button class="s-row sug" data-q="${esc(q)}">${cover("q")}<div class="tx"><div class="t"><b>${esc(q)}</b></div></div></button>`, "sug");
+      draw([]);
+      clearTimeout(sugT);
+      sugT = setTimeout(() => Sounos.ask("suggest", { q }).then(r => { if (input.value === q && view === "sug") draw(r.items || []); }), 160);
+    }
+    function nativeResults(q) {
+      setPanel(`<div class="s-empty">Buscando “${esc(q)}”…</div>`, "loading");
+      Promise.all([Sounos.ask("search", { q }), Sounos.ask("searchArtists", { q })]).then(([songs, arts]) => {
+        if (!isOpen || norm(input.value.replace(/^@/, "")) !== norm(q) && norm(input.value) !== norm(toHandle(q))) return;
+        if (songs.error && arts.error) return setPanel(`<div class="s-empty">Sem conexão agora. Tente de novo.</div>`, "res");
+        const T = taste();
+        const list = (songs.items || []).map((t, i) => ({ t, s: (1 - i / 25) + .5 * textScore(q, t.title + " " + t.artist) + .35 * T.artist(t.artist) + .15 * T.song(t.id) }));
+        list.sort((a, b) => b.s - a.s);
+        resultTracks = list.map(x => x.t);
+        resultArtists = (arts.items || []).filter(a => a.name);
+        if (!resultTracks.length && !resultArtists.length) return setPanel(`<div class="s-empty">Nada encontrado para “${esc(q)}”.</div>`, "res");
+        const topArtist = resultArtists[0] && textScore(q, resultArtists[0].name) >= .9 ? resultArtists[0] : null;
+        const best = topArtist ? { type: "na", i: 0, title: toHandle(topArtist.name), sub: "Artista", look: realArtist(topArtist).replace('class="ic round"', 'class="cv round"') }
+                               : { type: "nt", i: 0, title: esc(resultTracks[0].title), sub: "Música · " + toHandle(resultTracks[0].artist),
+                                   look: realCover(resultTracks[0]).replace('class="ic"', 'class="cv"') };
+        setPanel(`
+          <div class="s-head"><h3>Melhor resultado</h3></div>
+          <button class="s-best" data-pick="${best.type}" data-id="${best.i}">${best.look}
+            <div><div class="t">${best.title}</div><div class="a">${best.sub}</div></div></button>` +
+          (resultTracks.length ? `<div class="s-head"><h3>Músicas</h3></div>` + resultTracks.slice(0, 15).map((t, i) => `
+            <button class="s-row" data-pick="nt" data-id="${i}">${realCover(t)}
+              <div class="tx"><div class="t">${esc(t.title)}</div><div class="a">${toHandle(t.artist)} · ${fmtDur(t.dur)}</div></div></button>`).join("") : "") +
+          (resultArtists.length ? `<div class="s-head"><h3>Artistas</h3></div><div class="s-hrow">` + resultArtists.map((a, i) => `
+            <button class="s-art" data-pick="na" data-id="${i}"><div class="pic" style="background:${a.thumb ? `url('${a.thumb}') center/cover,` : ""} ${grad(Sounos.hashColors(a.name))}"></div>
+              <div class="n">${toHandle(a.name)}</div></button>`).join("") + `</div>` : ""), "res");
+      });
+    }
+    const fmtDur = s => s > 0 ? `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}` : "";
+
+    function query(q) { open(); input.value = q; bar.classList.add("has-text"); runSearch(q); }
+    return { open, close, query, isOpen: () => isOpen };
+  }
+
+  window.SounosSearch = { attach, candidates };
+})();

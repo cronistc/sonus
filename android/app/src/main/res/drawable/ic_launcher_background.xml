@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- fundo do ícone: azul do Sonus em degradê -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <gradient android:angle="315" android:startColor="#3B82FF" android:endColor="#1D4ED8" />
+</shape>

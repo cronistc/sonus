@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "prototype",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [".claude/serve_nocache.py", "5173", "prototype"],
+      "port": 5173
+    }
+  ]
+}
