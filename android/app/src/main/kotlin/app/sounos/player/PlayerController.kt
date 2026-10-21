@@ -69,9 +69,11 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
     val isOnline: Boolean get() = online
 
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
-        override fun onAvailable(network: Network) = refreshNetworkState()
-        override fun onLost(network: Network) = refreshNetworkState()
-        override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) = refreshNetworkState()
+        // usa o que o próprio aviso traz: "activeNetwork" pode vir nulo no Samsung mesmo com Wi-Fi funcionando
+        override fun onLost(network: Network) = setOnline(false)
+        override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) =
+            setOnline(capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED))
     }
 
     private val prefetcher = QueuePrefetcher(app.resolver, app.audio, app.covers, onNextReady = { r ->
@@ -412,8 +414,7 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
         }.getOrDefault(false)
     }
 
-    private fun refreshNetworkState() {
-        val available = hasValidatedNetwork()
+    private fun setOnline(available: Boolean) {
         main.post {
             try {
                 if (available == online) return@post
