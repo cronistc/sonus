@@ -73,10 +73,8 @@
   .cover-box { width: var(--cover-size, 100%); flex-shrink: 0; }
   .ring { position: relative; width: 100%; aspect-ratio: 1 / 1; touch-action: none; }
   /* anel, capa e barrinhas em camadas próprias: quando o anel anda, só ele é redesenhado (não a tela toda) */
-  .ring svg.prog { position: absolute; overflow: visible; pointer-events: none; z-index: 2; will-change: transform; }
-  .ring canvas.prog { position: absolute; pointer-events: none; z-index: 3; will-change: transform; }
-  .cover { will-change: transform; }
-  .qi.now .eq { will-change: transform; }
+  .ring svg.prog { position: absolute; overflow: visible; pointer-events: none; z-index: 2; }
+  .ring canvas.prog { position: absolute; pointer-events: none; z-index: 3; }
   .ring .track-path { fill: none; stroke: var(--line); stroke-width: 6; }
   .ring .fill-path { fill: none; stroke: url(#ringGrad); stroke-width: 6; stroke-linecap: butt; }
   .ring .hit { fill: none; stroke: transparent; stroke-width: 30; pointer-events: stroke; cursor: pointer; }
@@ -156,8 +154,8 @@
   .eq { position: absolute; right: 8px; top: 8px; display: none; gap: 2px; align-items: flex-end; height: 14px; }
   .qi.now .eq { display: flex; }
   /* barrinhas: altura fixa + scaleY (mesmo desenho; antes a altura animada redesenhava o bloco inteiro, capa junto) */
-  .eq i { width: 3px; background: #fff; border-radius: 1px; height: 14px; transform: scaleY(.2857); transform-origin: bottom; will-change: transform; }
-  /* o movimento das barrinhas vem do relógio do player (drawEq), junto com o anel: a tela só redesenha ~30×/s */
+  .eq i { width: 3px; background: #fff; border-radius: 1px; height: 14px; transform: scaleY(.2857); transform-origin: bottom; }
+  /* o movimento das barrinhas vem do relógio do player (drawEq), junto com o anel: a tela redesenha ~15×/s */
 
   /* Renovação da fila: gira rápido para a esquerda e os novos blocos entram pela direita */
   .queue.spin-out .qi { animation: spinOut .18s ease-in forwards; }
@@ -289,6 +287,11 @@
   .lyr .line.now.fa .w { animation-name: lyrfillA; }
   .lyr .line.now.fb .w { animation-name: lyrfillB; }          /* A/B alternados: trocar o nome reinicia a animação do zero */
   .phone.paused .lyr .line.now .w { animation-play-state: paused; }
+  .phone.player-hidden .lyr .line.now .w, .phone.overlay-open .lyr .line.now .w,
+  .phone:not(.lyr-mode) .lyr .line.now .w, html.page-hidden .phone .lyr .line.now .w { animation-play-state: paused; }
+  .phone.paused .act.dl.loading .dl-arrow, .phone.player-hidden .act.dl.loading .dl-arrow,
+  .phone.overlay-open .act.dl.loading .dl-arrow,
+  html.page-hidden .phone .act.dl.loading .dl-arrow { animation-play-state: paused; }
   .lyr.selecting .line.now .w { animation: none; background: none; color: inherit; filter: none; }
   @keyframes lyrfillA { from { background-position: 100% 0; filter: drop-shadow(0 0 0 transparent); }
                         to   { background-position: 0 0;    filter: drop-shadow(0 0 9px color-mix(in srgb, var(--text) 28%, transparent)); } }
@@ -485,9 +488,11 @@ let sugg = [];
 let nowT = base.order[0];                 // faixa tocando agora (índice em tracks)
 let pos = 0, playing = false, shuffle = false;
 let repeat = "off"; // off → all → one
-let lastTick = 0, gradAngle = 0;
+let lastTick = 0, playerVisible = window.parent === window, playerPageActive = !document.hidden;
 
 const $ = id => document.getElementById(id);
+$("phone").classList.toggle("player-hidden", !playerVisible);
+document.documentElement.classList.toggle("page-hidden", !playerPageActive || document.hidden);
 const fmt = s => `${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,"0")}`;
 const track = () => tracks[nowT];
 // "repetir faixa" mostra as sugeridas; enquanto elas ainda não chegaram, mostra a fila normal (nunca fica vazio)
@@ -524,20 +529,28 @@ function layoutRing() {
   Object.assign(cv.style, { left: svg.style.left, top: svg.style.top, width: svg.style.width, height: svg.style.height });
   cv.width = Math.round(vb[2] * dpr); cv.height = Math.round(vb[3] * dpr);
   RING = { path: new Path2D(d), vb, dpr };
+  lastRingPixel = -1;
   ["x", "y", "width", "height"].forEach((k, i) => { $("maskBg").setAttribute(k, vb[i]); $("ringMask").setAttribute(k, vb[i]); });
   $("fadeStart").setAttribute("cx", w / 2); $("fadeStart").setAttribute("cy", T);
   RING_LEN = ringPath.getTotalLength();
   ringPts = null;
 }
 // Barra em volta da capa: UMA cor, a mais chamativa da capa (--c4, escolhida pelo app), com as pontas
-// esfumaçadas. Desenhada num canvas: muda só quando o andamento avança (~8×/s), sem gradiente girando.
+// esfumaçadas. Desenhada num canvas: muda só quando a ponta avança um pixel, sem gradiente girando.
 const FADE_STOPS = [[0, 1], [.25, .898], [.5, .533], [.75, .169], [1, 0]];   // mesmo esfumaçado de antes
-let ringColor = null;
-new MutationObserver(() => { ringColor = null; }).observe(document.documentElement, { attributes: true, attributeFilter: ["style", "data-theme"] });
+let ringColor = null, lastRingPixel = -1;
+new MutationObserver(() => {
+  ringColor = null; lastRingPixel = -1;
+  if (playerCanAnimate()) drawRingFill(Math.min(pos / track().dur, 1) * 1000);
+}).observe(document.documentElement, { attributes: true, attributeFilter: ["style", "data-theme"] });
 function drawRingFill(P) {
   if (!RING) return;
   P = Math.max(0, Math.min(1000, P));
-  const cv = $("ringCanvas"), g = cv.getContext("2d"), { path, vb, dpr } = RING;
+  const { path, vb, dpr } = RING;
+  const px = Math.floor(P / 1000 * RING_LEN * dpr);
+  if (px === lastRingPixel) return;
+  lastRingPixel = px;
+  const cv = $("ringCanvas"), g = cv.getContext("2d");
   g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, cv.width, cv.height);
   if (P <= 0) return;
   if (!ringColor) { const cs = getComputedStyle(document.documentElement); ringColor = (cs.getPropertyValue("--c4") || cs.getPropertyValue("--c3")).trim() || "#fff"; }
@@ -586,25 +599,24 @@ function loadCurrent() {
   if (typeof renderDl === "function") renderDl();
 }
 
-// Leveza: o anel (máscara + degradê) é caro de redesenhar. Ele anda ~7 px por segundo, então
-// redesenhar 15×/s fica idêntico a olho nu (120×/s só gastava bateria). Fora do relógio, desenha na hora.
-let lastRingDraw = -1e9, lastEqDraw = -1e9, lastCurText = "";
-let RING_MS = 125;      // anel anda ~0,9 px por passo: igual a olho nu
+// O anel só redesenha quando a ponta avança um pixel; outras partes do player usam o mesmo compasso visual.
+let lastEqDraw = -1e9, lastCurText = "";
 function render(fromTick) {
+  if (!playerCanAnimate()) return;
   const t = track(), f = Math.min(pos / t.dur, 1), now = performance.now();
   // um só compasso visual (~15×/s): barrinhas, anel e tempo mudam juntos → a tela redesenha poucas vezes
   if (fromTick && now - lastEqDraw < 50) { syncLyrics(); return; }
   lastEqDraw = now;
   drawEq(now);
-  if (!fromTick || now - lastRingDraw >= RING_MS) { lastRingDraw = now; drawRingFill(f * 1000); }
+  drawRingFill(f * 1000);
   const ct = fmt(pos); if (ct !== lastCurText) { lastCurText = ct; $("cur").textContent = ct; }
   renderPlayIcon();
   if (scrubbing) { moveWave(); $("scrubTime").textContent = fmt(pos); }
-  $("phone").classList.toggle("paused", !playing);
+  if ($("phone").classList.contains("paused") === playing) $("phone").classList.toggle("paused", !playing);
   syncLyrics();
 }
 
-function setPlaying(v) { playing = v; lastTick = performance.now(); render(); }
+function setPlaying(v) { playing = v; lastTick = performance.now(); render(); syncPlayerClock(); }
 
 // Toca a posição i da lista principal (sem reconstruir a fila: só move o "cursor")
 function playBase(i) { base.cur = i; nowT = base.order[i]; loadCurrent(); }
@@ -849,14 +861,18 @@ function drawEq(now) {
   bars.forEach((b, k) => {
     const ph = playing ? ((now / 900) + k / 3) % 1 : 0;
     const e = .5 - .5 * Math.cos(ph * 2 * Math.PI);              // vai e volta suave (como o ease-in-out de antes)
-    b.style.transform = `scaleY(${(.2857 + .7143 * e).toFixed(3)})`;
+    const transform = `scaleY(${(.2857 + .7143 * e).toFixed(3)})`;
+    if (b.style.transform !== transform) b.style.transform = transform;
   });
 }
 let lyrMarked = -2, lyrMarkedFor = null;
 function syncLyrics() {
+  if (!lyricsMode) return;
   const t = track(); if (!t.lrc) return;
   const at = pos + lyricsOffset();                                  // + ajuste de sincronia das configurações
-  let ln = -1; for (let i = 0; i < t.lrc.length && t.lrc[i][0] <= at; i++) ln = i;
+  let lo = 0, hi = t.lrc.length;
+  while (lo < hi) { const mid = (lo + hi) >>> 1; if (t.lrc[mid][0] <= at) lo = mid + 1; else hi = mid; }
+  const ln = lo - 1;
   const els = $("lines").children;
   // só mexe nas linhas quando a linha atual muda (antes: todas as linhas, todo quadro)
   if (ln !== lyrMarked || lyrMarkedFor !== els[0]) {
@@ -906,22 +922,73 @@ function syncFill(t, ln, els, at) {
   el.classList.toggle("fa", fillFlip); el.classList.toggle("fb", !fillFlip);
 }
 
-// ---- Loop: reprodução simulada + gradiente girando devagar no anel ----
+// ---- Relógio visual: só existe enquanto o player está visível e tocando ----
 function tick(now) {
   const dt = (now - lastTick) / 1000;
   if (playing) {
     pos += dt;
-    gradAngle = (gradAngle + dt * 6) % 360;    // giro lento (6°/s) só enquanto toca (aplicado no render, 15×/s)
     if (pos >= track().dur) { pos = track().dur; next(true); }
     render(true);
   }
   lastTick = now;
-  return playing ? VIS_MS : IDLE_MS;
 }
 // Relógio por timer (não rAF): rAF contínuo faz o WebView redesenhar a cada vsync (~120 quadros/s) sem necessidade.
-// O visual só muda ~15×/s; a posição vem de performance.now(), então o atraso do timer não acumula erro.
-const VIS_MS = 66, IDLE_MS = 100;
-function clockLoop() { const d = tick(performance.now()); setTimeout(clockLoop, d || VIS_MS); }
+// O visual só muda ~15×/s; parado, fechado ou coberto, não há timer para acordar a página.
+const VIS_MS = 66;
+let clockTimer = 0;
+function playerCanAnimate() {
+  return playerVisible && playerPageActive && !document.hidden && !$("phone").classList.contains("overlay-open");
+}
+function syncPlayerClock() {
+  clearTimeout(clockTimer); clockTimer = 0;
+  if (playing && playerCanAnimate()) clockTimer = setTimeout(clockLoop, VIS_MS);
+}
+function clockLoop() {
+  clockTimer = 0;
+  if (!playing || !playerCanAnimate()) return;
+  tick(performance.now());
+  syncPlayerClock();
+}
+function refreshNativePosition() {
+  if (!window.Sounos?.native) return;
+  const p = Sounos.call("getProgress");
+  if (!Number.isFinite(p.pos)) return;
+  pos = p.pos;
+  if (p.dur > 0) track().dur = p.dur;
+  playing = !!p.playing;
+}
+function setPlayerVisible(visible) {
+  playerVisible = !!visible;
+  $("phone").classList.toggle("player-hidden", !playerVisible);
+  if (playerCanAnimate()) refreshNativePosition();
+  lastTick = performance.now();
+  if (playerCanAnimate()) render();
+  syncPlayerClock();
+  scheduleMockDownload();
+}
+window.__setPlayerVisible = setPlayerVisible;
+window.addEventListener("sounos:visibility", e => {
+  playerPageActive = !!e.detail?.active;
+  document.documentElement.classList.toggle("page-hidden", !playerPageActive || document.hidden);
+  if (playerCanAnimate()) refreshNativePosition();
+  lastTick = performance.now();
+  if (playerCanAnimate()) render();
+  syncPlayerClock();
+  scheduleMockDownload();
+});
+const playerOverlaySelector = ".search-ov, .set-ov, .add-ov, .upd, .sheet";
+function syncPlayerOverlay() {
+  const open = !!$("phone").querySelector(".search-ov.open, .set-ov.open, .add-ov.open, .upd.open, .sheet.open");
+  if ($("phone").classList.contains("overlay-open") === open) return;
+  $("phone").classList.toggle("overlay-open", open);
+  if (playerCanAnimate()) render();
+  syncPlayerClock();
+  scheduleMockDownload();
+}
+new MutationObserver(changes => {
+  if (changes.some(m => m.type === "attributes" ? m.target.matches?.(playerOverlaySelector) :
+      [...m.addedNodes, ...m.removedNodes].some(n => n.nodeType === 1 && (n.matches?.(playerOverlaySelector) || n.querySelector?.(playerOverlaySelector))))) syncPlayerOverlay();
+}).observe($("phone"), { subtree: true, childList: true, attributes: true, attributeFilter: ["class"] });
 
 // ---- Eventos ----
 $("next").onclick = () => next(false);
@@ -1044,6 +1111,18 @@ playBtn.addEventListener("pointercancel", () => { clearTimeout(g.holdT); g.holdi
 // ---- Baixar: um toque e pronto (sem janela, sem aviso). No app: baixa áudio + capa + metadados + letra
 // para o armazenamento privado; a partir daí a música toca offline. Aqui o progresso é simulado. ----
 const dl = { timer: 0, track: -1, p: 0 };
+function scheduleMockDownload() {
+  clearTimeout(dl.timer); dl.timer = 0;
+  if (dl.track >= 0 && playerCanAnimate()) dl.timer = setTimeout(stepMockDownload, 180);
+}
+function stepMockDownload() {
+  dl.timer = 0;
+  if (dl.track < 0 || !playerCanAnimate()) return;
+  dl.p = Math.min(100, dl.p + 6 + Math.random() * 10);
+  if (dl.p >= 100) { SounosData.markDownloaded(dl.track); dl.track = -1; }
+  renderDl();
+  scheduleMockDownload();
+}
 function renderDl() {
   const b = $("dlBtn"), done = !!SounosData.getDownloads()[nowT], loading = dl.track === nowT && !done;
   b.classList.toggle("done", done);
@@ -1053,13 +1132,9 @@ function renderDl() {
 }
 $("dlBtn").onclick = () => {
   if (SounosData.getDownloads()[nowT] || dl.track === nowT) return;
-  clearInterval(dl.timer);
+  clearTimeout(dl.timer);
   Object.assign(dl, { track: nowT, p: 0 });
-  dl.timer = setInterval(() => {
-    dl.p = Math.min(100, dl.p + 6 + Math.random() * 10);
-    if (dl.p >= 100) { clearInterval(dl.timer); SounosData.markDownloaded(dl.track); dl.track = -1; }
-    renderDl();
-  }, 180);
+  scheduleMockDownload();
   renderDl();
 };
 
@@ -1233,7 +1308,7 @@ if (!window.Sounos?.native) {
   loadCurrent();
   if (qp.has("t") || qp.has("p")) setPlaying(true);
 }
-lastTick = performance.now(); clockLoop();
+lastTick = performance.now(); syncPlayerClock();
 </script>
 <script src="search.js"></script>
 <script>

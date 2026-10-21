@@ -38,6 +38,7 @@
     if (queueChanged && !holdQueue) refreshQueue(!first); else if (!holdQueue) markQueue();
     if (first || prev?.current?.id !== st.current?.id) { const keep = pos; loadCurrent(); pos = keep; }
     renderDl(); render();
+    syncPlayerClock();
     $("phone").classList.toggle("loading", !!st.loading);
   }
 
@@ -75,17 +76,15 @@
   // tempo: o app manda a posição real (o que já saiu no fone) 4×/s; entre uma e outra a tela anda sozinha
   tick = function (now) {
     const dt = (now - lastTick) / 1000;
-    if (playing && track() && !hidden) {
+    if (playing && track() && playerCanAnimate()) {
       pos = Math.min(pos + dt, track().dur);
-      gradAngle = (gradAngle + dt * 6) % 360;
       render(true);
     }
     lastTick = now;
-    return playing && track() && !hidden ? VIS_MS : IDLE_MS;   // parado/escondido: só vigia, sem desenhar
   };
 
   // ---------- comandos → app ----------
-  setPlaying = function (v) { playing = v; lastTick = performance.now(); Sounos.call(v ? "play" : "pause"); render(); };
+  setPlaying = function (v) { playing = v; lastTick = performance.now(); Sounos.call(v ? "play" : "pause"); render(); syncPlayerClock(); };
   next = function () { Sounos.call("next"); };
   prev = function () { Sounos.call("prev"); };
   $("prev").onclick = () => prev();
@@ -175,15 +174,16 @@
     if (!track()) return;
     if (!scrubbing && !ring.classList.contains("drag")) pos = p.pos;
     if (p.dur > 0) track().dur = p.dur;
-    if (p.playing !== playing) { playing = p.playing; render(); return; }
-    render(true);                                   // entra no compasso visual (não gera quadro extra)
+    const changed = p.playing !== playing;
+    playing = p.playing; lastTick = performance.now();
+    if (changed) { render(); syncPlayerClock(); return; }
+    if (!playing && playerCanAnimate()) render();    // parado: uma busca atualiza a tela uma única vez
   });
   Sounos.on("lyrics", applyLyrics);
 
   // dentro da tela inicial (quadro do player): parado enquanto escondido, arruma a fila ao aparecer
-  let hidden = window.parent !== window;
-  window.__playerShown = () => { hidden = false; lastTick = performance.now(); fitCover(); render(); if (S) centerQueue(false); };
-  window.__playerHidden = () => { hidden = true; };
+  window.__playerShown = () => { fitCover(); setPlayerVisible(true); if (S) centerQueue(false); };
+  window.__playerHidden = () => setPlayerVisible(false);
 
   // tema trocado na tela inicial
   addEventListener("storage", e => {

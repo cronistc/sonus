@@ -63,11 +63,27 @@ window.Sounos = (() => {
   window.__sounos = {
     emit(name, p) {
       // o app fala só com a página principal; ela repassa ao player embutido (quadro)
-      for (let i = 0; i < window.frames.length; i++) { try { window.frames[i].__sounos?.emit(name, p); } catch {} }
+      for (let i = 0; i < window.frames.length; i++) {
+        if (name === "progress" && window.__playerShell && !window.__playerOpen) continue;
+        try { window.frames[i].__sounos?.emit(name, p); } catch {}
+      }
       if (name === "reply") { const f = pending[p.reqId]; if (f) { delete pending[p.reqId]; f(p); } return; }
       (listeners[name] || []).forEach(f => { try { f(p); } catch (e) { console.error(e); } });
     },
   };
+  // A tela pode ficar invisível mesmo que a WebView continue com os temporizadores ativos.
+  function setPageActive(active) {
+    const visible = !!active && !document.hidden;
+    document.documentElement.classList.toggle("page-hidden", !visible);
+    window.dispatchEvent(new CustomEvent("sounos:visibility", { detail: { active: visible } }));
+    for (let i = 0; i < window.frames.length; i++) {
+      try { window.frames[i].__sounosPageActive?.(active); } catch {}
+    }
+  }
+  window.__sounosPageActive = setPageActive;
+  document.addEventListener("visibilitychange", () => setPageActive(!document.hidden));
+  setPageActive(true);
+
   const hash = s => { let h = 0; for (const ch of s) h = (h * 31 + ch.charCodeAt(0)) | 0; return Math.abs(h); };
   return {
     native: !!N,

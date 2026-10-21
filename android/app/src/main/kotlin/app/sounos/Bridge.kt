@@ -35,13 +35,20 @@ class Bridge(private val web: WebView) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val listener: (String, JSONObject) -> Unit = { name, payload -> send(name, payload) }
     private val updListener: (JSONObject) -> Unit = { send("update", it) }
+    @Volatile private var pageActive = true
 
     fun attach() { player.addListener(listener); app.updater.addListener(updListener) }
     fun detach() { player.removeListener(listener); app.updater.removeListener(updListener); scope.cancel() }
+    fun setPageActive(active: Boolean) { pageActive = active }
 
     fun send(name: String, payload: Any) {
+        // Com a tela apagada, evita acordar a WebView quatro vezes por segundo só para atualizar o tempo.
+        if (name == "progress" && (!pageActive || !app.getSystemService(android.os.PowerManager::class.java).isInteractive)) return
         val js = "window.__sounos&&window.__sounos.emit(${JSONObject.quote(name)},$payload)"
-        main.post { web.evaluateJavascript(js, null) }
+        main.post {
+            if (name == "progress" && (!pageActive || !app.getSystemService(android.os.PowerManager::class.java).isInteractive)) return@post
+            web.evaluateJavascript(js, null)
+        }
     }
 
     @JavascriptInterface

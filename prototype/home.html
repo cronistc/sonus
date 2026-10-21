@@ -160,6 +160,9 @@
   /* largura cheia + scaleX: mesmo desenho, mas anda sem refazer o layout a cada quadro */
   .mini .bar { position: absolute; left: 0; bottom: 0; height: 3px; width: 100%; transform: scaleX(0); transform-origin: left; transition: height .2s;
                background: linear-gradient(90deg, var(--c1), var(--c2), var(--c3)); }
+  .phone.overlay-open .mini .mlyr .l, .phone.player-open .mini .mlyr .l,
+  .phone.paused .mini .mlyr .l, .mini:not(.lyr-open) .mlyr .l,
+  html.page-hidden .mini .mlyr .l { animation-play-state: paused; }
   /* modo scrub: segurar o play e arrastar para o lado */
   .mini .time { display: none; font-size: 20px; font-weight: 900; font-variant-numeric: tabular-nums; }
   .mini.scrub .time { display: block; }
@@ -456,7 +459,9 @@ function loadMini() {
     swapIn($("miniA"), { opacity: 0, transform: "translateX(12px)" }, 360);
   }
   miniFirst = false;
+  lastBarPixel = -1;
   buildMiniLyrics();
+  drawMiniProgress();
 }
 // ---- Letra no mini-player ----
 const lyricsOffset = () => SounosSettings.get().lyricsOffset;
@@ -493,6 +498,7 @@ $("miniLyr").onclick = () => {
   lyrOpen = !lyrOpen;
   $("mini").classList.toggle("lyr-open", lyrOpen);
   fitMini();
+  if (lyrOpen) syncMiniLyrics();
 };
 const LU = {
   play:    '<svg class="lu solid" viewBox="0 0 24 24" style="margin-left:2px"><polygon points="6 3 20 12 6 21 6 3"/></svg>',
@@ -502,6 +508,7 @@ const LU = {
   repeat1: '<svg class="lu" viewBox="0 0 24 24"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/><path d="M11 10h1v4"/></svg>',
 };
 // Ícone mostra o estado: tocando = pausa; pausado = play, ou o modo ativo (aleatório / repetir / os dois)
+let miniFlashTimer = 0;
 function renderMiniIcon() {
   const rep = repeat === "one" ? LU.repeat1 : LU.repeat, el = $("miniIcon");
   // sempre play/pausa; ao trocar um modo, o ícone dele aparece por um instante (apagado = desligou)
@@ -512,6 +519,11 @@ function renderMiniIcon() {
   }
   renderMiniIcon.modes = modes;
   const fl = renderMiniIcon.flash;
+  if (fl) {
+    clearTimeout(miniFlashTimer);
+    if (performance.now() < fl.until && homeCanAnimate()) miniFlashTimer = setTimeout(renderMiniIcon, fl.until - performance.now() + 1);
+    else renderMiniIcon.flash = null;
+  }
   let html = playing ? LU.pause : LU.play, combo = false;
   if (fl && performance.now() < fl.until) html = fl.html;
   if (el.dataset.src !== html) {
@@ -530,12 +542,12 @@ $("miniNext").onclick = () => step(1);   // (step é trocado no modo app)
 // Gestos do botão (mesma lógica do player)
 const g = { x: 0, y: 0, holding: false, moved: false, startedScrub: false, dir: null, shuffled: false, holdT: 0, idleT: 0 };
 const pp = $("miniPP");
-function setScrub(v) { scrubbing = v; $("mini").classList.toggle("scrub", v); }
+function setScrub(v) { scrubbing = v; $("mini").classList.toggle("scrub", v); window.__homeClockChanged?.(); }
 function resetIdle() { clearTimeout(g.idleT); g.idleT = setTimeout(() => setScrub(false), 10000); }
 function scrubBy(dx) { const d = durOf(order[cur]); pos = Math.max(0, Math.min(d, pos + dx * 0.002 * d)); }
 function doShuffle() { shuffle = !shuffle; }
 function doRepeat() { repeat = { off: "all", all: "one", one: "off" }[repeat]; }
-function doToggle() { playing = !playing; }
+function doToggle() { playing = !playing; $("phone").classList.toggle("paused", !playing); renderMiniIcon(); window.__homeClockChanged?.(); }
 pp.addEventListener("pointerdown", e => {
   try { pp.setPointerCapture(e.pointerId); } catch {}
   Object.assign(g, { x: e.clientX, y: e.clientY, holding: false, moved: false, startedScrub: false, dir: null, shuffled: false });
@@ -563,28 +575,69 @@ pp.addEventListener("pointercancel", () => { clearTimeout(g.holdT); g.holding = 
 
 let curDur = () => durOf(order[cur]);          // no app: duração real da música
 let atEnd = () => { if (repeat === "one") pos = 0; else step(1); };   // no app: quem decide é o player nativo
-// Relógio do mini-player. Leveza: barra e letra mudam devagar, então atualizam ~15×/s (igual a olho nu);
-// o texto do tempo só muda quando muda o segundo; com o player aberto por cima, nada é desenhado aqui.
-let lastDraw = -1e9, lastBarF = -1, lastTimeTxt = "";
-const miniBar = $("miniBar"), miniTime = $("miniTime");
-// Relógio por timer (~15×/s) em vez de rAF contínuo (que fazia o WebView redesenhar a cada vsync); rAF só enquanto arrasta (scrubbing).
-(function tick(now) {
+// A barra do mini-player só acompanha o ouvido enquanto a tela inicial está visível.
+let lastBarPixel = -1, lastTimeTxt = "", miniTimer = 0, miniRaf = 0;
+const miniBar = $("miniBar"), miniTime = $("miniTime"), HOME_MS = 100;
+let homePageActive = !document.hidden;
+function homeCanAnimate() {
+  return homePageActive && !document.hidden && !window.__playerOpen && !$("phone").classList.contains("overlay-open");
+}
+function drawMiniProgress() {
+  const d = curDur(), f = Math.min(1, Math.max(0, pos / d));
+  const px = Math.floor(f * miniBar.clientWidth * (devicePixelRatio || 1));
+  if (px !== lastBarPixel) { lastBarPixel = px; miniBar.style.transform = `scaleX(${f})`; }
+  if (scrubbing) {
+    const tt = `${fmt(pos)} / ${fmt(d)}`;
+    if (tt !== lastTimeTxt) { lastTimeTxt = tt; miniTime.textContent = tt; }
+  }
+}
+function stopHomeClock() {
+  clearTimeout(miniTimer); miniTimer = 0;
+  cancelAnimationFrame(miniRaf); miniRaf = 0;
+}
+function homeClockTick(now) {
+  miniTimer = 0; miniRaf = 0;
+  if (!homeCanAnimate()) return;
   const d = curDur();
   if (playing && last) {
     pos += (now - last) / 1000;
     if (pos >= d) atEnd();
   }
   last = now;
-  renderMiniIcon();
-  if (!window.__playerOpen && (scrubbing || now - lastDraw >= 66)) {
-    lastDraw = now;
-    const f = Math.min(1, Math.max(0, pos / d));
-    if (Math.abs(f - lastBarF) > 1e-4) { lastBarF = f; miniBar.style.transform = `scaleX(${f})`; }
-    const tt = `${fmt(pos)} / ${fmt(d)}`; if (tt !== lastTimeTxt) { lastTimeTxt = tt; miniTime.textContent = tt; }
+  drawMiniProgress();
+  if (lyrOpen) syncMiniLyrics();
+  if (scrubbing) miniRaf = requestAnimationFrame(homeClockTick);
+  else if (playing) miniTimer = setTimeout(() => homeClockTick(performance.now()), HOME_MS);
+}
+function homeClockChanged() {
+  stopHomeClock();
+  if (!homeCanAnimate() || (!playing && !scrubbing)) return;
+  if (!last) last = performance.now();
+  if (scrubbing) miniRaf = requestAnimationFrame(homeClockTick);
+  else miniTimer = setTimeout(() => homeClockTick(performance.now()), HOME_MS);
+}
+window.__homeClockChanged = homeClockChanged;
+window.addEventListener("sounos:visibility", e => {
+  homePageActive = !!e.detail?.active;
+  last = performance.now();
+  homeClockChanged();
+});
+const homeOverlaySelector = ".search-ov, .set-ov, .add-ov, .upd, .sheet";
+function syncHomeOverlay() {
+  const open = !!$("phone").querySelector(".search-ov.open, .set-ov.open, .add-ov.open, .upd.open, .sheet.open");
+  if ($("phone").classList.contains("overlay-open") !== open) {
+    $("phone").classList.toggle("overlay-open", open);
+    homeClockChanged();
   }
-  if (!window.__playerOpen) syncMiniLyrics();          // letra: todo quadro (barato; só mexe na tela quando muda a linha)
-  if (scrubbing) requestAnimationFrame(tick); else setTimeout(() => tick(performance.now()), 66);
-})(0);
+}
+new MutationObserver(changes => {
+  if (changes.some(m => m.type === "attributes" ? m.target.matches?.(homeOverlaySelector) :
+      [...m.addedNodes, ...m.removedNodes].some(n => n.nodeType === 1 && (n.matches?.(homeOverlaySelector) || n.querySelector?.(homeOverlaySelector))))) syncHomeOverlay();
+}).observe($("phone"), { subtree: true, childList: true, attributes: true, attributeFilter: ["class"] });
+last = performance.now();
+drawMiniProgress();
+renderMiniIcon();
+homeClockChanged();
 loadMini();
 </script>
 <script src="home-native.js"></script>
