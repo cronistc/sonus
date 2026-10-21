@@ -115,14 +115,17 @@ class NewPipeSource(private val service: StreamingService = ServiceList.YouTube)
         val audio = pickAudio(info.audioStreams, quality)
             ?: error("Nenhum áudio tocável para $url")
         val clean = TitleNormalizer.clean(info.name, info.uploaderName ?: "")
+        val artists = TitleNormalizer.mergeArtists(known?.artists.orEmpty(), clean.artists)
+        val primaryArtist = known?.artist?.takeIf { it.isNotBlank() } ?: clean.artist
         val track = Track(
             id = Track.idFor(info.url),
             url = info.url,
             title = clean.title,
-            artist = clean.artist,
+            artist = primaryArtist,
             artistUrl = info.uploaderUrl,
             durationSec = info.duration,
             thumbs = (known?.thumbs.orEmpty() + info.thumbnails.map(::toThumb)).distinctBy { it.url },
+            artists = TitleNormalizer.mergeArtists(listOf(primaryArtist), artists),
         )
         // reserva imediata: "relacionados" do vídeo, só os que são MÚSICA (canais "Topic" do YouTube Music)
         val related = info.relatedItems.filterIsInstance<StreamInfoItem>().filter(::isSong).mapNotNull(::toTrack)
@@ -161,6 +164,7 @@ class NewPipeSource(private val service: StreamingService = ServiceList.YouTube)
             artistUrl = s.uploaderUrl,
             durationSec = s.duration,
             thumbs = s.thumbnails.map(::toThumb),
+            artists = clean.artists,
         )
     }
 

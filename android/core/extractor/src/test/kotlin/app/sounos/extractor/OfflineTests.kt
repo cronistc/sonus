@@ -3,6 +3,8 @@ package app.sounos.extractor
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import com.grack.nanojson.JsonParser
+import okhttp3.OkHttpClient
 
 /** Testes que não precisam de internet. */
 class OfflineTests {
@@ -23,6 +25,45 @@ class OfflineTests {
         val c = TitleNormalizer.clean("Aliança - Tribalistas", "Tribalistas")
         assertEquals("Tribalistas", c.artist)
         assertEquals("Aliança", c.title)
+    }
+
+    @Test fun `participacoes saem do titulo e preservam os artistas principais`() {
+        val feat = TitleNormalizer.clean("Coração Partido (feat. Camisa 10)", "Menos É Mais - Topic")
+        assertEquals("Coração Partido", feat.title)
+        assertEquals("Menos É Mais", feat.artist)
+        assertEquals(listOf("Menos É Mais", "Camisa 10"), feat.artists)
+
+        val part = TitleNormalizer.clean("Música (part. Dilsinho)", "Sorriso Maroto")
+        assertEquals(listOf("Sorriso Maroto", "Dilsinho"), part.artists)
+        assertEquals("Música", part.title)
+
+        val com = TitleNormalizer.clean("Música (com Péricles)", "Grupo Exemplo")
+        assertEquals(listOf("Grupo Exemplo", "Péricles"), com.artists)
+        assertEquals("Música", com.title)
+
+        val ft = TitleNormalizer.clean("Música ft. Ludmilla", "Artista Exemplo")
+        assertEquals(listOf("Artista Exemplo", "Ludmilla"), ft.artists)
+        assertEquals("Música", ft.title)
+    }
+
+    @Test fun `nomes de duplas e bandas nao sao divididos`() {
+        assertEquals(listOf("Henrique & Juliano"), TitleNormalizer.clean("X", "Henrique & Juliano").artists)
+        assertEquals(listOf("Menos É Mais"), TitleNormalizer.clean("X", "Menos É Mais").artists)
+    }
+
+    @Test fun `byline da radio usa somente runs ligados a artistas`() {
+        val json = JsonParser.`object`().from(
+            """{"runs":[
+                {"text":"Menos É Mais","navigationEndpoint":{"browseEndpoint":{"browseId":"UCmenos"}}},
+                {"text":" • "},
+                {"text":"Camisa 10","navigationEndpoint":{"browseEndpoint":{"browseId":"UCcamisa"}}},
+                {"text":" • "},
+                {"text":"Álbum","navigationEndpoint":{"browseEndpoint":{"browseId":"MPREb123"}}},
+                {"text":" • 2024"}
+            ]}""",
+        )
+        val radio = YtMusicRadio(OkHttpClient.Builder().build())
+        assertEquals(listOf("Menos É Mais", "Camisa 10"), radio.artistsFromRuns(json.getArray("runs")))
     }
 
     @Test fun `chave de deduplicacao ignora acento e pontuacao`() {

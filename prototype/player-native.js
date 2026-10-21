@@ -6,7 +6,7 @@
   const lyricsById = {};
   const root = document.documentElement.style;
 
-  const toLocal = t => ({ id: t.id, title: t.title || "—", artist: t.artist || "", dur: Math.max(1, t.dur || 1),
+  const toLocal = t => ({ id: t.id, title: t.title || "—", artist: Sounos.artistLine(t), dur: Math.max(1, t.dur || 1),
                           c: Sounos.hashColors(t.id), lrc: lyricsById[t.id] ? lyricsById[t.id].lrc : undefined, plain: !!(lyricsById[t.id] && lyricsById[t.id].plain), cover: Sounos.coverUrl(t, true), raw: t });
   const coverBg = t => `url('${t.cover}') center/cover no-repeat, linear-gradient(135deg,${t.c[0]},${t.c[1]} 60%,${t.c[2]})`;
 

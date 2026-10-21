@@ -15,6 +15,8 @@ data class Track(
     val artistUrl: String?,
     val durationSec: Long,
     val thumbs: List<Thumb>,
+    /** Artistas da faixa na ordem de exibição; `artist` continua sendo o principal. */
+    val artists: List<String> = listOf(artist),
 ) {
     val videoId: String? get() = YOUTUBE_ID.find(url)?.groupValues?.get(1)
 

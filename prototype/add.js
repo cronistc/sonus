@@ -70,7 +70,7 @@
     function renderLists() { rows.innerHTML = lists.map((p, k) => playlistRow(p, k)).join(""); }
     function songRow(t) {
       const id = key(t), on = selected.has(id);
-      const title = t?.title || "Música", artist = t?.artist || "";
+      const title = t?.title || "Música", artist = Sounos.artistLine(t);
       return `<button class="add-row song-row ${on ? "on" : ""}" data-song="${esc(id)}">
         <div class="cv" style="background:${look(t)}"></div>
         <div class="tx"><div class="t">${esc(title)}</div><div class="a">${esc(artist)}</div></div>
@@ -101,7 +101,7 @@
       const t = trackAt(track);
       if (t) {
         ov.querySelector(".add-head").innerHTML = `<div class="cv" style="background:${look(t)}"></div>
-          <div><div class="k">Nova playlist</div><div class="t">${esc(t.title || "Escolha as músicas")}</div><div class="a">${esc(t.artist || "Esta música já está selecionada")}</div></div>`;
+          <div><div class="k">Nova playlist</div><div class="t">${esc(t.title || "Escolha as músicas")}</div><div class="a">${esc(Sounos.artistLine(t) || "Esta música já está selecionada")}</div></div>`;
       } else {
         ov.querySelector(".add-head").innerHTML = `<div class="cv">${PLUS}</div>
           <div><div class="k">Nova playlist</div><div class="t">Escolha nome e músicas</div><div class="a">A playlist só será salva ao confirmar</div></div>`;
@@ -130,7 +130,7 @@
       track = trackIndex; lists = D.getPlaylists(); changed = false;
       const t = trackAt(track);
       ov.querySelector(".add-head").innerHTML = t ? `<div class="cv" style="background:${look(t)}"></div>
-        <div><div class="k">Adicionar à playlist</div><div class="t">${esc(t.title || "Música")}</div><div class="a">${esc(t.artist || "")}</div></div>` : "";
+        <div><div class="k">Adicionar à playlist</div><div class="t">${esc(t.title || "Música")}</div><div class="a">${esc(Sounos.artistLine(t))}</div></div>` : "";
       nw.classList.remove("editing"); renderLists();
       listMode.hidden = false; createMode.hidden = true;
       ov.querySelector(".done").hidden = false; confirm.hidden = true;
