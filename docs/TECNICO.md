@@ -203,3 +203,7 @@ Ficaram pendentes por causa da perda do ADB: rodadas `monkey -p app.sounos --thr
 com sementes diferentes, nova confirmação de logs após a rede, tela apagar/acender e HOME/retorno.
 A Activity declara orientação `portrait`; não foi feita rotação física. Nenhum bug reproduzido ficou
 sem correção; falta completar essas rodadas no aparelho.
+
+Sincronização final: `git pull origin main` informou `Already up to date.`. Após a sincronização,
+`cd android && JAVA_HOME=~/Android/jdk17 ./gradlew -q :app:assembleDebug -PversionCode=5`
+concluiu com sucesso.
