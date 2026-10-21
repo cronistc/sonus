@@ -61,13 +61,29 @@ class YtMusicRadio(private val client: OkHttpClient) {
     private fun toTrack(r: JsonObject): Track? {
         val id = r.getString("videoId") ?: return null
         val title = r.getObject("title").getArray("runs").text() ?: return null
-        val artist = r.getObject("longBylineText").getArray("runs").getObject(0).getString("text") ?: ""
+        val bylineRuns = r.getObject("longBylineText").getArray("runs")
+        val bylineArtists = artistsFromRuns(bylineRuns)
+        val firstRun = (bylineRuns.firstOrNull() as? JsonObject)?.getString("text") ?: ""
+        val clean = TitleNormalizer.clean(title, bylineArtists.firstOrNull() ?: firstRun)
+        val artists = TitleNormalizer.mergeArtists(bylineArtists, clean.artists)
+        val artist = bylineArtists.firstOrNull() ?: clean.artist
         val thumbs = r.getObject("thumbnail").getArray("thumbnails").mapNotNull { t ->
             (t as? JsonObject)?.let { Thumb(it.getString("url") ?: return@let null, it.getInt("width"), it.getInt("height")) }
         }
         val url = "https://www.youtube.com/watch?v=$id"
-        return Track(Track.idFor(url), url, title, TitleNormalizer.cleanArtist(artist), null, duration(r.getObject("lengthText").getArray("runs").text()), thumbs)
+        return Track(Track.idFor(url), url, clean.title, artist, null, duration(r.getObject("lengthText").getArray("runs").text()), thumbs, artists)
     }
+
+    /** Lê apenas runs ligados a páginas de artista/canal; separadores e texto livre não são nomes. */
+    internal fun artistsFromRuns(runs: JsonArray): List<String> = TitleNormalizer.mergeArtists(runs.mapNotNull { value ->
+        val run = value as? JsonObject ?: return@mapNotNull null
+        val browse = run.path("navigationEndpoint", "browseEndpoint")
+        val browseId = browse.getString("browseId").orEmpty()
+        val pageType = browse.path("browseEndpointContextSupportedConfigs", "browseEndpointContextMusicConfig")
+            .getString("pageType")
+        val isArtist = browseId.startsWith("UC") || pageType == "MUSIC_PAGE_TYPE_ARTIST"
+        run.getString("text")?.takeIf { isArtist }
+    })
 
     private fun JsonArray.text() = (this.firstOrNull() as? JsonObject)?.getString("text")
     private fun JsonObject.path(vararg keys: String): JsonObject = keys.fold(this) { o, k -> o.getObject(k) }

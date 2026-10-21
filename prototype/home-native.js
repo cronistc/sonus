@@ -33,7 +33,7 @@
       // No modo offline, cada cartão inicia a fila inteira de músicas disponíveis.
       $("recent").innerHTML = mine.length ? mine.map((t, index) => {
         const k = items.push({ kind: "mineTrack", tracks: mine, index }) - 1;
-        return `<button class="blk big tap" data-k="${k}" style="background:${bg(t)}">${meta(esc(t.title), Sounos.handle(t.artist))}</button>`;
+        return `<button class="blk big tap" data-k="${k}" style="background:${bg(t)}">${meta(esc(t.title), Sounos.handle(Sounos.artistLine(t)))}</button>`;
       }).join("") : `<div class="blk big" style="background:linear-gradient(135deg,var(--c1),var(--c2))">
         <div class="ini" style="font-size:44px">♪</div>${meta("Minhas músicas", "Nenhuma música disponível offline")}</div>`;
     } else {
@@ -53,7 +53,7 @@
         const k = items.push(r) - 1;
         if (r.kind === "playlist") return `<button class="blk big tap" data-k="${k}">${mosaicOf(r.p)}
           <span class="kind">${ICON.playlist}Playlist</span>${meta(esc(r.p.name), count(r.p))}</button>`;
-        return `<button class="blk big tap" data-k="${k}" style="background:${bg(r.t)}">${meta(esc(r.t.title), Sounos.handle(r.t.artist))}</button>`;
+        return `<button class="blk big tap" data-k="${k}" style="background:${bg(r.t)}">${meta(esc(r.t.title), Sounos.handle(Sounos.artistLine(r.t)))}</button>`;
       }).join("") : `<button class="blk big tap" data-k="search" style="background:linear-gradient(135deg,var(--c1),var(--c2))">
           <div class="ini" style="font-size:44px">♪</div>${meta("Busque uma música", "para começar")}</button>`;
     }
@@ -156,7 +156,7 @@
     $("miniIni").textContent = "";
     $("miniCv").style.background = bg(t);
     $("miniT").textContent = t.title;
-    $("miniA").textContent = Sounos.handle(t.artist);
+    $("miniA").textContent = Sounos.handle(Sounos.artistLine(t));
     if (!miniFirst) {
       swapIn($("miniCv"), { opacity: .3, transform: "scale(.85)" });
       swapIn($("miniT"), { opacity: 0, transform: "translateX(12px)" });

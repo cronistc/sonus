@@ -105,6 +105,8 @@ window.Sounos = (() => {
     hashColors(id) { const h = hash(id || "x") % 360; return [`hsl(${h} 65% 42%)`, `hsl(${(h + 40) % 360} 70% 50%)`, `hsl(${(h + 80) % 360} 80% 58%)`]; },
     /** É música (capa quadrada do álbum)? Vídeos e clipes só têm miniatura 16:9 — esses não aparecem no app. */
     isSong(t) { return !!t && ((t.thumbs || []).some(x => x.w > 0 && Math.abs(x.w - x.h) <= 2) || /googleusercontent\.com/.test(t.thumb || "")); },
+    /** Texto completo para exibição; faixas antigas ainda têm somente `artist`. */
+    artistLine(t) { const names = Array.isArray(t?.artists) ? t.artists.filter(x => String(x || "").trim()) : []; return (names.length ? names : [t?.artist || ""]).join(", "); },
     handle(name) { return String(name || "").trim(); },   // nome do artista como vem (sem @)
   };
 })();

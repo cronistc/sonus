@@ -63,6 +63,7 @@
   // ---------- Texto: normalização e comparação tolerante a erros ----------
   // mesma regra das outras telas: minúsculo, sem acento, espaço vira "_", o resto sai
   const toHandle = name => String(name ?? "").trim();  // nome do artista como vem (sem @)
+  const artistLine = t => toHandle(Sounos.artistLine?.(t) || t?.artist || "");
   function lev(a, b, max) {                                 // distância de edição (com transposição)
     if (Math.abs(a.length - b.length) > max) return max + 1;
     const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
@@ -106,7 +107,7 @@
     const out = [];
     tracks.forEach(t => {
       const s = Math.max(textScore(q, t.title), .85 * textScore(q, t.title + " " + t.artist));
-      if (s) out.push({ type: "t", item: t, label: t.title, sub: toHandle(t.artist), text: s, score: W_TEXT * s + W_TASTE * affTrack(t) });
+      if (s) out.push({ type: "t", item: t, label: t.title, sub: artistLine(t), text: s, score: W_TEXT * s + W_TASTE * affTrack(t) });
     });
     artists.forEach(a => {
       const s = textScore(q, a.name);
@@ -280,9 +281,9 @@
         history.map((h, k) => {
           let ic, t, a;
           if (h.type === "q") { ic = cover("q"); t = esc(h.text); a = "Pesquisa"; }
-          else if (h.type === "t" && h.track) { ic = realCover(h.track); t = esc(h.track.title); a = "Música · " + toHandle(h.track.artist); }
+          else if (h.type === "t" && h.track) { ic = realCover(h.track); t = esc(h.track.title); a = "Música · " + artistLine(h.track); }
           else if (h.type === "a" && NATIVE) { ic = realArtist(h); t = toHandle(h.name); a = "Artista"; }
-          else if (h.type === "t") { const x = tracks[h.i]; ic = cover("t", x); t = esc(x.title); a = "Música · " + toHandle(x.artist); }
+          else if (h.type === "t") { const x = tracks[h.i]; ic = cover("t", x); t = esc(x.title); a = "Música · " + artistLine(x); }
           else if (h.type === "a") { const x = artists.find(y => y.name === h.name); ic = cover("a", x); t = toHandle(x.name); a = "Artista"; }
           else if (h.type === "p") {
             const x = D.getPlaylists().find(p => p.id === h.id) || playlists[h.i] || h;
@@ -343,7 +344,7 @@
         </button>` +
         (songs.length ? `<div class="s-head"><h3>Músicas</h3></div>` + songs.map(c => `
           <button class="s-row" data-pick="t" data-id="${c.item.i}">${cover("t", c.item)}
-            <div class="tx"><div class="t">${esc(c.item.title)}</div><div class="a">${toHandle(c.item.artist)}</div></div></button>`).join("") : "") +
+            <div class="tx"><div class="t">${esc(c.item.title)}</div><div class="a">${artistLine(c.item)}</div></div></button>`).join("") : "") +
         (arts.length ? `<div class="s-head"><h3>Artistas</h3></div><div class="s-hrow">` + arts.map(c => `
           <button class="s-art" data-pick="a" data-id="${esc(c.item.name)}"><div class="pic" style="background:${grad(c.item.c)}">${esc(c.item.name[0])}</div>
             <div class="n">${toHandle(c.item.name)}</div></button>`).join("") + `</div>` : "") +
@@ -487,7 +488,7 @@
         pastQ.map(h => `<button class="s-row sug" data-q="${esc(h.text)}">${cover("q")}<div class="tx"><div class="t">${emphasize(h.text, q)}</div></div>
           <span class="fill" data-fill="${esc(h.text)}">${ICON.fill}</span></button>`).join("") +
         mine.map((x, i) => `<button class="s-row sug" data-pick="nt" data-id="${i}">${realCover(x.t)}
-          <div class="tx"><div class="t">${emphasize(x.t.title, q)}</div><div class="a">${toHandle(x.t.artist)}</div></div></button>`).join("") +
+          <div class="tx"><div class="t">${emphasize(x.t.title, q)}</div><div class="a">${artistLine(x.t)}</div></div></button>`).join("") +
         server.filter(t => !pastQ.some(h => norm(h.text) === norm(t))).slice(0, 6).map(t => `<button class="s-row sug" data-q="${esc(t)}"><div class="ic">${ICON.search}</div>
           <div class="tx"><div class="t">${emphasize(t, q)}</div></div><span class="fill" data-fill="${esc(t)}">${ICON.fill}</span></button>`).join("")
         || `<button class="s-row sug" data-q="${esc(q)}">${cover("q")}<div class="tx"><div class="t"><b>${esc(q)}</b></div></div></button>`, "sug");
@@ -561,13 +562,13 @@
         const topArtist = resultArtists[0] && (!resultTracks.length || textScore(q, resultArtists[0].name) >= .9) ? resultArtists[0] : null;
         const topAlbum = resultAlbums[0];
         const best = topArtist ? { type: "na", i: 0, title: toHandle(topArtist.name), sub: "Artista", look: realArtist(topArtist).replace('class="ic round"', 'class="cv round"') }
-          : resultTracks.length ? { type: "nt", i: 0, title: esc(resultTracks[0].title), sub: "Música · " + toHandle(resultTracks[0].artist),
+          : resultTracks.length ? { type: "nt", i: 0, title: esc(resultTracks[0].title), sub: "Música · " + artistLine(resultTracks[0]),
             look: realCover(resultTracks[0]).replace('class="ic"', 'class="cv"') }
           : { type: "nal", i: 0, title: esc(topAlbum.name), sub: "Álbum · " + toHandle(topAlbum.artist),
             look: `<div class="cv" style="background:${topAlbum.thumb ? `url('${Sounos.coverUrl({ id: "album:" + (artistKey(topAlbum.name) || "x"), thumb: topAlbum.thumb }).replace(/'/g, "%27")}') center/cover,` : ""} ${grad(Sounos.hashColors(topAlbum.name))}"></div>` };
         const songRows = (from, to = resultTracks.length) => resultTracks.slice(from, to).map((t, i) => `
             <button class="s-row" data-pick="nt" data-id="${from + i}">${realCover(t)}
-              <div class="tx"><div class="t">${esc(t.title)}</div><div class="a">${toHandle(t.artist)} · ${fmtDur(t.dur)}</div></div></button>`).join("");
+              <div class="tx"><div class="t">${esc(t.title)}</div><div class="a">${artistLine(t)} · ${fmtDur(t.dur)}</div></div></button>`).join("");
         setPanel(`
           <div class="s-head"><h3>Melhor resultado</h3></div>
           <button class="s-best" data-pick="${best.type}" data-id="${best.i}">${best.look}

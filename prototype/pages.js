@@ -5,6 +5,7 @@ window.SounosPages = (() => {
   const D = window.SounosData;
   const esc = s => String(s ?? "").replace(/[&<>"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
   const handle = n => (window.Sounos?.handle || D.toHandle)(n);
+  const artistLine = t => window.Sounos?.artistLine?.(t) || t?.artist || "";
   const cover = t => `url('${Sounos.coverUrl(t, true)}'), linear-gradient(135deg,${Sounos.hashColors(t.id).join(",")})`;
   const fmtTotal = s => { const m = Math.round(s / 60); return m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`; };
   const count = n => n === 1 ? "1 música" : `${n} músicas`;
@@ -97,7 +98,7 @@ window.SounosPages = (() => {
   const nowId = () => { if (curId === undefined) { try { curId = Sounos.call("getState").current?.id ?? null; } catch { curId = null; } } return curId; };
   const rowHtml = (t, i, extra = "") => `<div class="tr" data-i="${i}" data-id="${esc(t.id)}">
       <div class="cv" style="background-image:${cover(t)}"></div>
-      <div class="tx"><div class="t">${esc(t.title)}</div><div class="a">${handle(t.artist)}</div></div>${extra}</div>`;
+      <div class="tx"><div class="t">${esc(t.title)}</div><div class="a">${handle(artistLine(t))}</div></div>${extra}</div>`;
 
   // ---------- playlist ----------
   function openPlaylist(id, o = {}) {

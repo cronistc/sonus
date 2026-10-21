@@ -15,14 +15,23 @@ object TitleNormalizer {
     )
     private val TOPIC = Regex("""\s*-\s*Topic$""", RegexOption.IGNORE_CASE)
     private val SPACES = Regex("""\s+""")
+    private val FEATURE = Regex(
+        """(?:[\(\[]\s*(?:feat(?:uring)?\.?|ft\.?|part\.?|com)\s+([^\)\]]+?)\s*[\)\]])|(?:\s+)(?:feat(?:uring)?\.?|ft\.?|part\.?|com)\s+(.+)$""",
+        RegexOption.IGNORE_CASE,
+    )
 
-    data class Clean(val artist: String, val title: String)
+    data class Clean(val artist: String, val title: String, val artists: List<String> = listOf(artist))
 
     fun cleanArtist(uploader: String): String = TOPIC.replace(uploader, "").trim()
 
     fun clean(rawTitle: String, rawUploader: String): Clean {
         var artist = cleanArtist(rawUploader)
         var title = NOISE.replace(rawTitle, "").let { SPACES.replace(it, " ") }.trim()
+        val featured = FEATURE.findAll(title).mapNotNull { match ->
+            (match.groups[1]?.value ?: match.groups[2]?.value)?.trim()?.takeIf { it.isNotBlank() }
+        }.toList()
+        title = FEATURE.replace(title, " ").replace(Regex("""[\(\[]\s*[\)\]]"""), " ")
+            .let { SPACES.replace(it, " ") }.trim().trimEnd('-', '–', ':', '|').trim()
         // "Artista - Música" quando o canal não é do artista (ex.: canal de clipes ou selo)
         val dash = title.indexOf(" - ")
         if (dash > 0) {
@@ -34,7 +43,17 @@ object TitleNormalizer {
                 !title.contains(artist, ignoreCase = true) -> { artist = left; title = right }   // canal de terceiros
             }
         }
-        return Clean(artist.ifBlank { rawUploader.trim() }, title.ifBlank { rawTitle.trim() })
+        artist = artist.ifBlank { rawUploader.trim() }
+        val artists = mergeArtists(listOf(artist), featured)
+        return Clean(artist, title.ifBlank { rawTitle.trim() }, artists)
+    }
+
+    /** Junta nomes na ordem recebida, removendo repetidos sem dividir nomes de bandas. */
+    fun mergeArtists(vararg groups: Iterable<String>): List<String> {
+        val seen = mutableSetOf<String>()
+        return groups.asSequence().flatMap { it.asSequence() }.map(String::trim).filter { name ->
+            name.isNotBlank() && seen.add(name.lowercase())
+        }.toList()
     }
 
     /** Chave para reconhecer a mesma música em uploads diferentes (deduplicação). */

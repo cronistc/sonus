@@ -81,10 +81,11 @@ class PlaybackService : Service() {
         val t = player.currentTrack
         if (t == null) { stopForeground(STOP_FOREGROUND_REMOVE); stopSelf(); return }
         val playing = player.isPlaying
+        val artistLine = t.artists.ifEmpty { listOf(t.artist) }.joinToString(", ")
         val cover = coverFor(t.id)
         session.setMetadata(MediaMetadata.Builder()
             .putString(MediaMetadata.METADATA_KEY_TITLE, t.title)
-            .putString(MediaMetadata.METADATA_KEY_ARTIST, t.artist)
+            .putString(MediaMetadata.METADATA_KEY_ARTIST, artistLine)
             .putLong(MediaMetadata.METADATA_KEY_DURATION, player.durationMs)
             .apply { if (cover != null) putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, cover) }
             .build())
@@ -100,7 +101,7 @@ class PlaybackService : Service() {
 
         val n = Notification.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_stat_sounos)
-            .setContentTitle(t.title).setContentText(t.artist)
+            .setContentTitle(t.title).setContentText(artistLine)
             .setLargeIcon(cover)
             .setContentIntent(session.controller.sessionActivity)
             .setOngoing(playing)

@@ -9,6 +9,7 @@ import org.json.JSONObject
 object Json {
     fun track(t: Track): JSONObject = JSONObject()
         .put("id", t.id).put("url", t.url).put("title", t.title).put("artist", t.artist)
+        .put("artists", JSONArray().apply { artistsFor(t).forEach { put(it) } })
         .put("artistUrl", t.artistUrl ?: JSONObject.NULL).put("dur", t.durationSec)
         .put("thumb", bestThumb(t) ?: JSONObject.NULL)
         .put("thumbs", JSONArray().apply { t.thumbs.forEach { put(JSONObject().put("url", it.url).put("w", it.width).put("h", it.height)) } })
@@ -20,14 +21,19 @@ object Json {
         o.optJSONArray("thumbs")?.let { a -> for (i in 0 until a.length()) a.getJSONObject(i).let { thumbs += Thumb(it.getString("url"), it.optInt("w"), it.optInt("h")) } }
         if (thumbs.isEmpty()) o.optString("thumb").takeIf { it.isNotBlank() && it != "null" }?.let { thumbs += Thumb(it, 0, 0) }
         val url = o.getString("url")
+        val savedArtist = o.optString("artist")
+        val artists = o.optJSONArray("artists")?.let { a ->
+            (0 until a.length()).mapNotNull { i -> a.optString(i).trim().takeIf(String::isNotBlank) }
+        }.orEmpty().ifEmpty { listOf(savedArtist).filter(String::isNotBlank) }
         return Track(
             id = o.optString("id").ifBlank { Track.idFor(url) },
             url = url,
             title = o.optString("title"),
-            artist = o.optString("artist"),
+            artist = artists.firstOrNull() ?: savedArtist,
             artistUrl = o.optString("artistUrl").takeIf { it.isNotBlank() && it != "null" },
             durationSec = o.optLong("dur"),
             thumbs = thumbs,
+            artists = artists.ifEmpty { listOf(savedArtist).filter(String::isNotBlank) },
         )
     }
 
@@ -37,4 +43,7 @@ object Json {
     fun bestThumb(t: Track): String? =
         t.thumbs.sortedWith(compareByDescending<Thumb> { it.width > 0 && kotlin.math.abs(it.width - it.height) <= 2 }.thenByDescending { it.width * it.height })
             .firstOrNull()?.url
+
+    private fun artistsFor(t: Track): List<String> =
+        t.artists.ifEmpty { listOf(t.artist).filter(String::isNotBlank) }
 }
