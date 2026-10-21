@@ -67,7 +67,10 @@ class MainActivity : Activity() {
 
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
-        if (web.canGoBack()) web.goBack() else moveTaskToBack(true)   // sai sem parar a música
+        // primeiro a interface fecha o que estiver aberto (página, player, busca); senão volta/sai sem parar a música
+        web.evaluateJavascript("(window.__sonusBack && window.__sonusBack()) || false") { handled ->
+            if (handled != "true") { if (web.canGoBack()) web.goBack() else moveTaskToBack(true) }
+        }
     }
 
     override fun onSaveInstanceState(outState: Bundle) {

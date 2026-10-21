@@ -100,6 +100,8 @@
     e.stopImmediatePropagation(); add.openCreate();
   }, true);
   const pages = SounosPages.attach($("phone"), { onChange: () => renderHome() });
+  // botão voltar do Android: fecha a página de cima mesmo se o histórico do navegador não tiver a entrada
+  window.__sonusBack = () => { if (window.__playerOpen || !pages.isOpen()) return false; pages.closeTop(); return true; };
   Sounos.on("offline", ev => { offline = !!ev.offline; renderMine(); fitHome(); });
   Sounos.on("library", () => { renderMine(); fitHome(); });
   Sounos.on("download", ev => { if (ev.done || ev.error) { renderMine(); fitHome(); } });
