@@ -313,11 +313,15 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
     }
 
     private fun computeSuggestions() {
-        suggestions = MusicPicks.clean(current?.related.orEmpty(), exclude = listOfNotNull(currentTrack)).take(12)
+        suggestions = albumPicks() ?: MusicPicks.clean(current?.related.orEmpty(), exclude = listOfNotNull(currentTrack)).take(12)
     }
 
+    // álbum em "repetir uma": as sugestões embaixo são as outras músicas do próprio álbum
+    private fun albumPicks(): List<Track>? =
+        if (repeat == Repeat.ONE && context.optString("type") == "album") original.filter { it.id != currentTrack?.id }.take(12) else null
+
     private fun renewSuggestions() {
-        suggestions = MusicPicks.clean(current?.related.orEmpty(), exclude = listOfNotNull(currentTrack)).shuffled().take(12)
+        suggestions = albumPicks() ?: MusicPicks.clean(current?.related.orEmpty(), exclude = listOfNotNull(currentTrack)).shuffled().take(12)
         emit("suggestionsRenewed", JSONObject()); emitState()
     }
 

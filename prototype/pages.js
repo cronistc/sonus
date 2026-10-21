@@ -87,6 +87,7 @@ window.SounosPages = (() => {
     Sounos.call("playQueue", { tracks: list, index: shuffle ? Math.floor(Math.random() * list.length) : i, context: ctx });
     window.openPlayer?.();
   }
+  const st = () => { try { return Sounos.call("getState") || {}; } catch { return {}; } };
   let curId;
   const nowId = () => { if (curId === undefined) { try { curId = Sounos.call("getState").current?.id ?? null; } catch { curId = null; } } return curId; };
   const rowHtml = (t, i, extra = "") => `<div class="tr" data-i="${i}" data-id="${esc(t.id)}">
@@ -284,9 +285,18 @@ window.SounosPages = (() => {
     el.addEventListener("click", e => {
       const a = e.target.closest("[data-a]")?.dataset.a;
       const ctx = { type: "album", name };
-      if (a === "play") return playFrom(songs, 0, ctx);
-      if (a === "shuffle") return playFrom(songs, 0, ctx, true);
-      const row = e.target.closest(".tr"); if (row) playFrom(songs, +row.dataset.i, ctx);
+      // play/aleatório da capa: só as músicas do álbum (sai do "repetir uma" para a fila do álbum aparecer)
+      if (a === "play" || a === "shuffle") {
+        if (!songs.length) return;
+        if (st().repeat === "one") Sounos.call("setRepeat", { mode: "off" });
+        if (a === "play") Sounos.call("setShuffle", { on: false });
+        return playFrom(songs, 0, ctx, a === "shuffle");
+      }
+      // música específica: com repetir (álbum ou faixa) fica no álbum; no aleatório vira rádio a partir dela
+      const row = e.target.closest(".tr"); if (!row) return;
+      const s = st(), i = +row.dataset.i;
+      if (s.shuffle && s.repeat === "off") { Sounos.call("playSingle", { track: songs[i], context: { type: "radio" } }); window.openPlayer?.(); }
+      else playFrom(songs, i, ctx);
     });
     return page;
   }
