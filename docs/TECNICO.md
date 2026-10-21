@@ -178,3 +178,28 @@ ficou no AOD/lockscreen sem sessão de áudio; nesse estado o processo ocioso ma
 amostras. Esse número não é comparável com o baseline reproduzindo. A autenticação do aparelho
 impediu reabrir o Sonus para medir home/player após a instalação e capturar a tela de letras; essas
 medições e a comparação visual pós-instalação ficaram pendentes.
+
+## Registro do teste de estresse no Galaxy A54 (21/10/2026)
+
+| Bug | Causa | Correção | Confirmado no aparelho? |
+| --- | --- | --- | --- |
+| Voltar na página de artista fechava também a busca que estava por baixo. | `history` local era a lista do histórico de buscas e sombreava `window.history` na verificação de `popstate`; a busca interpretava o retorno da página como pedido para fechar. | A verificação agora lê `window.history.state`. | Sim: compilado, instalado por cima e reproduzido de novo; Voltar fechou o artista e manteve os resultados da busca. |
+| Voltar com a letra aberta fechava o player inteiro. | O modo de letra não era tratado pelo botão Voltar da Activity. | O handler da tela inicial delega o Voltar ao player; o player fecha a letra antes de devolver o comando à Activity. | Sim: compilado, instalado por cima e confirmado; Voltar fechou a letra e manteve o player. |
+
+Cobertura executada enquanto o ADB estava conectado: navegação entre início, player, configurações,
+atualização, busca, artista, álbum e Minhas músicas; busca com rolagem extensa; play/pause, próxima,
+anterior, repetir, aleatório e seleção de sugestão. As páginas de artista, álbum e Minhas músicas
+abriram e fecharam; não havia playlist existente para abrir, então nenhuma playlist foi criada ou
+alterada. A lista de downloads continuou com 5 músicas e 19 MB após as instalações.
+
+Não apareceu crash novo em `exit-info`, no Logcat filtrado ou no Dropbox durante a parte conectada.
+O histórico do Dropbox já continha registros anteriores ao teste (20/10 e 21/10 às 12:53). O teste
+de Wi-Fi começou com áudio ativo, mas o primeiro `svc wifi disable` derrubou o ADB; o serviço
+`_adb-tls-connect` anunciado em `192.168.1.100:34555` recusou conexão. O IP respondeu a ping, mas
+não foi possível recolher os logs após a queda nem confirmar que a sequência de alternâncias terminou.
+Não tentei desbloquear o aparelho. Se a tela estiver bloqueada: **PRECISO DO CELULAR DESBLOQUEADO**.
+
+Ficaram pendentes por causa da perda do ADB: rodadas `monkey -p app.sounos --throttle 150 -v 3000`
+com sementes diferentes, nova confirmação de logs após a rede, tela apagar/acender e HOME/retorno.
+A Activity declara orientação `portrait`; não foi feita rotação física. Nenhum bug reproduzido ficou
+sem correção; falta completar essas rodadas no aparelho.
