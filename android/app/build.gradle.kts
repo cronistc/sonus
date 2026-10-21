@@ -14,8 +14,8 @@ android {
         minSdk = 26
         targetSdk = 34
         // nome da versão: quem decide é o Guilherme. versionCode só sobe (o Android exige).
-        versionCode = (project.findProperty("versionCode") as String?)?.toInt() ?: 4
-        versionName = (project.findProperty("versionName") as String?) ?: "0.1.2"
+        versionCode = (project.findProperty("versionCode") as String?)?.toInt() ?: 6
+        versionName = (project.findProperty("versionName") as String?) ?: "0.1.3"
     }
 
     // Chave definitiva do Sounos (fica fora do projeto, em ~/Sonus-chave). Toda versão precisa sair com ela:
