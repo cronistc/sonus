@@ -50,16 +50,17 @@
   }
   const count = p => p.tracks.length === 1 ? "1 música" : `${p.tracks.length} músicas`;
   const mosaicOf = p => {
+    if (p.cover) return `<div class="mosaic" style="background:url('${p.cover.replace(/'/g, "%27")}') center/cover no-repeat"></div>`;
     if (!p.tracks.length) return `<div class="mosaic" style="background:linear-gradient(135deg,var(--c1),var(--c2))"></div>`;
     const four = [0, 1, 2, 3].map(i => p.tracks[Math.min(i, p.tracks.length - 1)]);
     return `<div class="mosaic">${four.map(t => `<i style="background:${bg(t)}"></i>`).join("")}</div>`;
   };
   renderPlaylists = function () {
     playlists = SounosData.getPlaylists();
-    $("playlists").innerHTML = `<button class="blk new tap" aria-label="Nova playlist"><span class="in">
-      <svg class="lu" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Nova playlist</span></button>`
-      + playlists.map(p => { const k = items.push({ kind: "playlist", p }) - 1;
-        return `<button class="blk tap" data-k="${k}">${mosaicOf(p)}${meta(esc(p.name), count(p))}</button>`; }).join("");
+    $("playlists").innerHTML = playlists.map(p => { const k = items.push({ kind: "playlist", p }) - 1;
+      return `<button class="blk tap" data-k="${k}">${mosaicOf(p)}${meta(esc(p.name), count(p))}</button>`; }).join("")
+      + `<button class="blk new tap" aria-label="Nova playlist"><span class="in">
+        <svg class="lu" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Nova playlist</span></button>`;
   };
 
   // toques nas seções
@@ -71,10 +72,10 @@
     else if (it.kind === "playlist") pages.openPlaylist(it.p.id);
     else if (it.kind === "artist") pages.openArtist(it.name);
   }, true);
-  // "Nova playlist": cria e abre a página dela, com o nome pronto para digitar
+  // "Nova playlist": abre o fluxo sem guardar nada até a confirmação.
   document.addEventListener("click", e => {
     if (!e.target.closest("#playlists .blk.new")) return;
-    e.stopImmediatePropagation(); pages.newPlaylist();
+    e.stopImmediatePropagation(); add.openCreate();
   }, true);
   const pages = SounosPages.attach($("phone"), { onChange: () => renderHome() });
 

@@ -26,3 +26,21 @@ Compilar: `cd android && JAVA_HOME=~/Android/jdk17 ./gradlew -q :app:assembleDeb
    Só sai da busca quem apertar voltar/fechar. Vale também para página de artista/álbum/playlist.
 
 Escreva no fim deste arquivo o que mudou e o que testou. Commit no ramo (sem push).
+
+## Registro final
+
+### O que mudou
+
+- O cartão “Nova playlist” fica no fim do carrossel; playlists novas aparecem antes dele. Capas escolhidas aparecem também nos cartões e miniaturas de playlists.
+- A criação agora é um rascunho com nome, capa opcional, músicas recentes e busca. A música atual já vem selecionada no fluxo do “+”. Só confirma com nome e ao menos uma música; cancelar não grava. Playlists vazias antigas continuam visíveis.
+- A página do artista recebe a mesma URL de capa do resultado da busca. Sem foto, começa com fundo neutro; o nome é preenchido desde a abertura.
+- A busca grava termo e item aberto/tocado, deduplica entradas e força a gravação no espelho local. O player cobre a busca sem fechá-la, preservando resultados e rolagem; páginas de artista e playlist também registram o item aberto.
+- O histórico aceita registros do tipo álbum, mas este ramo ainda não tem busca nem página de álbum para conectar a esse registro.
+
+### O que testei
+
+- `git merge main`: já estava atualizado.
+- `node --check` em `add.js`, `home-native.js`, `pages.js` e `search.js`; também verifiquei os três blocos JavaScript inline de `home.html`.
+- `git diff --check`.
+- `JAVA_HOME=~/Android/jdk17 ./gradlew -q :app:assembleDebug -PversionCode=5`: concluído com código 0.
+- Não instalei no celular.

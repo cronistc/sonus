@@ -1,6 +1,6 @@
 // Páginas de playlist e de artista (dentro do app). A capa toma o topo inteiro, sem ícones por cima.
 // Fechar: "voltar" do celular, ou puxar a página para a direita.
-// Uso: SounosPages.attach(celular, { onChange }) · .openPlaylist(id, { fresh }) · .openArtist(nome) · .newPlaylist()
+// Uso: SounosPages.attach(celular, { onChange }) · .openPlaylist(id, { fresh }) · .openArtist(nome, dados)
 window.SounosPages = (() => {
   const D = window.SounosData;
   const esc = s => String(s ?? "").replace(/[&<>"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
@@ -8,6 +8,9 @@ window.SounosPages = (() => {
   const cover = t => `url('${Sounos.coverUrl(t, true)}'), linear-gradient(135deg,${Sounos.hashColors(t.id).join(",")})`;
   const fmtTotal = s => { const m = Math.round(s / 60); return m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`; };
   const count = n => n === 1 ? "1 música" : `${n} músicas`;
+  const remember = entry => {
+    try { (window.SounosSearch || window.parent?.SounosSearch)?.remember(entry); } catch {}
+  };
   const I = {
     play: '<svg viewBox="0 0 24 24"><polygon points="6 3 20 12 6 21 6 3"/></svg>',
     shuffle: '<svg viewBox="0 0 24 24"><path d="M2 18h1.4c1.3 0 2.5-.6 3.3-1.7l6.1-8.6c.7-1.1 2-1.7 3.3-1.7H22"/><path d="m18 2 4 4-4 4"/><path d="M2 6h1.9c1.5 0 2.9.9 3.6 2.2"/><path d="M22 18h-5.9c-1.3 0-2.6-.7-3.3-1.8l-.5-.8"/><path d="m18 14 4 4-4 4"/></svg>',
@@ -84,7 +87,9 @@ window.SounosPages = (() => {
   function playFrom(list, i, ctx, shuffle) {
     if (!list.length) return;
     if (shuffle) Sounos.call("setShuffle", { on: true });     // sem pedir aleatório, o modo da pessoa fica como está
-    Sounos.call("playQueue", { tracks: list, index: shuffle ? Math.floor(Math.random() * list.length) : i, context: ctx });
+    const index = shuffle ? Math.floor(Math.random() * list.length) : i;
+    remember({ type: "t", track: list[index] });
+    Sounos.call("playQueue", { tracks: list, index, context: ctx });
     window.openPlayer?.();
   }
   const st = () => { try { return Sounos.call("getState") || {}; } catch { return {}; } };
@@ -99,6 +104,8 @@ window.SounosPages = (() => {
     const page = mount("playlist");
     const el = page.el;
     const get = () => D.getPlaylists().find(p => p.id === id);
+    const opened = get();
+    if (opened) remember({ type: "p", id: opened.id, name: opened.name, cover: opened.cover || "" });
     const save = mutate => { const all = D.getPlaylists(); const p = all.find(x => x.id === id); if (!p) return; mutate(p); D.savePlaylists(all); opts.onChange?.(); };
     const dls = {};                              // id → progresso do download desta página
     let dlQueue = [], dlBusy = null;
@@ -247,13 +254,6 @@ window.SounosPages = (() => {
     return page;
   }
 
-  function newPlaylist() {
-    const all = D.getPlaylists();
-    const p = { id: "pl" + Date.now().toString(36), name: "Nova playlist", desc: "", tracks: [], created: Date.now() };
-    D.savePlaylists([...all, p]); opts.onChange?.();
-    return openPlaylist(p.id, { fresh: true });
-  }
-
   // ---------- álbum ----------
   function openAlbum(url, name, artist, thumb) {
     const page = mount("album");
@@ -302,17 +302,21 @@ window.SounosPages = (() => {
   }
 
   // ---------- artista ----------
-  function openArtist(name) {
+  function openArtist(name, artistInfo = {}) {
+    if (name && typeof name === "object") { artistInfo = name; name = artistInfo.name; }
+    name = String(name || "").trim() || "Artista";
+    const key = s => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
+    const photoUrl = artistInfo.photoUrl || (artistInfo.thumb
+      ? Sounos.coverUrl({ id: "artist:" + (key(name) || "x"), thumb: artistInfo.thumb }, true) : "");
+    remember({ type: "a", name, thumb: artistInfo.thumb || "" });
     const page = mount("artist");
     const el = page.el;
     let songs = [], albums = [];
     // primeiro o que já se sabe (histórico), depois o resto da rede
     const hist = (() => { try { return (Sounos.call("getHistory") || []).map(e => e.track).filter(Sounos.isSong); } catch { return []; } })();
-    const key = s => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
     const mine = []; hist.forEach(t => { if (key(t.artist) === key(name) && !mine.some(m => m.id === t.id)) mine.push(t); });
-    const photo = mine[0];
 
-    el.innerHTML = `<div class="hero">${photo ? `<div class="img" style="background-image:${cover(photo)}"></div>` : ""}</div>
+    el.innerHTML = `<div class="hero" style="background:var(--surface)">${photoUrl ? `<div class="img" style="background-image:url('${photoUrl.replace(/'/g, "%27")}')"></div>` : ""}</div>
       <div class="ph"><div class="name">${handle(name)}</div><div class="sub">Artista</div></div>
       <div class="acts">
         <button class="big" data-a="play" aria-label="Tocar" disabled>${I.play}</button>
@@ -328,15 +332,14 @@ window.SounosPages = (() => {
       if (page.closing) return;
       if (r.error) { $(".songs").innerHTML = `<div class="note">Não deu para carregar agora.</div>`; return; }
       songs = r.items || [];
-      if (r.thumb) {                             // foto do canal oficial, em alta (guardada como as capas)
+      if (!photoUrl && r.thumb) {                // foto do canal oficial, em alta (guardada como as capas)
         const id = "artist:" + key(r.name || name);
         const u = Sounos.coverUrl({ id, thumb: r.thumb }, true);
         const img = new Image();
-        img.onload = () => { const h = $(".hero"); h.innerHTML = `<div class="img" style="background-image:url('${u}');opacity:0;transition:opacity .5s"></div>`;
-                             requestAnimationFrame(() => requestAnimationFrame(() => { const x = h.querySelector(".img"); if (x) x.style.opacity = 1; })); };
+        img.onload = () => { if (!page.closing) $(".hero").innerHTML = `<div class="img" style="background-image:url('${u.replace(/'/g, "%27")}')"></div>`; };
         img.src = u;
       }
-      $(".name").textContent = handle(r.name || name);
+      $(".name").textContent = handle(String(r.name || name || "Artista").trim() || "Artista");
       $(".sub").textContent = songs.length ? `Artista · ${count(songs.length)}` : "Artista";
       $("[data-a=play]").disabled = !(songs.length || mine.length);
       $(".songs").innerHTML = songs.length ? songs.map((t, i) => rowHtml(t, i)).join("") : `<div class="note">Nenhuma música encontrada.</div>`;
@@ -374,6 +377,6 @@ window.SounosPages = (() => {
     return page;
   }
 
-  const api = { attach, openPlaylist, openArtist, openAlbum, newPlaylist, isOpen: () => stack.length > 0, closeTop: () => close(stack[stack.length - 1]) };
+  const api = { attach, openPlaylist, openArtist, openAlbum, isOpen: () => stack.length > 0, closeTop: () => close(stack[stack.length - 1]) };
   return api;
 })();

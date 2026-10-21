@@ -13,6 +13,40 @@
   const { tracks, artists, followed, recentPlays } = D;
   const loadPlaylists = () => D.getPlaylists().map((p, i) => ({ ...p, i }));
   let playlists = loadPlaylists();
+  const KEY = "sounos.searchHistory";
+  const norm = s => String(s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+  const subscribers = new Set();
+  function readHistory() {
+    try { const v = JSON.parse(localStorage.getItem(KEY)); if (Array.isArray(v)) return v; } catch {}
+    return [];
+  }
+  function sameEntry(a, b) {
+    if (a.type !== b.type) return false;
+    if (a.type === "q") return norm(a.text) === norm(b.text);
+    if (a.type === "t") {
+      const ref = x => x.track?.id ?? x.track?.i ?? x.i ?? `${norm(x.track?.title)}|${norm(x.track?.artist)}`;
+      return ref(a) === ref(b);
+    }
+    if (a.type === "a") return norm(a.name) === norm(b.name);
+    if (a.type === "p") {
+      const id = x => x.id || (Number.isInteger(x.i) ? D.getPlaylists()[x.i]?.id : "");
+      const left = id(a), right = id(b);
+      return left && right ? left === right : norm(a.name) === norm(b.name);
+    }
+    if (a.type === "album") return (a.id || a.url || norm(a.name)) === (b.id || b.url || norm(b.name));
+    return norm(a.id || a.name || a.text) === norm(b.id || b.name || b.text);
+  }
+  function writeHistory(history) {
+    const saved = history.slice(0, 15), value = JSON.stringify(saved);
+    try { localStorage.setItem(KEY, value); } catch {}
+    if (NATIVE) try { window.__sounosSave?.(KEY, value); } catch {}
+    subscribers.forEach(fn => fn(saved));
+    return saved;
+  }
+  function rememberEntry(entry) {
+    const history = readHistory();
+    return writeHistory([entry, ...history.filter(h => !sameEntry(h, entry))]);
+  }
 
   const artistAff = {}, trackAff = {};
   followed.forEach(a => artistAff[a] = (artistAff[a] || 0) + 1);
@@ -27,7 +61,6 @@
   const affTrack = t => .6 * (trackAff[t.i] || 0) / maxT + .4 * affArtist(t.artist);
 
   // ---------- Texto: normalização e comparação tolerante a erros ----------
-  const norm = s => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
   // mesma regra das outras telas: minúsculo, sem acento, espaço vira "_", o resto sai
   const toHandle = name => "@" + name.normalize("NFD").replace(/[\u0300-\u036f]/g, "")
     .toLowerCase().trim().replace(/\s+/g, "_").replace(/[^a-z0-9._]/g, "");
@@ -87,15 +120,7 @@
     return out.sort((a, b) => b.score - a.score);
   }
 
-  // ---------- Histórico de pesquisas (no app: Room; aqui: armazenamento do navegador) ----------
-  const KEY = "sounos.searchHistory";
-  let history = [];
-  try { history = JSON.parse(localStorage.getItem(KEY)) || []; } catch {}
-  if (!history.length && !NATIVE) history = [{ type: "q", text: "lofi para estudar" }, { type: "a", name: "MC Mockup" }, { type: "t", i: 3 }, { type: "q", text: "chuva" }];
-  const saveHistory = () => { try { localStorage.setItem(KEY, JSON.stringify(history.slice(0, 15))); } catch {} };
-  // música é comparada pelo id (antes: toda música "era igual" e cada nova apagava as outras do histórico)
-  const sameEntry = (a, b) => a.type === b.type && (a.track || b.track ? a.track?.id === b.track?.id : (a.text ?? a.name ?? a.i) === (b.text ?? b.name ?? b.i));
-  function remember(entry) { history = [entry, ...history.filter(h => !sameEntry(h, entry))].slice(0, 15); saveHistory(); }
+  // ---------- Histórico de pesquisas (no app: localStorage espelhado; no navegador: localStorage) ----------
 
   // ---------- Interface ----------
   const ICON = {
@@ -122,7 +147,11 @@
   function cover(type, item, extra = "") {
     if (type === "t") return `<div class="ic ${extra}" style="background:${grad(item.c)}">${esc(item.title[0])}</div>`;
     if (type === "a") return `<div class="ic round ${extra}" style="background:${grad(item.c)}">${esc(item.name[0])}</div>`;
-    if (type === "p") return `<div class="ic ${extra}" style="background:${grad(tracks[item.tracks[0]].c)}">${esc(item.name[0])}</div>`;
+    if (type === "p") {
+      if (item.cover) return `<div class="ic ${extra}" style="background:url('${item.cover.replace(/'/g, "%27")}') center/cover no-repeat"></div>`;
+      const first = item.tracks?.[0], song = typeof first === "object" ? first : tracks[first];
+      return `<div class="ic ${extra}" style="background:${song?.c ? grad(song.c) : "var(--s-surface)"}">${esc(item.name?.[0] || "♪")}</div>`;
+    }
     return `<div class="ic ${extra}">${ICON.clock}</div>`;
   }
 
@@ -141,6 +170,15 @@
     phone.appendChild(ov);
     const bar = ov.querySelector(".sbar"), input = ov.querySelector("input"), body = ov.querySelector(".sbody");
     let isOpen = false, view = "";
+    let history = readHistory();
+    if (!history.length && !NATIVE) history = [{ type: "q", text: "lofi para estudar" }, { type: "a", name: "MC Mockup" }, { type: "t", i: 3 }, { type: "q", text: "chuva" }];
+    function syncHistory(next = readHistory()) {
+      history = next;
+      if (view === "recent" && isOpen) showRecent();
+    }
+    subscribers.add(syncHistory);
+    window.addEventListener("storage", e => { if (e.key === KEY) syncHistory(); });
+    function remember(entry) { history = rememberEntry(entry); }
 
     // posição da lupa dentro do celular (a barra nasce ali)
     // A lupa nunca se mexe: a barra é presa pela DIREITA e pelo CENTRO vertical da lupa e só cresce para a esquerda.
@@ -224,6 +262,7 @@
 
     // ---- recentes ----
     function showRecent() {
+      try { if (localStorage.getItem(KEY) !== null) history = readHistory(); } catch {}
       if (!history.length) return setPanel('<div class="s-empty">Suas pesquisas aparecem aqui.</div>', "recent");
       setPanel(`<div class="s-head"><h3>Pesquisas recentes</h3><button data-act="clear-all">Limpar</button></div>` +
         history.map((h, k) => {
@@ -233,7 +272,14 @@
           else if (h.type === "a" && NATIVE) { ic = realArtist(h); t = toHandle(h.name); a = "Artista"; }
           else if (h.type === "t") { const x = tracks[h.i]; ic = cover("t", x); t = esc(x.title); a = "Música · " + toHandle(x.artist); }
           else if (h.type === "a") { const x = artists.find(y => y.name === h.name); ic = cover("a", x); t = toHandle(x.name); a = "Artista"; }
-          else { const x = playlists[h.i]; ic = cover("p", x); t = esc(x.name); a = "Playlist"; }
+          else if (h.type === "p") {
+            const x = D.getPlaylists().find(p => p.id === h.id) || playlists[h.i] || h;
+            ic = cover("p", x); t = esc(x.name || h.name || "Playlist"); a = "Playlist";
+          } else if (h.type === "album") {
+            const url = h.thumb ? Sounos.coverUrl({ id: "album:" + (h.id || norm(h.name) || "x"), thumb: h.thumb }) : "";
+            ic = `<div class="ic" style="${url ? `background:url('${url.replace(/'/g, "%27")}') center/cover no-repeat` : ""}">♪</div>`;
+            t = esc(h.name || "Álbum"); a = "Álbum";
+          } else { ic = cover("q"); t = esc(h.name || ""); a = "Pesquisa"; }
           return `<button class="s-row" data-hist="${k}">${ic}<div class="tx"><div class="t">${t}</div><div class="a">${a}</div></div>
             <span class="x" data-act="rm" data-k="${k}">${ICON.x}</span></button>`;
         }).join(""), "recent");
@@ -269,11 +315,18 @@
       if (best.type === "a") tracks.filter(t => t.artist === best.item.name && !songs.some(s => s.item === t))
         .sort((x, y) => affTrack(y) - affTrack(x)).slice(0, 6 - songs.length)
         .forEach(t => songs.push({ type: "t", item: t }));
-      const bestCv = best.type === "p" ? tracks[best.item.tracks[0]].c : best.item.c;
+      const firstTrack = best.type === "p" ? best.item.tracks[0] : null;
+      const firstSong = typeof firstTrack === "object" ? firstTrack : tracks[firstTrack];
+      const bestCv = best.type === "p" ? firstSong?.c || ["#2f6bff", "#1d4ed8", "#60a5fa"] : best.item.c;
+      const bestBg = best.type === "p" && best.item.cover ? `url('${best.item.cover.replace(/'/g, "%27")}') center/cover no-repeat` : grad(bestCv);
+      const playlistTile = p => p.cover
+        ? `<i style="grid-area:1/1/3/3;background:url('${p.cover.replace(/'/g, "%27")}') center/cover no-repeat"></i>`
+        : p.tracks.length ? p.tracks.slice(0, 4).map(t => { const x = typeof t === "object" ? t : tracks[t]; return `<i style="background:${x?.c ? grad(x.c) : "var(--s-surface)"}"></i>`; }).join("")
+          : `<i style="grid-area:1/1/3/3;background:var(--s-surface)"></i>`;
       setPanel(`
         <div class="s-head"><h3>Melhor resultado</h3></div>
         <button class="s-best" data-pick="${best.type}" data-id="${best.type === "a" ? esc(best.item.name) : best.item.i}">
-          <div class="cv ${best.type === "a" ? "round" : ""}" style="background:${grad(bestCv)}">${esc((best.type === "a" ? best.item.name : best.label)[0])}</div>
+          <div class="cv ${best.type === "a" ? "round" : ""}" style="background:${bestBg}">${esc((best.type === "a" ? best.item.name : best.label)[0])}</div>
           <div><div class="t">${esc(best.label)}</div><div class="a">${best.type === "t" ? "Música · " + best.sub : best.sub}</div></div>
         </button>` +
         (songs.length ? `<div class="s-head"><h3>Músicas</h3></div>` + songs.map(c => `
@@ -283,7 +336,7 @@
           <button class="s-art" data-pick="a" data-id="${esc(c.item.name)}"><div class="pic" style="background:${grad(c.item.c)}">${esc(c.item.name[0])}</div>
             <div class="n">${toHandle(c.item.name)}</div></button>`).join("") + `</div>` : "") +
         (pls.length ? `<div class="s-head"><h3>Playlists</h3></div><div class="s-hrow">` + pls.map(c => `
-          <button class="s-pl" data-pick="p" data-id="${c.item.i}">${c.item.tracks.slice(0, 4).map(t => `<i style="background:${grad(tracks[t].c)}"></i>`).join("")}
+          <button class="s-pl" data-pick="p" data-id="${c.item.i}">${playlistTile(c.item)}
             <div class="meta"><div class="t">${esc(c.item.name)}</div></div></button>`).join("") + `</div>` : ""), "res");
     }
 
@@ -294,13 +347,31 @@
       input.blur();
       showResults(q);
     }
+    function rememberTerm() {
+      const q = input.value.trim();
+      if (q) remember({ type: "q", text: q });
+    }
     function pick(type, id) {
       if (type === "nt") return playTrack(resultTracks[+id]);
-      if (type === "na") { const a = resultArtists[+id]; remember({ type: "a", name: a.name, thumb: a.thumb }); return openArtist(a.name) || (input.value = toHandle(a.name), bar.classList.add("has-text"), showResults(a.name)); }
-      if (type === "nal") { const a = resultAlbums[+id]; return openAlbum(a.url, a.name, a.artist, a.thumb); }
-      if (type === "t") { remember({ type: "t", i: +id }); location.href = `player.html?t=${id}`; }
-      else if (type === "p") { remember({ type: "p", i: +id }); location.href = `player.html?p=${id}`; }
-      else { remember({ type: "a", name: id }); input.value = toHandle(id); bar.classList.add("has-text"); showResults(id); }   // perfil do artista: próxima tela
+      if (type === "na") {
+        const a = resultArtists[+id]; if (!a) return;
+        rememberTerm(); remember({ type: "a", name: a.name, thumb: a.thumb });
+        return openArtist(a.name, { ...a, photoUrl: artistPic(a) }) || (input.value = toHandle(a.name), bar.classList.add("has-text"), showResults(a.name));
+      }
+      if (type === "nal") { const a = resultAlbums[+id]; if (!a) return; rememberTerm(); return openAlbum(a.url, a.name, a.artist, a.thumb); }
+      if (type === "t") {
+        const t = tracks[+id]; if (!t) return;
+        rememberTerm(); remember({ type: "t", i: +id }); location.href = `player.html?t=${id}`;
+      } else if (type === "p") {
+        const p = playlists.find(x => x.i === +id) || playlists[+id]; if (!p) return;
+        rememberTerm(); remember({ type: "p", id: p.id, i: p.i, name: p.name, cover: p.cover || "" });
+        if (window.SounosPages && p.id) return window.SounosPages.openPlaylist(p.id);
+        if (window.parent !== window && window.parent.SounosPages && p.id) return openPlaylist(p.id);
+        location.href = `player.html?p=${p.i}`;
+      } else {
+        rememberTerm(); remember({ type: "a", name: id });
+        input.value = toHandle(id); bar.classList.add("has-text"); showResults(id);
+      }   // perfil do artista: próxima tela
     }
 
     // ---- eventos ----
@@ -316,8 +387,8 @@
     input.addEventListener("keydown", e => { if (e.key === "Enter") runSearch(input.value); if (e.key === "Escape") close(); });
     body.addEventListener("click", e => {
       const act = e.target.closest("[data-act]");
-      if (act?.dataset.act === "clear-all") { history = []; saveHistory(); return showRecent(); }
-      if (act?.dataset.act === "rm") { history.splice(+act.dataset.k, 1); saveHistory(); return showRecent(); }
+      if (act?.dataset.act === "clear-all") { history = writeHistory([]); return showRecent(); }
+      if (act?.dataset.act === "rm") { history.splice(+act.dataset.k, 1); history = writeHistory(history); return showRecent(); }
       const fill = e.target.closest("[data-fill]");                 // seta: completa a barra sem buscar ainda
       if (fill) { input.value = fill.dataset.fill + " "; bar.classList.add("has-text"); showSuggestions(input.value); input.focus(); return; }
       const h = e.target.closest("[data-hist]");
@@ -325,8 +396,10 @@
         const x = history[+h.dataset.hist];
         if (x.type === "q") return runSearch(x.text);
         if (x.type === "t" && x.track) return playTrack(x.track);
-        if (x.type === "a" && NATIVE && openArtist(x.name)) return;
+        if (x.type === "a" && NATIVE && openArtist(x.name, x)) return;
         if (x.type === "a" && NATIVE) { input.value = toHandle(x.name); bar.classList.add("has-text"); return showResults(x.name); }
+        if (x.type === "p" && x.id) return openPlaylist(x.id);
+        if (x.type === "album") return;
         return pick(x.type, x.type === "a" ? x.name : x.i);
       }
       const q = e.target.closest("[data-q]"); if (q) return runSearch(q.dataset.q);
@@ -356,12 +429,20 @@
       return { artist: a => (artists[a] || 0) / maxA, song: id => songs[id] || 0,
                history: (Array.isArray(h) ? h.map(e => e.track) : []).filter(t => t && Sounos.isSong(t) && !seen.has(t.id) && seen.add(t.id)) };
     }
-    // página do artista: na tela inicial abre por cima da busca; dentro do player, o player desce e ela abre
-    function openArtist(name) {
-      if (window.SounosPages) { window.SounosPages.openArtist(name); return true; }
+    // página do artista: recebe a mesma foto que apareceu no resultado da busca.
+    function openArtist(name, artistInfo = {}) {
+      if (window.SounosPages) { window.SounosPages.openArtist(name, artistInfo); return true; }
       const P = window.parent !== window && window.parent.SounosPages;
       if (!P) return false;
-      close(); window.parent.__playerShell.closeThen(() => P.openArtist(name)); return true;
+      const query = input.value.trim(), homeSearch = window.parent.homeSearch;
+      if (!homeSearch?.isOpen() && query) homeSearch?.query(query);
+      close(); window.parent.__playerShell.closeThen(() => P.openArtist(name, artistInfo)); return true;
+    }
+    function openPlaylist(id) {
+      if (window.SounosPages) { window.SounosPages.openPlaylist(id); return true; }
+      const P = window.parent !== window && window.parent.SounosPages;
+      if (!P) return false;
+      close(); window.parent.__playerShell.closeThen(() => P.openPlaylist(id)); return true;
     }
     // Álbum segue o mesmo caminho da página de artista, inclusive a partir da busca do player.
     function openAlbum(url, name, artist, thumb) {
@@ -372,11 +453,12 @@
     }
     function playTrack(t) {
       if (!t) return;
+      rememberTerm();
       remember({ type: "t", track: t });
       Sounos.call("playSingle", { track: t, context: { type: "radio" } });
       if (location.pathname.endsWith("player.html")) close();
-      else if (window.__playerShell) {                // tela inicial: o player sobe por cima, no lugar da busca
-        const had = pushed; pushed = false; close(true); window.__playerShell.open({ replace: had });
+      else if (window.__playerShell) {                // a busca fica aberta debaixo do player
+        input.blur(); window.__playerShell.open();
       } else location.href = "player.html";
     }
     function nativeSuggestions(q) {
@@ -399,14 +481,14 @@
         || `<button class="s-row sug" data-q="${esc(q)}">${cover("q")}<div class="tx"><div class="t"><b>${esc(q)}</b></div></div></button>`, "sug");
       draw(view === "sug" ? lastServer : []);       // mantém as sugestões anteriores até as novas chegarem (sem piscar)
       clearTimeout(sugT);
-      sugT = setTimeout(() => Sounos.ask("suggest", { q }).then(r => { if (input.value === q && view === "sug") { lastServer = r.items || []; draw(lastServer); } }), 160);
+      sugT = setTimeout(() => Sounos.ask("suggest", { q }).then(r => { if (input.value === q && view === "sug" && !window.__playerOpen) { lastServer = r.items || []; draw(lastServer); } }), 160);
     }
     function nativeResults(q) {
       setPanel(`<div class="s-empty">Buscando “${esc(q)}”…</div>`, "loading");
-      const stale = () => !isOpen || norm(input.value.replace(/^@/, "")) !== norm(q) && norm(input.value) !== norm(toHandle(q));
+      const stale = () => !isOpen || window.__playerOpen || norm(input.value.replace(/^@/, "")) !== norm(q) && norm(input.value) !== norm(toHandle(q));
       const pSongs = Sounos.ask("search", { q }), pArts = Sounos.ask("searchArtists", { q }), pAlbums = Sounos.ask("searchAlbums", { q });
       let arts = null, albums = null, songsR = null;
-      // As músicas aparecem assim que chegam; artistas e álbuns entram sem bloquear uma à outra.
+      // as músicas aparecem assim que chegam; os artistas entram quando chegarem (antes, uma esperava a outra)
       pSongs.then(r => { songsR = r; if (!stale()) draw(); });
       pArts.then(r => { arts = r; if (songsR && !stale()) draw(); });
       pAlbums.then(r => { albums = r; if (songsR && !stale()) draw(); });
@@ -420,7 +502,7 @@
         resultArtists = ((arts && arts.items) || []).filter(a => a.name);
         resultAlbums = ((albums && albums.items) || []).filter(a => a.name && a.url);
         if (!resultTracks.length && !resultArtists.length && !resultAlbums.length) return setPanel(`<div class="s-empty">Nada encontrado para “${esc(q)}”.</div>`, "res");
-        const topArtist = resultArtists[0] && textScore(q, resultArtists[0].name) >= .9 ? resultArtists[0] : null;
+        const topArtist = resultArtists[0] && (!resultTracks.length || textScore(q, resultArtists[0].name) >= .9) ? resultArtists[0] : null;
         const topAlbum = resultAlbums[0];
         const best = topArtist ? { type: "na", i: 0, title: toHandle(topArtist.name), sub: "Artista", look: realArtist(topArtist).replace('class="ic round"', 'class="cv round"') }
           : resultTracks.length ? { type: "nt", i: 0, title: esc(resultTracks[0].title), sub: "Música · " + toHandle(resultTracks[0].artist),
@@ -448,5 +530,5 @@
     return { open, close, query, isOpen: () => isOpen };
   }
 
-  window.SounosSearch = { attach, candidates };
+  window.SounosSearch = { attach, candidates, remember: rememberEntry };
 })();
