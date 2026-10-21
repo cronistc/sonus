@@ -213,3 +213,4 @@ concluiu com sucesso.
 - Online, a tela inicial mostra Ouvidos recentemente, Seus artistas e Suas playlists; Minhas músicas não ocupa mais uma seção separada.
 - Offline, o primeiro carrossel passa a mostrar as músicas baixadas e em cache como cartões do mesmo tamanho dos recentes. Tocar em um cartão inicia a fila com contexto `mine`.
 - A indicação Offline substitui a clave de sol no cabeçalho e volta à clave quando a conexão retorna. A mudança atualiza a seção sem remontar a tela, e o `fitHome` continua usando os três carrosséis visíveis.
+- Após o commit inicial, `git pull origin main` informou `Already up to date.`; não houve conflitos. A validação final passou com `node --check prototype/home-native.js`, `git diff --check` e `JAVA_HOME=~/Android/jdk17 ./gradlew -q :app:assembleDebug -PversionCode=5`.
