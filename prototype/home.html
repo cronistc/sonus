@@ -292,7 +292,13 @@ const ICON = {
   playlist: '<svg class="lu" viewBox="0 0 24 24"><path d="M3 6h13M3 12h13M3 18h9"/><circle cx="19" cy="17" r="2"/><path d="M21 17V8"/></svg>',
   artist:   '<svg class="lu" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>',
 };
-const mosaic = p => `<div class="mosaic">${[0, 1, 2, 3].map(k => p.tracks[Math.min(k, p.tracks.length - 1)]).map(t => `<i style="background:${grad(tracks[t].c)}"></i>`).join("")}</div>`;
+const mosaic = p => p.cover
+  ? `<div class="mosaic" style="background:url('${p.cover.replace(/'/g, "%27")}') center/cover no-repeat"></div>`
+  : !p.tracks.length ? `<div class="mosaic" style="background:linear-gradient(135deg,var(--c1),var(--c2))"></div>`
+  : `<div class="mosaic">${[0, 1, 2, 3].map(k => p.tracks[Math.min(k, p.tracks.length - 1)]).map(t => {
+      const x = typeof t === "object" ? t : tracks[t];
+      return `<i style="background:${x?.c ? grad(x.c) : "var(--surface)"}"></i>`;
+    }).join("")}</div>`;
 const meta = (t, a) => `<div class="meta"><div class="t">${t}</div><div class="a">${a}</div></div>`;
 
 // (no app, quem desenha as seções é o home-native.js com os dados reais)
@@ -317,9 +323,9 @@ $("artists").innerHTML = (window.Sounos?.native ? [] : followed).map(a => `<butt
   <div class="pic" style="background:${grad(artistColors(a))}">${a[0]}</div><div class="n">${toHandle(a)}</div></button>`).join("");
 
 function renderPlaylists() {
-  $("playlists").innerHTML = `<button class="blk new tap" aria-label="Nova playlist"><span class="in">
-    <svg class="lu" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Nova playlist</span></button>`
-  + playlists.map((p, i) => `<button class="blk tap" data-p="${i}">${mosaic(p)}${meta(p.name, p.tracks.length === 1 ? "1 música" : p.tracks.length + " músicas")}</button>`).join("");
+  $("playlists").innerHTML = playlists.map((p, i) => `<button class="blk tap" data-p="${i}">${mosaic(p)}${meta(p.name, p.tracks.length === 1 ? "1 música" : p.tracks.length + " músicas")}</button>`).join("")
+  + `<button class="blk new tap" aria-label="Nova playlist"><span class="in">
+    <svg class="lu" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Nova playlist</span></button>`;
 }
 if (!window.Sounos?.native) renderPlaylists();   // no app: home-native.js desenha (as músicas são objetos, não índices)
 

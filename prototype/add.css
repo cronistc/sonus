@@ -21,6 +21,7 @@
 .add-head .t { font-size: 17px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .add-head .a { font-size: 13px; color: var(--text-dim, #a1a1aa); }
 .add-head > div:last-child { min-width: 0; }
+.add-head .cv svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; }
 
 .add-list { flex: 1; overflow-y: auto; scrollbar-width: none; padding-bottom: 8px; }
 .add-list::-webkit-scrollbar { display: none; }
@@ -32,6 +33,7 @@
 .add-row .tx { flex: 1; min-width: 0; }
 .add-row .t { font-size: 15px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .add-row .a { font-size: 12.5px; color: var(--text-dim, #a1a1aa); margin-top: 2px; }
+.add-row .add-full-cover { grid-area: 1 / 1 / 3 / 3; background-size: cover; background-position: center; }
 /* entrada em cascata quando a janela abre */
 .add-ov.open .add-row, .add-ov.open .add-new { animation: addIn .4s cubic-bezier(.2,.9,.25,1) both; animation-delay: calc(.12s + var(--i, 0) * 35ms); }
 @keyframes addIn { from { opacity: 0; transform: translateY(14px); } }
@@ -48,7 +50,7 @@
 .add-row.born { animation: born .45s cubic-bezier(.2,.9,.25,1) both !important; }
 @keyframes born { from { opacity: 0; max-height: 0; padding-top: 0; padding-bottom: 0; } to { max-height: 80px; } }
 
-/* "Nova playlist": a linha se abre num campo de nome */
+/* "Nova playlist": mantém o mesmo cartão e a mesma entrada usados nesta janela. */
 .add-new { margin: 0 20px 6px; border-radius: 12px; background: var(--chip-soft, rgba(255,255,255,.06)); overflow: hidden; }
 .add-new .open-btn { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 12px; background: none; border: 0;
                      color: inherit; font: 700 15px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; cursor: pointer; text-align: left; }
@@ -57,22 +59,28 @@
 .add-new .plus svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; }
 .add-new .plus svg { transition: transform .3s cubic-bezier(.2,.85,.25,1); }
 .add-new.editing .plus svg { transform: rotate(45deg); }        /* o "+" vira "×" (gira o ícone, não o quadrado) */
-.add-new .form { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .35s cubic-bezier(.2,.9,.25,1); }
-.add-new.editing .form { grid-template-rows: 1fr; }
-.add-new .form > div { overflow: hidden; }
-.add-new .fi { display: flex; gap: 8px; padding: 0 12px 12px; }
-.add-new input { flex: 1; min-width: 0; height: 42px; border-radius: 10px; border: 0; outline: 2px solid transparent; padding: 0 12px;
-                 background: var(--field, rgba(0,0,0,.35)); color: var(--text, #f5f5f7); font: 500 15px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-                 transition: outline-color .2s; }
-.add-new input:focus { outline-color: var(--line-strong, rgba(255,255,255,.35)); }
-.add-new .create { height: 42px; padding: 0 16px; border-radius: 10px; border: 0; background: var(--text, #f5f5f7); color: var(--bg, #0e0e10);
-                   font: 700 14px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; cursor: pointer; transition: opacity .2s; }
-.add-new .create:disabled { opacity: .35; cursor: default; }
+.list-mode[hidden], .create-mode[hidden], .add-section[hidden] { display: none; }
+.create-mode { padding: 0 0 8px; }
+.add-create-fields { display: grid; gap: 10px; padding: 4px 20px 8px; }
+.add-create-fields input, .add-search input { width: 100%; min-width: 0; height: 44px; border-radius: 10px; border: 0; outline: 2px solid transparent;
+  padding: 0 12px; background: var(--field, rgba(0,0,0,.35)); color: var(--text, #f5f5f7);
+  font: 500 15px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; transition: outline-color .2s; }
+.add-create-fields input:focus, .add-search input:focus { outline-color: var(--line-strong, rgba(255,255,255,.35)); }
+.cover-button { display: flex; align-items: center; gap: 12px; min-height: 54px; width: 100%; padding: 7px 10px; border-radius: 12px;
+  background: var(--chip-soft, rgba(255,255,255,.06)); color: inherit; font: 700 14px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+.cover-preview { width: 40px; height: 40px; flex-shrink: 0; display: grid; place-items: center; border-radius: 8px; overflow: hidden;
+  background-color: var(--chip, rgba(255,255,255,.1)); background-size: cover; background-position: center; }
+.cover-preview svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; }
+.add-section { padding: 12px 20px 6px; font-size: 14px; font-weight: 800; }
+.add-search { padding: 0 20px; }
+.add-search input::-webkit-search-cancel-button { display: none; }
+.add-empty { padding: 16px 20px; color: var(--text-dim, #a1a1aa); font-size: 13px; text-align: center; }
 
 .add-foot { padding: 10px 20px 18px; }
 .add-foot button { width: 100%; height: 48px; text-align: center; border-radius: 24px; border: 0; background: var(--text, #f5f5f7); color: var(--bg, #0e0e10);
                    font: 800 15px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; cursor: pointer; transition: transform .12s; }
 .add-foot button:active { transform: scale(.97); }
+.add-foot button[hidden] { display: none; }
 
 @media (prefers-reduced-motion: reduce) {
   .add-sheet, .add-ov .dim { transition-duration: .01s; }
