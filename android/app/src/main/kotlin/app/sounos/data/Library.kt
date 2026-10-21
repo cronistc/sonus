@@ -29,6 +29,24 @@ class Library(context: Context) {
     }
     fun history(): JSONArray = JSONArray(prefs.getString("history", "[]"))
 
+    // ---------- músicas completas em cache ----------
+    @Synchronized fun markCached(t: Track) {
+        val all = runCatching { JSONObject(prefs.getString("cacheTracks", "{}")) }.getOrDefault(JSONObject())
+        all.put(t.id, Json.track(t))
+        prefs.edit().putString("cacheTracks", all.toString()).apply()
+    }
+    fun cachedTracks(): Map<String, Track> {
+        val all = runCatching { JSONObject(prefs.getString("cacheTracks", "{}")) }.getOrDefault(JSONObject())
+        return all.keys().asSequence().mapNotNull { id ->
+            runCatching { id to Json.track(all.getJSONObject(id)) }.getOrNull()
+        }.toMap()
+    }
+    @Synchronized fun pruneCached(keep: Set<String>) {
+        val all = runCatching { JSONObject(prefs.getString("cacheTracks", "{}")) }.getOrDefault(JSONObject())
+        all.keys().asSequence().toList().filterNot(keep::contains).forEach(all::remove)
+        prefs.edit().putString("cacheTracks", all.toString()).apply()
+    }
+
     // ---------- downloads ----------
     fun downloadFile(id: String) = File(downloadsDir, id.replace(Regex("[^A-Za-z0-9_-]"), "_") + ".audio")
     fun isDownloaded(id: String) = downloadFile(id).length() > 0 && downloadedMeta().has(id)

@@ -58,6 +58,8 @@ class Bridge(private val web: WebView) {
             "getProgress" -> onMain { player.progress().toString() }
             "getHistory" -> app.library.history().toString()
             "getUpdate" -> app.updater.state().toString()
+            "getOffline" -> JSONObject().put("offline", !player.isOnline).toString()
+            "getMineTracks" -> mineTracks().toString()
             "saveData" -> JSONObject().put("ok", app.userData.save(a.optString("key"), a.optString("value"))).toString()
             "loadData" -> JSONObject().put("value", app.userData.load(a.optString("key")) ?: JSONObject.NULL).toString()
             "getDownloads" -> app.library.downloadedMeta().toString()
@@ -126,7 +128,9 @@ class Bridge(private val web: WebView) {
             "setShuffle" -> player.setShuffle(a.getBoolean("on"))
             "move" -> player.move(a.getInt("from"), a.getInt("to"))
             "download" -> player.download(Json.track(a.getJSONObject("track")))
-            "removeDownload" -> { app.library.removeDownload(a.getString("id")); send("state", player.state()) }
+            "removeDownload" -> {
+                app.library.removeDownload(a.getString("id")); send("state", player.state()); send("library", JSONObject())
+            }
             "setSettings" -> { app.library.saveSettings(a); player.applySettings(a) }
             // atualizações
             "checkUpdate" -> app.updater.check()
@@ -137,8 +141,32 @@ class Bridge(private val web: WebView) {
                 app.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(u)).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }
             "seenUpdate" -> app.updater.clearJustUpdated()
             "setUpdateUrl" -> app.updater.setTestUrl(a.optString("url").ifBlank { null })      // só em build de teste
-            "clearCache" -> app.io.launch { app.audio.clear(); app.covers.clearBrowse(); send("storage", JSONObject(call("getStorage", "{}"))) }
+            "clearCache" -> app.io.launch {
+                app.audio.clear(); app.covers.clearBrowse()
+                send("library", JSONObject())
+                send("storage", JSONObject(call("getStorage", "{}")))
+            }
         }
+    }
+
+    private fun mineTracks(): JSONObject {
+        val known = linkedMapOf<String, app.sounos.extractor.Track>()
+        app.library.cachedTracks().forEach { (id, track) -> known[id] = track }
+        val history = runCatching { app.library.history() }.getOrNull() ?: JSONArray()
+        for (i in 0 until history.length()) {
+            runCatching { Json.track(history.getJSONObject(i).getJSONObject("track")) }.getOrNull()?.let { track ->
+                if (app.audio.isFreshComplete(track.id)) {
+                    if (known.putIfAbsent(track.id, track) == null) app.library.markCached(track)
+                }
+            }
+        }
+        val downloaded = app.library.downloadedMeta().keys().asSequence().mapNotNull { id ->
+            app.library.downloadedTrack(id)?.takeIf { app.library.isDownloaded(id) }
+        }.distinctBy { it.id }.toList()
+        val downloadedIds = downloaded.map { it.id }.toSet()
+        val cached = known.values.filter { app.audio.isFreshComplete(it.id) && it.id !in downloadedIds }.distinctBy { it.id }
+        app.library.pruneCached(known.values.filter { app.audio.isFreshComplete(it.id) }.map { it.id }.toSet())
+        return JSONObject().put("downloaded", Json.tracks(downloaded)).put("cached", Json.tracks(cached))
     }
 
     /** Busca na rede em segundo plano; responde com o mesmo reqId que a interface mandou. */

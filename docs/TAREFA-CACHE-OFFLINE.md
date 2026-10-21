@@ -35,3 +35,16 @@ Compilar: `cd android && JAVA_HOME=~/Android/jdk17 ./gradlew -q :app:assembleDeb
   que não sai do primeiro plano em pausa curta/troca de música. Corrigir se não estiver.
 
 Escreva no fim deste arquivo o que mudou e o que testou. Commit no ramo (sem push).
+
+## Implementação concluída
+
+- O cache de áudio agora vence após 3 dias sem reprodução, guarda o último uso em arquivos pequenos, aplica LRU até 5 GB e protege a faixa atual e até três próximas da fila. A limpeza roda ao abrir o app e depois a cada hora; downloads continuam na pasta separada.
+- O app detecta a conectividade validada, envia o evento `offline` à WebView, pula faixas indisponíveis e usa downloads/cache completos para rádio, sugestões e a seção “Minhas músicas”.
+- “Minhas músicas” lista downloads e, offline, também faixas completas em cache. A página toca com contexto `{type:"mine"}`. O bridge fornece `getMineTracks`.
+- O serviço de reprodução mantém a notificação de mídia e o primeiro plano durante pausas e trocas de faixa.
+
+### Verificações
+
+- `cd android && JAVA_HOME=~/Android/jdk17 ./gradlew -q :app:assembleDebug -PversionCode=5` — passou.
+- `node --check prototype/home-native.js`, `node --check prototype/pages.js` e `node --check` no script inline alterado de `home.html` — passaram.
+- `git diff --check` — passou.

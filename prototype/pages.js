@@ -253,6 +253,34 @@ window.SounosPages = (() => {
     return openPlaylist(p.id, { fresh: true });
   }
 
+  // ---------- minhas músicas ----------
+  function openMine(tracks) {
+    const list = [...new Map((tracks || []).map(t => [t.id, t])).values()];
+    const page = mount("mine"), el = page.el;
+    const art = list.length
+      ? `<div class="mosaic">${[0, 1, 2, 3].map(i => list[Math.min(i, list.length - 1)]).map(t => `<i style="background:${cover(t)}"></i>`).join("")}</div>`
+      : `<div class="empty">${I.note}</div>`;
+    el.innerHTML = `<div class="hero">${art}</div>
+      <div class="ph"><div class="name">Minhas músicas</div>
+      <div class="sub">${count(list.length)} · baixadas${Sounos.call("getOffline").offline && list.length ? " e em cache" : ""}</div></div>
+      <div class="acts">
+        <button class="big" data-a="play" aria-label="Tocar" ${list.length ? "" : "disabled"}>${I.play}</button>
+        <button class="ab" data-a="shuffle" aria-label="Aleatório" ${list.length ? "" : "disabled"}>${I.shuffle}</button>
+      </div>
+      <div class="list">${list.length ? list.map((t, i) => rowHtml(t, i)).join("") : '<div class="note">Baixe músicas ou conecte à internet para encontrar músicas em cache.</div>'}</div>`;
+    const markNow = () => { const id = nowId(); el.querySelectorAll(".tr").forEach(r => r.classList.toggle("now", r.dataset.id === id)); };
+    page.markNow = markNow;
+    el.addEventListener("click", e => {
+      const action = e.target.closest("[data-a]")?.dataset.a;
+      if (action === "play") return playFrom(list, 0, { type: "mine" });
+      if (action === "shuffle") return playFrom(list, 0, { type: "mine" }, true);
+      const row = e.target.closest(".tr");
+      if (row) playFrom(list, +row.dataset.i, { type: "mine" });
+    });
+    markNow();
+    return page;
+  }
+
   // ---------- artista ----------
   function openArtist(name) {
     const page = mount("artist");
@@ -310,6 +338,6 @@ window.SounosPages = (() => {
     return page;
   }
 
-  const api = { attach, openPlaylist, openArtist, newPlaylist, isOpen: () => stack.length > 0, closeTop: () => close(stack[stack.length - 1]) };
+  const api = { attach, openPlaylist, openMine, openArtist, newPlaylist, isOpen: () => stack.length > 0, closeTop: () => close(stack[stack.length - 1]) };
   return api;
 })();

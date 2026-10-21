@@ -13,6 +13,7 @@ import app.sounos.player.PlayerController
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -45,6 +46,12 @@ class SounosApp : Application() {
         covers = CoverStore(File(filesDir, "covers"), File(cacheDir, "covers"), Sounos.http)   // fixadas nunca somem
         lyrics = Lyrics(File(filesDir, "lyrics"), Sounos.http)
         player = PlayerController(this)
+        io.launch {
+            while (true) {
+                if (runCatching { audio.cleanExpiredAndTrim() }.getOrDefault(false)) player.notifyLibraryChanged()
+                delay(60L * 60 * 1000)
+            }
+        }
         updater = app.sounos.update.Updater(this)
     }
 

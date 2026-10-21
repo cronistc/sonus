@@ -4,6 +4,8 @@
   const esc = s => String(s ?? "").replace(/[&<>"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
   const bg = (t, round) => `url('${Sounos.coverUrl(t, true)}') center/cover no-repeat, linear-gradient(135deg,${Sounos.hashColors(t.id).join(",")})`;
   let S = Sounos.call("getState");
+  let offline = !!Sounos.call("getOffline").offline;
+  let mineData = Sounos.call("getMineTracks");
   let lyr = null;                          // letra da música atual (sincronizada)
   let items = [];                          // o que está na tela (para os toques)
 
@@ -46,6 +48,7 @@
       return `<button class="ar tap" data-k="${k}" style="text-align:center"><div class="pic" style="background:${bg(x.t)}"></div><div class="n">${Sounos.handle(name)}</div></button>`;
     }).join("");
     renderPlaylists();
+    renderMine();
     if (stateSeen) fitHome();   // seção de artistas pode ter aparecido/sumido
   }
   const count = p => p.tracks.length === 1 ? "1 música" : `${p.tracks.length} músicas`;
@@ -62,6 +65,22 @@
         return `<button class="blk tap" data-k="${k}">${mosaicOf(p)}${meta(esc(p.name), count(p))}</button>`; }).join("");
   };
 
+  function renderMine() {
+    mineData = Sounos.call("getMineTracks");
+    const downloaded = Array.isArray(mineData.downloaded) ? mineData.downloaded : [];
+    const cached = offline && Array.isArray(mineData.cached) ? mineData.cached : [];
+    const mine = [...new Map([...downloaded, ...cached].map(t => [t.id, t])).values()];
+    const k = items.push({ kind: "mine", tracks: mine }) - 1;
+    const label = offline ? "Disponíveis sem internet" : "Baixadas para ouvir offline";
+    const title = mine.length ? `${mine.length} música${mine.length === 1 ? "" : "s"}` : (offline ? "Nenhuma disponível" : "Baixe músicas para ouvir offline");
+    const cover = mine.length
+      ? `<div class="mosaic">${[0, 1, 2, 3].map(i => mine[Math.min(i, mine.length - 1)]).map(t => `<i style="background:${bg(t)}"></i>`).join("")}</div>`
+      : `<div class="ini">♪</div>`;
+    $("mine").innerHTML = `<button class="blk mine tap" data-k="${k}" style="background:linear-gradient(135deg,var(--c1),var(--c2))">${cover}
+      <span class="kind">${ICON.playlist}${offline ? "Offline" : "Baixadas"}</span>${meta("Minhas músicas", title || label)}</button>`;
+    if (!mine.length) $("mine").querySelector(".a").textContent = offline ? "Nenhuma música disponível offline" : label;
+  }
+
   // toques nas seções
   document.addEventListener("click", e => {
     const el = e.target.closest("[data-k]"); if (!el || e.target.closest("#mini")) return;
@@ -70,6 +89,7 @@
     if (it.kind === "track") { Sounos.call("playSingle", { track: it.t, context: { type: "radio" } }); openPlayer(); }
     else if (it.kind === "playlist") pages.openPlaylist(it.p.id);
     else if (it.kind === "artist") pages.openArtist(it.name);
+    else if (it.kind === "mine") pages.openMine(it.tracks);
   }, true);
   // "Nova playlist": cria e abre a página dela, com o nome pronto para digitar
   document.addEventListener("click", e => {
@@ -77,6 +97,9 @@
     e.stopImmediatePropagation(); pages.newPlaylist();
   }, true);
   const pages = SounosPages.attach($("phone"), { onChange: () => renderHome() });
+  Sounos.on("offline", ev => { offline = !!ev.offline; renderMine(); fitHome(); });
+  Sounos.on("library", () => { renderMine(); fitHome(); });
+  Sounos.on("download", ev => { if (ev.done || ev.error) { renderMine(); fitHome(); } });
 
   // ---------- mini-player ----------
   const cur = () => S && S.current && S.current !== null ? S.current : null;

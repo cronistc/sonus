@@ -39,7 +39,8 @@
   @property --rec { syntax: "<length>"; inherits: true; initial-value: 176px; }
   @property --art { syntax: "<length>"; inherits: true; initial-value: 92px; }
   @property --pl  { syntax: "<length>"; inherits: true; initial-value: 150px; }
-  .phone { transition: --rec .45s cubic-bezier(.2,.85,.25,1), --art .45s cubic-bezier(.2,.85,.25,1), --pl .45s cubic-bezier(.2,.85,.25,1); }
+  @property --mine { syntax: "<length>"; inherits: true; initial-value: 110px; }
+  .phone { transition: --rec .45s cubic-bezier(.2,.85,.25,1), --art .45s cubic-bezier(.2,.85,.25,1), --pl .45s cubic-bezier(.2,.85,.25,1), --mine .45s cubic-bezier(.2,.85,.25,1); }
   @media (min-width: 500px) { .phone { border-radius: 36px; border: 8px solid #222; } }
 
   /* espaço no fim da rolagem acompanha a altura do mini-player (--mini-h, ajustada no JS) */
@@ -77,6 +78,7 @@
   .blk { --s0: 150px; --s: var(--pl); width: var(--s); height: var(--s); border-radius: 10px; overflow: hidden; position: relative;
          box-shadow: var(--tile-shadow); }
   .blk.big { --s0: 176px; --s: var(--rec); }
+  .blk.mine { --s0: 110px; --s: var(--mine); }
   .blk .ini { position: absolute; inset: 0; display: grid; place-items: center; padding-bottom: 28px;
               font-size: calc(var(--s) * .3); font-weight: 800; color: rgba(255,255,255,.5); }
   .blk .mosaic { position: absolute; inset: 0; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
@@ -218,6 +220,13 @@
       <div class="sec-head"><h2>Suas playlists</h2><button>Ver tudo</button></div>
       <div class="row" id="playlists"></div>
     </section>
+
+    <section>
+      <div class="sec-head"><h2>Minhas músicas</h2></div>
+      <div class="row" id="mine"><button class="blk mine tap" style="background:linear-gradient(135deg,var(--c1),var(--c2))">
+        <div class="ini">♪</div><div class="meta"><div class="t">Minhas músicas</div><div class="a">Baixadas e em cache</div></div>
+      </button></div>
+    </section>
   </div>
 
   <div class="mini" id="mini">
@@ -323,10 +332,10 @@ function renderPlaylists() {
 }
 if (!window.Sounos?.native) renderPlaylists();   // no app: home-native.js desenha (as músicas são objetos, não índices)
 
-// Ajuste de altura: os 3 carrosséis crescem juntos para preencher a tela acima do mini-player.
-// Tamanho = mínimo (o de antes) + t × (máximo − mínimo), com t entre 0 e 1; se não couber, fica no mínimo e rola.
+// Ajuste de altura: os carrosséis crescem juntos para preencher a tela acima do mini-player.
+// Tamanho = mínimo + t × (máximo − mínimo); em telas baixas, reduz junto para caber.
 // Só recalcula nos eventos (carregar, redimensionar, --mini-h mudar), nunca a cada quadro.
-const FIT = [["recent", "--rec", 176, 260], ["artists", "--art", 92, 130], ["playlists", "--pl", 150, 200]];
+const FIT = [["recent", "--rec", 122, 205], ["artists", "--art", 64, 110], ["playlists", "--pl", 100, 160], ["mine", "--mine", 100, 160]];
 let fitKey = "", fitFirst = true;
 function fitHome() {
   const ph = $("phone"), sc = ph.querySelector(".scroll"), cs = getComputedStyle(sc);
@@ -346,12 +355,13 @@ function fitHome() {
   if (secs.some(x => x.f[0] === "artists")) over += ar ? ar.offsetHeight - ar.querySelector(".pic").offsetHeight : 24;   // nome sob a foto
   const free = sc.clientHeight - px(cs.paddingBottom) - over;      // padding de baixo já reserva o mini-player
   const lo = secs.reduce((a, x) => a + x.f[2], 0), hi = secs.reduce((a, x) => a + x.f[3], 0);
-  const t = hi > lo ? Math.min(1, Math.max(0, (free - lo) / (hi - lo))) : 0;
+  const scale = lo > 0 && free < lo ? Math.max(0, free / lo) : 1;
+  const t = hi > lo ? Math.min(1, Math.max(0, (free / (scale || 1) - lo) / (hi - lo))) : 0;
   if (fitFirst) {                                                  // primeira vez: sem animar a partir do valor inicial
     fitFirst = false; ph.style.transition = "none";
     requestAnimationFrame(() => requestAnimationFrame(() => ph.style.transition = ""));
   }
-  for (const f of FIT) ph.style.setProperty(f[1], Math.round(f[2] + t * (f[3] - f[2])) + "px");
+  for (const f of FIT) ph.style.setProperty(f[1], Math.round((f[2] + t * (f[3] - f[2])) * scale) + "px");
 }
 new ResizeObserver(() => fitHome()).observe($("phone"));
 
