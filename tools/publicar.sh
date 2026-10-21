@@ -34,8 +34,9 @@ git clone -q --branch updates --depth 1 git@github-sonus:cronistc/sonus.git pub 
   git clone -q --depth 1 git@github-sonus:cronistc/sonus.git pub && (cd pub && git checkout -q --orphan updates && git rm -rqf . >/dev/null 2>&1 || true)
 }
 cd pub
-rm -f Sonus-*.apk                                   # só a versão atual fica guardada
+rm -f Sonus-*.apk Sonus.apk                                   # só a versão atual fica guardada
 cp "$APK" "$FILE"
+cp "$APK" Sonus.apk                                # link fixo para baixar sempre a última versão
 python3 - "$NAME" "$CODE" "$REPO_RAW/$FILE" "$SIZE" "$SHA" "$NOTES" > update.json <<'EOF'
 import json, sys, datetime
 name, code, url, size, sha, notes = sys.argv[1:]
