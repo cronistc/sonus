@@ -21,7 +21,5 @@ não fazer git push, não mexer em tools/publicar.sh nem na chave (~/Sonus-chave
    (carrossel de capas quadradas). Fonte: `searchAlbums` com o nome do artista, filtrando só os álbuns
    cujo artista é ele (nome normalizado igual/contido). Tocar num álbum abre openAlbum.
 5. Compilar: `cd android && JAVA_HOME=~/Android/jdk17 ./gradlew -q :app:assembleDebug -PversionCode=5`
-   e `node --check` nos JS alterados. Instalar no celular:
-   `adb -s 192.168.1.100:37851 install -r -i app.sounos android/app/build/outputs/apk/debug/app-debug.apk`
-   (se o adb cair: `adb mdns services` e conecte na porta `_adb-tls-connect`).
+   e `node --check` nos JS alterados. NÃO instale no celular (o Claude instala).
 6. Escreva no fim deste arquivo um resumo do que mudou e do que testou.

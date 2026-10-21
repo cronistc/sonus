@@ -7,6 +7,7 @@ N="$1"; NOME="$2"; TAREFA="$(realpath "$3")"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; TRAB="$ROOT/../sonus-trab"; mkdir -p "$TRAB"
 W="$TRAB/$NOME"
 [ -d "$W" ] || git -C "$ROOT" worktree add -q -b "codex/$NOME" "$W"
+[ -f "$ROOT/android/local.properties" ] && cp -n "$ROOT/android/local.properties" "$W/android/"
 cd "$W"
 CODEX_HOME="$HOME/.codex-conta$N" codex exec -m gpt-5.6-terra --dangerously-bypass-approvals-and-sandbox \
   "Você trabalha no app Sonus (diretório atual). Faça a tarefa descrita abaixo. Ao terminar, faça git commit no ramo atual (não faça push).
