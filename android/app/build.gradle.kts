@@ -14,7 +14,7 @@ android {
         minSdk = 26
         targetSdk = 34
         // nome da versão: quem decide é o Guilherme. versionCode só sobe (o Android exige).
-        versionCode = (project.findProperty("versionCode") as String?)?.toInt() ?: 3
+        versionCode = (project.findProperty("versionCode") as String?)?.toInt() ?: 4
         versionName = (project.findProperty("versionName") as String?) ?: "0.1.2"
     }
 

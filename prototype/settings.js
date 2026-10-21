@@ -100,7 +100,12 @@
                 <button class="pill" data-act="upd-allow">Permitir</button></div>
             </div></section>` : ""}
 
-            <section class="set-sec" style="--i:5">
+            <section class="set-sec" style="--i:5" data-sup hidden><div class="set-card">
+              <button class="set-row" data-act="support"><div class="tx"><div class="t">Apoie o Sonus</div>
+                <div class="d">Ajude a manter o app vivo, sem anúncios.</div></div><span class="pill">Apoiar</span></button>
+            </div></section>
+
+            <section class="set-sec" style="--i:6">
               <img src="logo.svg" alt="" style="display:block;margin:0 auto 10px;width:44px;height:44px;border-radius:12px">
               <p class="set-foot">Sonus <span data-upd="cur">0.1.2</span><br>Músicas via NewPipe Extractor v0.26.5 · Licença GPLv3</p>
             </section>
@@ -115,13 +120,16 @@
       ov.querySelector('[data-desc="quality"]').textContent = desc[s.quality];
       const cf = ov.querySelector('[data-out="crossfade"]'); if (cf) cf.textContent = s.crossfade ? `${s.crossfade} s` : "Desligada";
       renderStorage();
-      renderUpd();
+      renderUpd(); showSup?.();
       ov.querySelectorAll(".seg").forEach(placeKnob);
     }
 
     // ---------- Atualizações ----------
     let upd = window.Sounos?.native ? Sounos.call("getUpdate") : null;
     const updUi = SounosUpdate.attach(ov.parentElement, () => upd);
+    const supUi = window.SounosSupport?.attach(ov.parentElement);
+    const showSup = () => ov.querySelectorAll("[data-sup]").forEach(s => s.hidden = !window.SounosSupport?.available());
+    window.SounosSupport?.onChange(showSup);
     if (window.Sounos?.native) Sounos.on("update", st => { upd = st; renderUpd(); updUi.render(); });
     function renderUpd() {
       if (!upd || !upd.current) return;
@@ -144,6 +152,7 @@
     }
     ov.addEventListener("click", e => {
       if (e.target.closest('[data-act="upd-allow"]')) { e.stopPropagation(); return Sounos.call("allowInstalls"); }
+      if (e.target.closest('[data-act="support"]')) return supUi?.open();
       if (!e.target.closest('[data-act="upd-open"]')) return;
       if (upd.status === "idle" || upd.status === "uptodate" || upd.status === "error") Sounos.call("checkUpdate");
       updUi.open();

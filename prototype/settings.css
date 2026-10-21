@@ -122,3 +122,15 @@ span.pill { display: inline-grid; place-items: center; }   /* "Buscar"/"Ver" den
 .upd-btn .fill { position: absolute; inset: 0; background: rgba(255,255,255,.22); transform-origin: left; transform: scaleX(0); transition: transform .25s linear; }
 .upd-btn span { position: relative; }
 .upd-hint { margin-top: 12px; font-size: 12.5px; color: var(--text-dim); text-align: center; line-height: 1.45; }
+.upd-btn[hidden] { display: none; }
+.upd-foot.quiet { padding-top: 0; }
+
+/* Apoie o Sonus (mesmo visual da tela de atualização) */
+.sup-opts { display: grid; gap: 10px; margin: 24px auto 0; max-width: 420px; }
+.sup-opt { display: flex; align-items: center; gap: 12px; width: 100%; padding: 14px 16px; border-radius: 16px; border: 0;
+           background: var(--surface); color: var(--text); text-align: left; font: inherit; cursor: pointer; }
+.sup-opt:active { transform: scale(.98); }
+.sup-opt .t { font-weight: 700; font-size: 15px; }
+.sup-opt .d { font-size: 12.5px; color: var(--text-dim); margin-top: 2px; }
+.sup-opt .tx { flex: 1; min-width: 0; }
+.sup-opt .go { font-size: 13px; font-weight: 700; color: var(--brand); white-space: nowrap; }

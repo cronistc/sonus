@@ -128,7 +128,8 @@
     });
   };
   function applyLyrics(p) {
-    if (!p || !p.id) return;
+    if (!p || !p.id || p.pending) return;            // ainda procurando: não decide nada
+
     const l = p.lyrics;
     let lrc = null, plain = false;
     if (l && l.synced) lrc = l.synced;

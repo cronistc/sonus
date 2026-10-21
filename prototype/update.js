@@ -7,6 +7,9 @@ window.SounosUpdate = (() => {
   const mb = b => b > 0 ? (b / 1048576).toFixed(1).replace(".", ",") + " MB" : "";
   const day = s => { if (!s) return ""; const d = new Date(s + "T12:00:00"); return isNaN(d) ? "" : d.toLocaleDateString("pt-BR", { day: "numeric", month: "long", year: "numeric" }); };
 
+  let changelog = {};
+  fetch("changelog.json").then(r => r.json()).then(j => { changelog = j || {}; }).catch(() => {});
+
   function attach(phone, get) {
     const el = document.createElement("div");
     el.className = "upd";
@@ -32,9 +35,9 @@ window.SounosUpdate = (() => {
       const has = !!nv && ["available", "downloading", "ready", "installing", "error"].includes(u.status);
       $(".upd-ver").innerHTML = has ? `<span class="old">${esc(cur)}</span><span class="arrow">→</span><b>${esc(nv.versionName)}</b>` : `<b>${esc(cur)}</b>`;
       const status = {
-        checking: "Procurando atualizações…",
         uptodate: u.justUpdated ? `Atualizado para a ${u.justUpdated}` : "Você está na versão mais recente",
         idle: "Você está na versão mais recente",
+        checking: "Você está na versão mais recente",
         available: "Nova versão disponível",
         downloading: `Baixando… ${pct}%`,
         ready: "Pronta para instalar",
@@ -44,11 +47,12 @@ window.SounosUpdate = (() => {
       $(".upd-status").textContent = status;
       $(".upd-status").dataset.s = u.status;
       const meta = has ? [mb(nv.size), day(nv.date)].filter(Boolean).join(" · ") : "";
-      const notes = (has ? nv.notes : u.current.notes) || [];
+      const notes = (has ? nv.notes : (changelog[cur] || u.current.notes)) || [];
       $(".upd-notes").innerHTML = notes.length
         ? `<h3>${has ? "O que há de novo" : "Nesta versão"}</h3>${meta ? `<div class="meta">${esc(meta)}</div>` : ""}<ul>${notes.map(n => `<li>${esc(n)}</li>`).join("")}</ul>`
         : (meta ? `<div class="meta">${esc(meta)}</div>` : "");
       const btn = $(".upd-btn");
+      btn.hidden = !has && u.status !== "error";          // na versão mais recente: só a mensagem e as novidades
       btn.querySelector("span").textContent = {
         available: "Atualizar agora", ready: "Atualizar agora", downloading: `Baixando ${pct}%`, installing: "Instalando…",
         checking: "Procurando…", error: has ? "Tentar de novo" : "Procurar de novo",
@@ -58,6 +62,7 @@ window.SounosUpdate = (() => {
       btn.querySelector(".fill").style.transform = `scaleX(${u.status === "downloading" ? u.progress || 0 : 0})`;
       $(".upd-hint").textContent = !u.canInstall ? "Permita \"Atualizar sozinho\" nas configurações para instalar sem pedir nada."
         : has ? "Se você não tocar em nada, ela instala sozinha quando você sair do app e nada estiver tocando." : "O Sonus procura atualizações sozinho e se atualiza em segundo plano.";
+      $(".upd-foot").classList.toggle("quiet", btn.hidden);
     }
 
     el.addEventListener("click", e => {

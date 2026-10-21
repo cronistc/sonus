@@ -332,7 +332,7 @@
       const p = e.target.closest("[data-pick]"); if (p) return pick(p.dataset.pick, p.dataset.id);
     });
     // ---------------- dentro do app: busca de verdade (NewPipe) + gosto da pessoa ----------------
-    let resultTracks = [], resultArtists = [], sugT = 0, lastServer = [];
+    let resultTracks = [], resultArtists = [], sugT = 0, lastServer = [], shownMine = new Set();
     const realCover = t => `<div class="ic" style="background:url('${Sounos.coverUrl(t)}') center/cover no-repeat, ${grad(Sounos.hashColors(t.id))}"></div>`;
     // foto de artista também passa pelo app (fica guardada; antes vinha da internet a cada busca)
     const artistKey = n => String(n || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -376,8 +376,10 @@
       const pastQ = history.filter(h => h.type === "q" && norm(h.text).startsWith(norm(q)) && norm(h.text) !== norm(q)).slice(0, 2);
       // músicas que você já ouviu e batem com o que está digitando (com tolerância a erro), as que você mais ouve primeiro
       const mine = T.history.map(t => ({ t, s: Math.max(textScore(q, t.title), .85 * textScore(q, t.title + " " + t.artist)) }))
-        .filter(x => x.s >= .45).map(x => ({ ...x, s: x.s + .35 * T.artist(x.t.artist) + .2 * T.song(x.t.id) }))
+        // quem já estava na lista fica com uma régua mais baixa: não some e volta a cada letra digitada
+        .filter(x => x.s >= (shownMine.has(x.t.id) ? .3 : .45)).map(x => ({ ...x, s: x.s + .35 * T.artist(x.t.artist) + .2 * T.song(x.t.id) }))
         .sort((a, b) => b.s - a.s).filter((x, i, arr) => arr.findIndex(y => y.t.id === x.t.id) === i).slice(0, 3);
+      shownMine = new Set(mine.map(x => x.t.id));
       resultTracks = mine.map(x => x.t);
       const draw = server => setPanel(
         pastQ.map(h => `<button class="s-row sug" data-q="${esc(h.text)}">${cover("q")}<div class="tx"><div class="t">${emphasize(h.text, q)}</div></div>

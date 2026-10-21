@@ -90,7 +90,10 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
         .put("colors", JSONArray(colors)).put("durationMs", durationMs).put("positionMs", positionMs())
         .put("downloaded", currentTrack?.let { app.library.isDownloaded(it.id) } ?: false)
 
+    // pending = ainda procurando (a tela não deve concluir "sem letra" e sair do modo letra)
+    @Volatile private var lyricsPending = false
     fun lyricsJson(): JSONObject = JSONObject().put("id", lyricsFor ?: JSONObject.NULL).put("lyrics", lyrics?.toJson() ?: JSONObject.NULL)
+        .put("pending", lyricsPending)
 
     // ---------------- comandos ----------------
     fun playQueue(list: List<Track>, start: Int, ctx: JSONObject) {
@@ -265,11 +268,12 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
 
     private fun loadLyrics(t: Track, my: Int) {
         lyrics = app.lyrics.cached(t); lyricsFor = t.id
+        lyricsPending = lyrics == null
         emit("lyrics", lyricsJson())
         if (lyrics != null) return
         scope.launch {
-            val l = app.lyrics.get(t)
-            if (my == token) { lyrics = l; lyricsFor = t.id; emit("lyrics", lyricsJson()) }
+            val l = runCatching { app.lyrics.get(t) }.getOrNull()
+            if (my == token) { lyrics = l; lyricsFor = t.id; lyricsPending = false; emit("lyrics", lyricsJson()) }
         }
     }
 

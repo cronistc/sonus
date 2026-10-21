@@ -132,6 +132,9 @@ class Bridge(private val web: WebView) {
             "checkUpdate" -> app.updater.check()
             "installUpdate" -> app.updater.install()
             "allowInstalls" -> app.updater.openInstallPermission()
+            // links da tela "Apoie o Sonus" abrem no navegador do celular (só https)
+            "openUrl" -> a.optString("url").takeIf { it.startsWith("https://") }?.let { u ->
+                app.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(u)).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }
             "seenUpdate" -> app.updater.clearJustUpdated()
             "setUpdateUrl" -> app.updater.setTestUrl(a.optString("url").ifBlank { null })      // só em build de teste
             "clearCache" -> app.io.launch { app.audio.clear(); app.covers.clearBrowse(); send("storage", JSONObject(call("getStorage", "{}"))) }

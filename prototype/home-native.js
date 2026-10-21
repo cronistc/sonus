@@ -146,7 +146,7 @@
   Sounos.on("state", applyState);
   Sounos.on("progress", p => { if (!scrubbing) pos = p.pos; playing = p.playing; });
   Sounos.on("lyrics", p => {
-    if (!cur() || p.id !== cur().id) return;
+    if (!cur() || p.id !== cur().id || p.pending) return;
     const l = p.lyrics; lyr = l && l.synced ? l.synced : null;
     syncMiniA();
     buildMiniLyrics();
