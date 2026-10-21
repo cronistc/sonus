@@ -132,3 +132,9 @@ O NewPipe Extractor é GPLv3; por isso o Sonus também é distribuído sob GPLv3
 - A ponte recebeu os comandos assíncronos `searchAlbums` e `album`.
 - A busca nativa exibe álbuns, abre sua página a partir da tela inicial ou do player, e a página de artista passou a mostrar os álbuns correspondentes.
 - Validado com `node --check prototype/search.js`, `node --check prototype/pages.js` e `JAVA_HOME=~/Android/jdk17 ./gradlew -q :app:assembleDebug -PversionCode=5`.
+
+## Resumo desta tarefa: busca com álbuns e mais páginas
+
+- O bloco de álbuns mantém o mesmo layout e agora aparece após as quatro primeiras músicas, junto aos artistas.
+- A busca nativa guarda a próxima página por consulta e oferece `searchMore`; a interface busca uma página por vez ao chegar perto do fim, acrescenta faixas sem repetir IDs e mostra um esqueleto enquanto carrega.
+- Verificado com `node --check prototype/search.js`, `git diff --check` e `cd android && JAVA_HOME=~/Android/jdk17 ./gradlew -q :app:assembleDebug -PversionCode=5`.

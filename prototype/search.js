@@ -140,7 +140,10 @@
       <div class="sbody"></div>`;
     phone.appendChild(ov);
     const bar = ov.querySelector(".sbar"), input = ov.querySelector("input"), body = ov.querySelector(".sbody");
-    let isOpen = false, view = "";
+    let isOpen = false, view = "", moreResults = null;
+    body.addEventListener("scroll", () => { if (view === "res") moreResults?.(); });
+    body.addEventListener("wheel", () => moreResults?.resume?.(), { passive: true });
+    body.addEventListener("touchstart", () => moreResults?.resume?.(), { passive: true });
 
     // posição da lupa dentro do celular (a barra nasce ali)
     // A lupa nunca se mexe: a barra é presa pela DIREITA e pelo CENTRO vertical da lupa e só cresce para a esquerda.
@@ -197,10 +200,20 @@
     let lastHtml = "";
     function setPanel(html, name) {
       if (view === name && html === lastHtml) return;
+      if (name !== "res") moreResults = null;
       const same = view === name && body.firstElementChild;
+      const anchor = same && name === "res"
+        ? [...body.querySelectorAll('.s-row[data-pick="nt"]')].find(row => row.getBoundingClientRect().bottom > body.getBoundingClientRect().top)
+        : null;
+      const anchorId = anchor?.dataset.id, anchorTop = anchor?.getBoundingClientRect().top;
       view = name; lastHtml = html;
-      if (same) return morph(body.firstElementChild, html);
-      body.innerHTML = `<div class="spanel">${html}</div>`;
+      if (same) morph(body.firstElementChild, html);
+      else body.innerHTML = `<div class="spanel">${html}</div>`;
+      if (anchorId !== undefined) {
+        const next = body.querySelector(`.s-row[data-pick="nt"][data-id="${anchorId}"]`);
+        if (next) body.scrollTop += next.getBoundingClientRect().top - anchorTop;
+      }
+      if (same) return;
       [...body.firstElementChild.children].forEach((c, k) => c.style.setProperty("--k", Math.min(k, 12)));
     }
     // Atualiza a lista no lugar: linha igual fica como está (capa não recarrega), linha da mesma
@@ -333,7 +346,7 @@
       const p = e.target.closest("[data-pick]"); if (p) return pick(p.dataset.pick, p.dataset.id);
     });
     // ---------------- dentro do app: busca de verdade (NewPipe) + gosto da pessoa ----------------
-    let resultTracks = [], resultArtists = [], resultAlbums = [], sugT = 0, lastServer = [], shownMine = new Set();
+    let resultTracks = [], resultArtists = [], resultAlbums = [], sugT = 0, lastServer = [], shownMine = new Set(), searchRun = 0;
     const realCover = t => `<div class="ic" style="background:url('${Sounos.coverUrl(t)}') center/cover no-repeat, ${grad(Sounos.hashColors(t.id))}"></div>`;
     // foto de artista também passa pelo app (fica guardada; antes vinha da internet a cada busca)
     const artistKey = n => String(n || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -402,24 +415,68 @@
       sugT = setTimeout(() => Sounos.ask("suggest", { q }).then(r => { if (input.value === q && view === "sug") { lastServer = r.items || []; draw(lastServer); } }), 160);
     }
     function nativeResults(q) {
+      const run = ++searchRun;
       setPanel(`<div class="s-empty">Buscando “${esc(q)}”…</div>`, "loading");
-      const stale = () => !isOpen || norm(input.value.replace(/^@/, "")) !== norm(q) && norm(input.value) !== norm(toHandle(q));
+      const stale = () => run !== searchRun || !isOpen || norm(input.value.replace(/^@/, "")) !== norm(q) && norm(input.value) !== norm(toHandle(q));
       const pSongs = Sounos.ask("search", { q }), pArts = Sounos.ask("searchArtists", { q }), pAlbums = Sounos.ask("searchAlbums", { q });
-      let arts = null, albums = null, songsR = null;
+      let arts = null, albums = null, songsR = null, moreHas = false, moreLoading = false, morePaused = false;
+      let resultSongs = [];
+      const seenSongs = new Set();
+      const songKey = t => String(t?.id || t?.songKey || t?.url || `${t?.title || ""}|${t?.artist || ""}`);
+      const appendSongs = (items, start = resultSongs.length) => {
+        const fresh = [];
+        (items || []).forEach(t => {
+          const key = songKey(t);
+          if (!key || seenSongs.has(key)) return;
+          seenSongs.add(key);
+          fresh.push(t);
+        });
+        const score = (t, i) => (1 - i / 25) + .5 * textScore(q, t.title + " " + t.artist) + .35 * taste().artist(t.artist) + .15 * taste().song(t.id);
+        resultSongs.push(...fresh.map((t, i) => ({ t, s: score(t, start + i) })).sort((a, b) => b.s - a.s).map(x => x.t));
+      };
+      const more = () => {
+        if (moreLoading || morePaused || !moreHas || stale() || view !== "res") return;
+        if (body.scrollTop + body.clientHeight < body.scrollHeight - 420) return;
+        moreLoading = true;
+        draw();
+        Sounos.ask("searchMore", { q }).then(r => {
+          if (stale()) return;
+          moreLoading = false;
+          if (r.error) {
+            morePaused = true;
+            draw();
+            return;
+          }
+          appendSongs(r.items, resultSongs.length);
+          moreHas = !!r.hasMore;
+          draw();
+          if (moreHas) requestAnimationFrame(more);
+        });
+      };
+      more.resume = () => { morePaused = false; more(); };
+      moreResults = more;
       // As músicas aparecem assim que chegam; artistas e álbuns entram sem bloquear uma à outra.
-      pSongs.then(r => { songsR = r; if (!stale()) draw(); });
+      pSongs.then(r => {
+        songsR = r;
+        appendSongs(r.items, 0);
+        moreHas = !!r.hasMore;
+        if (!stale()) draw();
+      });
       pArts.then(r => { arts = r; if (songsR && !stale()) draw(); });
       pAlbums.then(r => { albums = r; if (songsR && !stale()) draw(); });
       function draw() {
         const songs = songsR;
         if (songs.error && (!arts || arts.error) && (!albums || albums.error)) return arts || albums ? setPanel(`<div class="s-empty">Sem conexão agora. Tente de novo.</div>`, "res") : null;
-        const T = taste();
-        const list = (songs.items || []).map((t, i) => ({ t, s: (1 - i / 25) + .5 * textScore(q, t.title + " " + t.artist) + .35 * T.artist(t.artist) + .15 * T.song(t.id) }));
-        list.sort((a, b) => b.s - a.s);
-        resultTracks = list.map(x => x.t);
+        resultTracks = resultSongs;
         resultArtists = ((arts && arts.items) || []).filter(a => a.name);
         resultAlbums = ((albums && albums.items) || []).filter(a => a.name && a.url);
-        if (!resultTracks.length && !resultArtists.length && !resultAlbums.length) return setPanel(`<div class="s-empty">Nada encontrado para “${esc(q)}”.</div>`, "res");
+        if (!resultTracks.length && !resultArtists.length && !resultAlbums.length) {
+          if (moreLoading || moreHas) {
+            setPanel(`<div class="sk" aria-label="Carregando músicas"></div>`, "res");
+            if (moreHas && !moreLoading && !morePaused) requestAnimationFrame(more);
+          } else setPanel(`<div class="s-empty">Nada encontrado para “${esc(q)}”.</div>`, "res");
+          return;
+        }
         const topArtist = resultArtists[0] && textScore(q, resultArtists[0].name) >= .9 ? resultArtists[0] : null;
         const topAlbum = resultAlbums[0];
         const best = topArtist ? { type: "na", i: 0, title: toHandle(topArtist.name), sub: "Artista", look: realArtist(topArtist).replace('class="ic round"', 'class="cv round"') }
@@ -427,19 +484,23 @@
             look: realCover(resultTracks[0]).replace('class="ic"', 'class="cv"') }
           : { type: "nal", i: 0, title: esc(topAlbum.name), sub: "Álbum · " + toHandle(topAlbum.artist),
             look: `<div class="cv" style="background:${topAlbum.thumb ? `url('${Sounos.coverUrl({ id: "album:" + (artistKey(topAlbum.name) || "x"), thumb: topAlbum.thumb }).replace(/'/g, "%27")}') center/cover,` : ""} ${grad(Sounos.hashColors(topAlbum.name))}"></div>` };
+        const songRows = (from, to = resultTracks.length) => resultTracks.slice(from, to).map((t, i) => `
+            <button class="s-row" data-pick="nt" data-id="${from + i}">${realCover(t)}
+              <div class="tx"><div class="t">${esc(t.title)}</div><div class="a">${toHandle(t.artist)} · ${fmtDur(t.dur)}</div></div></button>`).join("");
         setPanel(`
           <div class="s-head"><h3>Melhor resultado</h3></div>
           <button class="s-best" data-pick="${best.type}" data-id="${best.i}">${best.look}
             <div><div class="t">${best.title}</div><div class="a">${best.sub}</div></div></button>` +
-          (resultTracks.length ? `<div class="s-head"><h3>Músicas</h3></div>` + resultTracks.slice(0, 15).map((t, i) => `
-            <button class="s-row" data-pick="nt" data-id="${i}">${realCover(t)}
-              <div class="tx"><div class="t">${esc(t.title)}</div><div class="a">${toHandle(t.artist)} · ${fmtDur(t.dur)}</div></div></button>`).join("") : "") +
+          (resultTracks.length ? `<div class="s-head"><h3>Músicas</h3></div>` + songRows(0, Math.min(4, resultTracks.length)) : "") +
           (resultArtists.length ? `<div class="s-head"><h3>Artistas</h3></div><div class="s-hrow">` + resultArtists.map((a, i) => `
             <button class="s-art" data-pick="na" data-id="${i}"><div class="pic" style="background:${a.thumb ? `url('${artistPic(a)}') center/cover,` : ""} ${grad(Sounos.hashColors(a.name))}"></div>
               <div class="n">${toHandle(a.name)}</div></button>`).join("") + `</div>` : "") +
           (resultAlbums.length ? `<div class="s-head"><h3>Álbuns</h3></div><div class="s-hrow">` + resultAlbums.map((a, i) => `
             <button class="s-album" data-pick="nal" data-id="${i}"><div class="pic" style="background:${a.thumb ? `url('${Sounos.coverUrl({ id: "album:" + (artistKey(a.name) || "x"), thumb: a.thumb }).replace(/'/g, "%27")}') center/cover,` : ""} ${grad(Sounos.hashColors(a.name))}"></div>
-              <div class="n">${esc(a.name)}</div><div class="a">${toHandle(a.artist)}</div></button>`).join("") + `</div>` : ""), "res");
+              <div class="n">${esc(a.name)}</div><div class="a">${toHandle(a.artist)}</div></button>`).join("") + `</div>` : "") +
+          songRows(Math.min(4, resultTracks.length)) +
+          (moreLoading ? `<div class="sk" aria-label="Carregando músicas"></div>` : ""), "res");
+        if (moreHas && !moreLoading && !morePaused) requestAnimationFrame(more);
       }
     }
     const fmtDur = s => s > 0 ? `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}` : "";

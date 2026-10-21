@@ -18,10 +18,14 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.json.JSONArray
 import org.json.JSONObject
+import org.schabi.newpipe.extractor.Page
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Ponte entre a interface (JavaScript) e o app (Kotlin).
@@ -35,6 +39,8 @@ class Bridge(private val web: WebView) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val listener: (String, JSONObject) -> Unit = { name, payload -> send(name, payload) }
     private val updListener: (JSONObject) -> Unit = { send("update", it) }
+    private val searchPages = ConcurrentHashMap<String, Page>()
+    private val searchPageLocks = ConcurrentHashMap<String, Mutex>()
 
     fun attach() { player.addListener(listener); app.updater.addListener(updListener) }
     fun detach() { player.removeListener(listener); app.updater.removeListener(updListener); scope.cancel() }
@@ -73,9 +79,26 @@ class Bridge(private val web: WebView) {
     private fun command(m: String, a: JSONObject) {
         when (m) {
             "search" -> async(a) {
-                val page = app.source.search(a.getString("q"), SearchFilter.SONGS)
+                val q = a.getString("q")
+                val page = app.source.search(q, SearchFilter.SONGS)
+                val nextPage = page.nextPage
+                if (nextPage == null) searchPages.remove(q) else searchPages[q] = nextPage
                 app.resolver.prefetch(page.items.take(1))                       // início instantâneo do 1º (os outros disputavam a rede com as capas)
                 JSONObject().put("items", Json.tracks(page.items)).put("suggestion", page.serviceSuggestion ?: JSONObject.NULL)
+                    .put("hasMore", nextPage != null)
+            }
+            "searchMore" -> async(a) {
+                val q = a.getString("q")
+                searchPageLocks.computeIfAbsent(q) { Mutex() }.withLock {
+                    val next = searchPages[q]
+                    if (next == null) JSONObject().put("items", JSONArray()).put("hasMore", false)
+                    else {
+                        val page = app.source.search(q, SearchFilter.SONGS, next)
+                        val nextPage = page.nextPage
+                        if (nextPage == null) searchPages.remove(q) else searchPages[q] = nextPage
+                        JSONObject().put("items", Json.tracks(page.items)).put("hasMore", nextPage != null)
+                    }
+                }
             }
             "searchArtists" -> async(a) {
                 JSONObject().put("items", JSONArray().apply {
