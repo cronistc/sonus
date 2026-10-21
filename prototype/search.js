@@ -231,7 +231,7 @@
     // o "voltar" do celular fecha a busca antes de sair da tela
     let pushed = false;
     function history_push() { window.history.pushState({ search: true }, ""); pushed = true; }
-    window.addEventListener("popstate", () => { if (isOpen && !history.state?.search) { pushed = false; close(true); } });
+    window.addEventListener("popstate", () => { if (isOpen && !window.history.state?.search) { pushed = false; close(true); } });
 
     // A animação de entrada só roda quando a tela muda de tipo (recentes → sugestões → resultados).
     // Atualizar a mesma tela (cada letra digitada) troca o conteúdo sem animar e sem piscar.
