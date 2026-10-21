@@ -207,3 +207,9 @@ sem correção; falta completar essas rodadas no aparelho.
 Sincronização final: `git pull origin main` informou `Already up to date.`. Após a sincronização,
 `cd android && JAVA_HOME=~/Android/jdk17 ./gradlew -q :app:assembleDebug -PversionCode=5`
 concluiu com sucesso.
+
+## Resumo da tela inicial online e offline (21/10/2026)
+
+- Online, a tela inicial mostra Ouvidos recentemente, Seus artistas e Suas playlists; Minhas músicas não ocupa mais uma seção separada.
+- Offline, o primeiro carrossel passa a mostrar as músicas baixadas e em cache como cartões do mesmo tamanho dos recentes. Tocar em um cartão inicia a fila com contexto `mine`.
+- A indicação Offline substitui a clave de sol no cabeçalho e volta à clave quando a conexão retorna. A mudança atualiza a seção sem remontar a tela, e o `fitHome` continua usando os três carrosséis visíveis.
