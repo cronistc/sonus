@@ -78,6 +78,10 @@
 .s-art { width: 84px; flex-shrink: 0; text-align: center; background: none; border: 0; color: inherit; cursor: pointer; font: inherit; }
 .s-art .pic { width: 84px; height: 84px; border-radius: 50%; display: grid; place-items: center; font-size: 30px; font-weight: 800; color: rgba(255,255,255,.85); }
 .s-art .n { font-size: 12px; font-weight: 700; margin-top: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.s-album { width: 112px; flex-shrink: 0; text-align: left; background: none; border: 0; color: inherit; cursor: pointer; font: inherit; padding: 0; }
+.s-album .pic { width: 112px; height: 112px; border-radius: 10px; background-size: cover; background-position: center; }
+.s-album .n { font-size: 12px; font-weight: 700; margin-top: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.s-album .a { font-size: 11px; color: var(--text-dim, #a1a1aa); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .s-pl { width: 120px; height: 120px; flex-shrink: 0; border-radius: 10px; overflow: hidden; position: relative; border: 0; padding: 0;
         cursor: pointer; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; color: #fff; font: inherit; text-align: left; }
 .s-pl .meta { position: absolute; left: 0; right: 0; bottom: 0; padding: 18px 8px 7px; background: linear-gradient(transparent, rgba(0,0,0,.75)); }
