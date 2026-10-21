@@ -9,7 +9,7 @@ W="$TRAB/$NOME"
 [ -d "$W" ] || git -C "$ROOT" worktree add -q -b "codex/$NOME" "$W"
 [ -f "$ROOT/android/local.properties" ] && cp -n "$ROOT/android/local.properties" "$W/android/"
 cd "$W"
-CODEX_HOME="$HOME/.codex-conta$N" codex exec -m gpt-5.6-terra --dangerously-bypass-approvals-and-sandbox \
+CODEX_HOME="$HOME/.codex-conta$N" codex exec -m gpt-6-luna -c model_reasoning_effort=\"xhigh\" --dangerously-bypass-approvals-and-sandbox \
   "Você trabalha no app Sonus (diretório atual). Faça a tarefa descrita abaixo. Ao terminar, faça git commit no ramo atual (não faça push).
 
 $(cat "$TAREFA")" </dev/null > "$TRAB/$NOME.log" 2>&1
