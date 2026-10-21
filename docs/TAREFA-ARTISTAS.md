@@ -24,3 +24,4 @@ Escreva no fim deste arquivo o que mudou. Commit no ramo; depois `git merge main
 - O rádio do YouTube Music extrai artistas apenas de runs ligados a páginas de artista/canal. O NewPipe preserva os nomes do resultado ao resolver a faixa; `TitleNormalizer` move participações indicadas por `feat.`, `part.`, `com` e `ft.` para a lista e limpa o título.
 - Busca, histórico, playlists, início, player, notificações e filas mostram a lista separada por vírgulas. Página do artista, gostos e toque no nome do player continuam usando o artista principal.
 - Testes offline cobrem participações, nomes de duplas/bandas e bylines com runs de artista e texto não ligado. Passaram `:core:extractor:test`, `node --check` nos arquivos JavaScript alterados e a compilação `:app:assembleDebug -PversionCode=5`.
+- Após o commit inicial, `git merge main` informou `Already up to date.`. A compilação e os comandos `node --check` foram executados novamente com sucesso; não houve conflitos.
