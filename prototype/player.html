@@ -1160,6 +1160,11 @@ $("lyricsBtn").onclick = () => {
   $("lyricsBtn").classList.toggle("on", lyricsMode);
   if (lyricsMode) { lastLine = -1; syncLyrics(); } else exitSelect();
 };
+window.__sonusBack = () => {
+  if (!lyricsMode) return false;
+  $("lyricsBtn").click();
+  return true;
+};
 
 // ---- Compartilhar letra: escolher até 10 linhas → imagem com faixa, @artista e trechos ----
 const MAX_LINES = 10;
