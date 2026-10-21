@@ -225,9 +225,11 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
                         val done = AtomicBoolean(false); val failed = AtomicBoolean(false)
                         val r = resolved!!
                         fillJob = app.io.launch {
-                            app.audio.fill(t.id, r.audio, Long.MAX_VALUE,
-                                refresh = { app.resolver.invalidate(t.url); app.resolver.get(t.url, quality(), t).audio })
-                                .also { ok -> if (ok) done.set(true) else failed.set(true) }
+                            // sem internet no meio (ex.: renovar o link) a falha vira "falhou", nunca derruba o app
+                            runCatching {
+                                app.audio.fill(t.id, r.audio, Long.MAX_VALUE,
+                                    refresh = { app.resolver.invalidate(t.url); app.resolver.get(t.url, quality(), t).audio })
+                            }.getOrDefault(false).also { ok -> if (ok) done.set(true) else failed.set(true) }
                         }
                         AudioEngine.Source.Growing(GrowingFileSource(app.audio.file(t.id), { app.audio.totalLength(t.id).takeIf { it > 0 } ?: r.audio.contentLength }, { done.get() }, { failed.get() }))
                     }
