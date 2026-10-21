@@ -145,3 +145,36 @@ O NewPipe Extractor é GPLv3; por isso o Sonus também é distribuído sob GPLv3
 - A seção de artistas da tela inicial e o topo do perfil usam a mesma rota. A busca de músicas do perfil continua paralela à resolução da foto.
 - Medição antes/depois: antes não havia tempos por etapa nem cache persistente de foto de artista, portanto não há baseline numérico confiável. Foram adicionados logs para `NewPipe.searchArtists_ms`, espera e consulta ao índice/disco, busca, download, rota `/cover/artist:*` e `Bridge.artist`; eles registram valores em ms e distinguem cache de rede. Não foi coletado tempo de execução depois da mudança porque a tarefa proíbe instalar no celular.
 - Verificado: `node --check` em `prototype/native.js`, `prototype/home-native.js`, `prototype/pages.js` e `prototype/search.js`; compilação `JAVA_HOME=~/Android/jdk17 ./gradlew -q :app:assembleDebug -PversionCode=5`; `git diff --check`.
+
+## 7. Redução de CPU da interface (21/10/2026)
+
+- Tela inicial: barra, tempo e letra do mini-player usam timer de 100 ms enquanto a tela inicial
+  está visível e a música toca; no gesto de busca, o relógio acompanha o dedo. O timer para com
+  player, página ou overlay cobrindo a tela, ou quando a música pausa. A barra só escreve quando
+  sua ponta avança um pixel.
+- Player: anel, equalizador e relógio usam timer de 66 ms só enquanto o player está visível,
+  tocando e sem overlay. O anel só redesenha quando sua ponta avança um pixel; as linhas da letra
+  só são sincronizadas quando a tela de letra está aberta.
+- As animações de preenchimento da letra, seta de download e esqueleto param quando ficam ocultas
+  ou quando a música pausa. Foram removidos `will-change` do anel, capa, equalizador e quadro do
+  player.
+- A ponte nativa mantém o ticker de progresso em 250 ms (4 eventos/s). Progresso não é enviado à
+  WebView quando a tela está apagada ou a Activity está pausada; o quadro do player também deixa de
+  receber progresso quando está fechado.
+
+### Medições no Galaxy A54
+
+Medições anteriores à instalação, com a faixa “Tempo de Aprender” tocando; CPU do processo
+`app.sounos` em `top` (100% = um núcleo), 5 amostras separadas por 2 s:
+
+| Estado | CPU antes (5 amostras) | Média | Quadros `gfxinfo` após reset |
+| --- | --- | ---: | --- |
+| Tela inicial | 70,0 · 69,5 · 50,5 · 77,0 · 82,5% | 69,9% | 907; 784 janky (86,4%) |
+| Player aberto | 62,0 · 76,0 · 75,0 · 78,5 · 79,0% | 74,1% | 499; 476 janky (95,4%) |
+| Tela apagada | 43,3 · 44,0 · 46,0 · 61,0 · 58,5% | 50,7% | 83; 79 janky (95,2%) |
+
+O APK com `versionCode=5` foi compilado e instalado por cima. Depois da instalação, o aparelho
+ficou no AOD/lockscreen sem sessão de áudio; nesse estado o processo ocioso marcou 0,0% nas cinco
+amostras. Esse número não é comparável com o baseline reproduzindo. A autenticação do aparelho
+impediu reabrir o Sonus para medir home/player após a instalação e capturar a tela de letras; essas
+medições e a comparação visual pós-instalação ficaram pendentes.

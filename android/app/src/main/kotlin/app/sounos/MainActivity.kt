@@ -76,12 +76,18 @@ class MainActivity : Activity() {
     }
 
     override fun onPause() {
+        bridge.setPageActive(false)
+        web.evaluateJavascript("window.__sounosPageActive?.(false)", null)
+        web.onPause()
         super.onPause()
         SounosApp.instance.player.saveSession()
         SounosApp.instance.updater.run { foreground = false; installIfIdle() }     // atualização pronta: instala agora que o app saiu da frente
     }
     override fun onResume() {
         super.onResume()
+        bridge.setPageActive(true)
+        web.onResume()
+        web.evaluateJavascript("window.__sounosPageActive?.(true)", null)
         SounosApp.instance.updater.run { foreground = true; maybeCheck() }
     }
 

@@ -110,7 +110,7 @@
   let stateSeen = false;                   // o primeiro estado (ao abrir a tela) não anima
   // Mini-player sobe de baixo; o conteúdo dá uma subidinha e diminui um pouco o zoom (só transform/opacity)
   function miniRise() {
-    if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    if (!homeCanAnimate() || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     const o = { duration: 450, easing: "cubic-bezier(.2,.85,.25,1)" };
     $("mini").animate([{ opacity: 0, transform: "translateY(48px)" }, { opacity: 1, transform: "none" }], o);
     document.querySelector(".scroll").animate([
@@ -123,14 +123,18 @@
     const appeared = !!t && !$("mini").classList.contains("has-track") && stateSeen;   // mini-player acabou de aparecer
     stateSeen = true;
     $("mini").classList.toggle("has-track", !!t);
+    $("phone").classList.toggle("paused", !st.playing);
     $("phone").style.setProperty("--mini-h", t ? $("mini").offsetHeight + "px" : "0px");
+    playing = !!st.playing; shuffle = st.shuffle; repeat = st.repeat;
+    pos = (st.positionMs || 0) / 1000;
+    last = performance.now();
+    renderMiniIcon();
+    homeClockChanged();
     fitHome();                             // blocos se reajustam à nova altura disponível
     if (appeared) miniRise();
     if (!t) return;
     (st.colors || []).forEach((c, k) => root.setProperty(`--c${k + 1}`, c));
-    playing = st.playing; shuffle = st.shuffle; repeat = st.repeat;
-    pos = (st.positionMs || 0) / 1000;
-    if (before !== t.id) { shownId = t.id; loadMini(); if (before) renderHome(); }
+    if (before !== t.id) { shownId = t.id; lastBarPixel = -1; loadMini(); if (before) renderHome(); }
   }
   loadMini = function () {
     const t = cur(); if (!t) return;
@@ -152,9 +156,12 @@
     if (!lyr && lyrOpen) $("miniLyr").click();
   }
   syncMiniLyrics = function () {
+    if (!lyrOpen) return;
     if (!lyr) { if (lastLine !== "none") { lastLine = "none"; showLine("Letra indisponível para esta faixa", "empty"); } return; }
     const at = pos + lyricsOffset();
-    let ln = -1; for (let i = 0; i < lyr.length && lyr[i][0] <= at; i++) ln = i;
+    let lo = 0, hi = lyr.length;
+    while (lo < hi) { const mid = (lo + hi) >>> 1; if (lyr[mid][0] <= at) lo = mid + 1; else hi = mid; }
+    const ln = lo - 1;
     if (ln === lastLine) return;
     lastLine = ln;
     showLine(lyr[Math.max(ln, 0)][1], ln < 0 ? "dim" : "");
@@ -164,13 +171,29 @@
   step = d => Sounos.call(d > 0 ? "next" : "prev");
   doShuffle = () => Sounos.call("setShuffle", { on: !shuffle });
   doRepeat = () => Sounos.call("setRepeat", { mode: { off: "all", all: "one", one: "off" }[repeat] });
-  doToggle = () => { playing = !playing; Sounos.call(playing ? "play" : "pause"); };
+  doToggle = () => { playing = !playing; $("phone").classList.toggle("paused", !playing); renderMiniIcon(); homeClockChanged(); Sounos.call(playing ? "play" : "pause"); };
   let seekT = 0;
   scrubBy = dx => { const d = curDur(); pos = Math.max(0, Math.min(d, pos + dx * 0.002 * d)); clearTimeout(seekT); seekT = setTimeout(() => Sounos.call("seek", { sec: pos }), 120); };
   currentForAdd = () => cur();
 
   Sounos.on("state", applyState);
-  Sounos.on("progress", p => { if (!scrubbing) pos = p.pos; playing = p.playing; });
+  Sounos.on("progress", p => {
+    const changed = playing !== p.playing;
+    if (!scrubbing) pos = p.pos;
+    playing = p.playing; $("phone").classList.toggle("paused", !playing); last = performance.now();
+    if (changed) renderMiniIcon();
+    if (homeCanAnimate() && !playing) drawMiniProgress();
+    if (changed) homeClockChanged();
+  });
+  addEventListener("sounos:visibility", e => {
+    if (!e.detail?.active) return;
+    const p = Sounos.call("getProgress");
+    if (Number.isFinite(p.pos) && !scrubbing) pos = p.pos;
+    playing = !!p.playing; $("phone").classList.toggle("paused", !playing); last = performance.now();
+    renderMiniIcon();
+    if (homeCanAnimate() && !playing) drawMiniProgress();
+    homeClockChanged();
+  });
   Sounos.on("lyrics", p => {
     if (!cur() || p.id !== cur().id || p.pending) return;
     const l = p.lyrics; lyr = l && l.synced ? l.synced : null;
@@ -187,9 +210,10 @@
 // deslizar esse quadro: sem carregar página, sem montar nada na hora — por isso não engasga.
 {
   const f = document.createElement("iframe");
+  window.__playerOpen = false;
   f.title = "Player";
   f.style.cssText = "position:fixed;left:0;top:0;width:100%;height:100%;border:0;z-index:60;background:#0e0e10;" +
-                    "visibility:hidden;transform:translateY(100%);will-change:transform";
+                    "visibility:hidden;transform:translateY(100%)";
   let afterBack = null;
   let y = null, isOpen = false, pushed = false, anim = null, loaded = false, onLoad = null;
   const H = () => window.innerHeight;
@@ -213,7 +237,7 @@
         if (opts.replace) { history.replaceState({ player: true, d }, ""); pushed = true; }
         else if (!pushed) { history.pushState({ player: true, d: d + 1 }, ""); pushed = true; }
       }
-      isOpen = true; window.__playerOpen = true;
+      isOpen = true; window.__playerOpen = true; $("phone").classList.add("player-open"); homeClockChanged();
       win().__playerShown?.();
       slide(0, 420);
     },
@@ -221,13 +245,13 @@
     closeThen(fn) { if (isOpen && pushed) { afterBack = fn; shell.close(); } else { shell.close(); fn(); } },
     close(fromPop) {
       const wasOpen = isOpen;
-      isOpen = false; window.__playerOpen = false;
+      isOpen = false;
       // continua desenhado logo abaixo da tela (pronto para subir sem atraso), só que parado
-      slide(H(), 340, () => { if (!isOpen) { win().__playerHidden?.(); y = null; } });
+      slide(H(), 340, () => { if (!isOpen) { win().__playerHidden?.(); y = null; window.__playerOpen = false; $("phone").classList.remove("player-open"); homeClockChanged(); } });
       if (wasOpen && !fromPop && pushed) { pushed = false; history.back(); }
     },
     // arrastando o mini-player para cima: o player aparece por baixo do dedo
-    peek(dy) { anim?.cancel(); anim = null; if (loaded) { f.style.visibility = "visible"; if (!isOpen) win().__playerShown?.(); place(Math.max(0, H() - dy * 1.1)); } },
+    peek(dy) { anim?.cancel(); anim = null; if (loaded) { f.style.visibility = "visible"; if (!isOpen) win().__playerShown?.(); if (!window.__playerOpen) { window.__playerOpen = true; $("phone").classList.add("player-open"); homeClockChanged(); } place(Math.max(0, H() - dy * 1.1)); } },
     // puxando o player para baixo
     drag(dy) { anim?.cancel(); anim = null; place(dy); },
     snap() { if (isOpen) slide(0, 300); },
