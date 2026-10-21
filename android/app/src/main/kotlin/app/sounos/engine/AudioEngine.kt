@@ -278,7 +278,7 @@ class AudioEngine(private val callbacks: Callbacks) {
             return AudioTrack.Builder()
                 .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
                 .setAudioFormat(AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_16BIT).setSampleRate(sr).setChannelMask(mask).build())
-                .setBufferSizeInBytes(maxOf(min * 2, sr * ch * 2 / 5))       // ~200 ms
+                .setBufferSizeInBytes(maxOf(min * 2, sr * ch * 2 / 2))       // ~500 ms: menos vezes acordando o processador
                 .setTransferMode(AudioTrack.MODE_STREAM)
                 .build()
                 .also { it.setVolume(duckVolume); track = it; if (playing) it.play() }
@@ -291,7 +291,7 @@ class AudioEngine(private val callbacks: Callbacks) {
                 if (!playing) { synchronized(lock) { lock.wait(100) }; continue }
                 val w = at.write(pcm, off, n - off, AudioTrack.WRITE_NON_BLOCKING)
                 if (w < 0) throw IllegalStateException("AudioTrack.write = $w")
-                if (w == 0) sleep(4) else { off += w; framesWritten += w / channels }
+                if (w == 0) sleep(40) else { off += w; framesWritten += w / channels }   // buffer cheio: espera ~40 ms (cabe 500 ms)
             }
         }
     }
