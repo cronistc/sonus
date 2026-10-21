@@ -171,6 +171,7 @@ class MainActivity : Activity() {
         "css" -> "text/css"
         "js" -> "text/javascript"
         "svg" -> "image/svg+xml"
+        "ttf" -> "font/ttf"
         "png" -> "image/png"
         "json" -> "application/json"
         else -> "application/octet-stream"
