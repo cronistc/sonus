@@ -64,4 +64,6 @@ data class ResolvedTrack(
     val audio: ResolvedAudio,
     val related: List<Track>,
     val resolvedAtMs: Long,
+    /** rádio que ainda estava chegando quando a música começou (o player troca as indicações quando ele chegar) */
+    val relatedLater: kotlinx.coroutines.Deferred<List<Track>?>? = null,
 )

@@ -13,8 +13,9 @@ android {
         applicationId = "app.sounos"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "0.1"
+        // nome da versão: quem decide é o Guilherme. versionCode só sobe (o Android exige).
+        versionCode = (project.findProperty("versionCode") as String?)?.toInt() ?: 3
+        versionName = (project.findProperty("versionName") as String?) ?: "0.1.2"
     }
 
     // Chave definitiva do Sounos (fica fora do projeto, em ~/Sonus-chave). Toda versão precisa sair com ela:
@@ -42,6 +43,7 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
+    buildFeatures { buildConfig = true }
 
     // as telas (HTML/CSS/JS do Sounos) ficam na pasta prototype/ e entram no app como estão
     sourceSets["main"].assets.srcDirs("../../prototype")

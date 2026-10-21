@@ -28,7 +28,8 @@ window.SounosPages = (() => {
     addEventListener("popstate", () => { const cur = history.state?.d || 0; [...stack].reverse().forEach(p => p.d > cur && close(p, true)); });
     // a playlist mudou em outro lugar ("+" no player): a página aberta acompanha
     addEventListener("storage", e => { if (e.key === "sounos.playlists") stack.forEach(p => p.kind === "playlist" && p.refresh()); });
-    Sounos.on("state", () => stack.forEach(p => p.markNow()));
+    // música atual vem no próprio evento (antes: cada página aberta pedia o estado inteiro ao app de novo)
+    Sounos.on("state", st => { curId = st?.current?.id ?? null; stack.forEach(p => p.markNow()); });
     Sounos.on("download", ev => stack.forEach(p => p.onDownload(ev)));
     return api;
   }
@@ -40,6 +41,7 @@ window.SounosPages = (() => {
     phone.appendChild(el);
     const page = { el, kind, closing: false, refresh() {}, markNow() {}, onDownload() {} };
     stack.push(page);
+    phone.classList.add("has-page");
     page.d = (history.state?.d || 0) + 1;
     history.pushState({ page: kind, d: page.d }, "");
     requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add("open")));
@@ -53,6 +55,7 @@ window.SounosPages = (() => {
     page.el.classList.add("closing");
     page.el.style.transform = "";
     stack = stack.filter(p => p !== page);
+    if (!stack.length) setTimeout(() => !stack.length && phone.classList.remove("has-page"), 320);
     setTimeout(() => page.el.remove(), 320);
     if (!fromPop) history.back();
     opts.onChange?.();
@@ -84,7 +87,8 @@ window.SounosPages = (() => {
     Sounos.call("playQueue", { tracks: list, index: shuffle ? Math.floor(Math.random() * list.length) : i, context: ctx });
     window.openPlayer?.();
   }
-  const nowId = () => { try { return Sounos.call("getState").current?.id; } catch { return null; } };
+  let curId;
+  const nowId = () => { if (curId === undefined) { try { curId = Sounos.call("getState").current?.id ?? null; } catch { curId = null; } } return curId; };
   const rowHtml = (t, i, extra = "") => `<div class="tr" data-i="${i}" data-id="${esc(t.id)}">
       <div class="cv" style="background-image:${cover(t)}"></div>
       <div class="tx"><div class="t">${esc(t.title)}</div><div class="a">${handle(t.artist)}</div></div>${extra}</div>`;
@@ -255,7 +259,7 @@ window.SounosPages = (() => {
     const el = page.el;
     let songs = [];
     // primeiro o que já se sabe (histórico), depois o resto da rede
-    const hist = (() => { try { return (Sounos.call("getHistory") || []).map(e => e.track); } catch { return []; } })();
+    const hist = (() => { try { return (Sounos.call("getHistory") || []).map(e => e.track).filter(Sounos.isSong); } catch { return []; } })();
     const key = s => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
     const mine = []; hist.forEach(t => { if (key(t.artist) === key(name) && !mine.some(m => m.id === t.id)) mine.push(t); });
     const photo = mine[0];

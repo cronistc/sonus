@@ -10,6 +10,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import app.sounos.extractor.CoverStore
 import app.sounos.extractor.Thumb
 import app.sounos.extractor.Track
 import kotlinx.coroutines.runBlocking
@@ -74,7 +75,15 @@ class MainActivity : Activity() {
         web.saveState(outState)
     }
 
-    override fun onPause() { super.onPause(); SounosApp.instance.player.saveSession() }
+    override fun onPause() {
+        super.onPause()
+        SounosApp.instance.player.saveSession()
+        SounosApp.instance.updater.run { foreground = false; installIfIdle() }     // atualização pronta: instala agora que o app saiu da frente
+    }
+    override fun onResume() {
+        super.onResume()
+        SounosApp.instance.updater.run { foreground = true; maybeCheck() }
+    }
 
     override fun onDestroy() {
         bridge.detach()
@@ -98,7 +107,9 @@ class MainActivity : Activity() {
     /** Capa: do disco se já guardada; senão baixa na maior qualidade (e guarda). */
     private fun cover(id: String, hint: String?, pin: Boolean): WebResourceResponse {
         val app = SounosApp.instance
-        val file: File? = app.covers.local(id)?.takeUnless { app.covers.isSmall(it) } ?: run {
+        if (!CoverStore.validId(id)) return notFound()
+        // já guardada: serve na hora (fixada e pequena → passa pelo get, que troca pela grande e fixa)
+        val file: File? = app.covers.local(id)?.takeUnless { pin && (app.covers.isSmall(it) || app.covers.pinnedFile(id).length() == 0L) } ?: run {
             val videoId = id.removePrefix("yt:").takeIf { id.startsWith("yt:") }
             val track = Track(id, videoId?.let { "https://www.youtube.com/watch?v=$it" } ?: "", "", "", null, 0,
                 listOfNotNull(hint?.let { Thumb(it, 0, 0) }))

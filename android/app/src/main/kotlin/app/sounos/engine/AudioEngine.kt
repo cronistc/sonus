@@ -36,6 +36,8 @@ class AudioEngine(private val callbacks: Callbacks) {
     private val main = Handler(Looper.getMainLooper())
     @Volatile private var session: Session? = null
     @Volatile var normalize: Boolean = true
+    /** "Pular silêncio": corta o silêncio do começo e do fim da música. */
+    @Volatile var skipSilence: Boolean = true
     @Volatile var duckVolume: Float = 1f
         set(v) { field = v; session?.track?.setVolume(v) }
 
@@ -73,6 +75,10 @@ class AudioEngine(private val callbacks: Callbacks) {
         val loudness = Loudness().apply { reset(knownGainDb) }
         private val lock = Object()
         private val ts = AudioTimestamp()
+        // pular silêncio (só mexe na thread de áudio)
+        private var leading = false          // ainda descartando o silêncio do começo
+        private var leadSkippedUs = 0L
+        private var heldFrames = 0L          // silêncio do final segurado (ainda não escrito no AudioTrack)
 
         fun changePlaying(p: Boolean) {
             playing = p
@@ -121,6 +127,7 @@ class AudioEngine(private val callbacks: Callbacks) {
                 var inEos = false
                 var outEos = false
                 var needBase = true
+                leading = skipSilence && pendingSeekUs < 0      // começa do zero (se vier de um seek, o bloco do seek decide)
 
                 while (running) {
                     // pausado: dorme até tocar, procurar ou fechar
@@ -135,6 +142,8 @@ class AudioEngine(private val callbacks: Callbacks) {
                         at.pause(); at.flush()
                         framesWritten = 0; baseUs = seekUs; needBase = true
                         inEos = false; outEos = false; ended = false
+                        heldFrames = 0; leadSkippedUs = 0
+                        leading = skipSilence && seekUs <= 100_000      // voltou ao início: pula o silêncio de novo
                         if (playing) at.play()
                     }
                     if (playing && at.playState != AudioTrack.PLAYSTATE_PLAYING) at.play()
@@ -156,7 +165,7 @@ class AudioEngine(private val callbacks: Callbacks) {
                                 val sr = f.getInteger(MediaFormat.KEY_SAMPLE_RATE); val ch = f.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
                                 if (sr != sampleRate || ch != channels) {
                                     at.release(); sampleRate = sr; channels = ch
-                                    at = newTrack(sr, ch); framesWritten = 0
+                                    at = newTrack(sr, ch); framesWritten = 0; heldFrames = 0
                                 }
                             }
                             o >= 0 -> {
@@ -167,11 +176,10 @@ class AudioEngine(private val callbacks: Callbacks) {
                                     val n = sb.remaining()
                                     if (pcm.size < n) pcm = ShortArray(n)
                                     sb.get(pcm, 0, n)
-                                    loudness.process(pcm, n, sampleRate, channels, normalize)
-                                    writeAll(at, pcm, n, channels)
+                                    handleBuffer(at, pcm, n, channels)
                                 }
                                 codec.releaseOutputBuffer(o, false)
-                                if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) outEos = true
+                                if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) { outEos = true; finishHeld(at, channels) }
                             }
                         }
                     }
@@ -194,6 +202,74 @@ class AudioEngine(private val callbacks: Callbacks) {
                 track = null
                 (source as? Source.Growing)?.data?.close()
             }
+        }
+
+        /** Pico (0..32768) de uma janela de amostras. */
+        private fun peak(pcm: ShortArray, from: Int, to: Int): Int {
+            var m = 0
+            for (i in from until to) { val a = Math.abs(pcm[i].toInt()); if (a > m) m = a }
+            return m
+        }
+
+        /**
+         * Aplica "pular silêncio" e escreve no AudioTrack. Janelas de ~10 ms com pico < -50 dBFS são silêncio.
+         *  - começo: descarta (máx. 10 s) e avança baseUs, então a posição continua sendo o tempo real da música;
+         *  - fim (últimos 15 s): segura o silêncio sem escrever; se voltar som, escreve zeros do que foi segurado
+         *    (nada muda no tempo); se chegar ao fim, finishHeld() decide se corta.
+         */
+        private fun handleBuffer(at: AudioTrack, pcm: ShortArray, n: Int, channels: Int) {
+            if (!skipSilence) {
+                if (heldFrames > 0) writeSilence(at, channels)
+                leading = false
+                loudness.process(pcm, n, sampleRate, channels, normalize); writeAll(at, pcm, n, channels); return
+            }
+            val winFrames = maxOf(1, sampleRate / 100)
+            val win = winFrames * channels
+            val tailStartUs = if (durationUs > 0) durationUs - TAIL_WINDOW_US else Long.MAX_VALUE
+            var out = 0                                   // início do trecho compactado ainda não escrito
+            var w = 0
+            var r = 0
+            while (r < n) {
+                val end = minOf(r + win, n)
+                val frames = (end - r) / channels
+                val silent = peak(pcm, r, end) < SILENCE_PEAK
+                if (silent && leading && leadSkippedUs < MAX_LEAD_US) {
+                    val us = frames * 1_000_000L / sampleRate
+                    baseUs += us; leadSkippedUs += us                 // descartado: a posição acompanha
+                } else if (silent && !leading && baseUs + (framesWritten + heldFrames) * 1_000_000L / sampleRate >= tailStartUs) {
+                    heldFrames += frames                              // silêncio no final: segura
+                } else {
+                    leading = false
+                    if (heldFrames > 0) {                             // voltou som: escreve antes o silêncio segurado
+                        if (w > 0) { loudness.process(pcm, w, sampleRate, channels, normalize); writeAll(at, pcm, w, channels) }
+                        w = 0
+                        writeSilence(at, channels)
+                    }
+                    if (w != r) System.arraycopy(pcm, r, pcm, w, end - r)
+                    w += end - r
+                }
+                r = end
+            }
+            if (w > 0) { loudness.process(pcm, w, sampleRate, channels, normalize); writeAll(at, pcm, w, channels) }
+        }
+
+        /** Escreve zeros no lugar do silêncio segurado. */
+        private fun writeSilence(at: AudioTrack, channels: Int) {
+            val zeros = ShortArray(maxOf(1, sampleRate / 10) * channels)
+            var left = heldFrames
+            heldFrames = 0
+            while (left > 0 && running && pendingSeekUs < 0) {
+                val f = minOf(left, (zeros.size / channels).toLong()).toInt()
+                writeAll(at, zeros, f * channels, channels)
+                left -= f
+            }
+        }
+
+        /** Fim da decodificação: silêncio segurado ≥ 1 s é cortado (acaba antes); menor que isso é tocado. */
+        private fun finishHeld(at: AudioTrack, channels: Int) {
+            if (heldFrames <= 0) return
+            if (heldFrames * 1_000_000L / sampleRate >= MIN_TAIL_SILENCE_US) heldFrames = 0
+            else writeSilence(at, channels)
         }
 
         private fun newTrack(sr: Int, ch: Int): AudioTrack {
@@ -220,3 +296,8 @@ class AudioEngine(private val callbacks: Callbacks) {
         }
     }
 }
+
+private const val SILENCE_PEAK = 100                    // ≈ -50 dBFS (0,003 de 32768)
+private const val MAX_LEAD_US = 10_000_000L             // no máximo 10 s de silêncio cortados no começo
+private const val TAIL_WINDOW_US = 15_000_000L          // só corta o final nos últimos 15 s
+private const val MIN_TAIL_SILENCE_US = 1_000_000L      // silêncio contínuo até o fim para cortar

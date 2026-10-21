@@ -38,7 +38,9 @@
          transition: opacity .28s ease, transform .28s ease; }
 .sbody::-webkit-scrollbar { display: none; }
 .search-ov.open .sbody { opacity: 1; transform: none; transition-delay: .16s; }
+
 .spanel > * { animation: sIn .32s cubic-bezier(.2,.85,.25,1) both; animation-delay: calc(var(--k, 0) * 22ms); }
+.spanel.still > * { animation: none; }          /* mesma tela atualizando (cada letra digitada): sem reanimar */
 @keyframes sIn { from { opacity: 0; transform: translateY(6px); } }
 
 .s-head { display: flex; align-items: baseline; justify-content: space-between; padding: 10px 20px 8px; }

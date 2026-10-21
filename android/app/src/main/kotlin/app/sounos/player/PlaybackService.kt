@@ -64,11 +64,24 @@ class PlaybackService : Service() {
         return START_NOT_STICKY
     }
 
+    // capa da notificação: decodificada uma vez por música e reduzida (antes: imagem inteira, várias vezes por troca)
+    private var coverId: String? = null
+    private var coverBmp: android.graphics.Bitmap? = null
+    private fun coverFor(id: String): android.graphics.Bitmap? {
+        if (id == coverId && coverBmp != null) return coverBmp
+        val f = SounosApp.instance.covers.local(id) ?: return null
+        val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }; BitmapFactory.decodeFile(f.path, o)
+        var sample = 1; while (maxOf(o.outWidth, o.outHeight) / (sample * 2) >= 512) sample *= 2
+        coverBmp = BitmapFactory.decodeFile(f.path, BitmapFactory.Options().apply { inSampleSize = sample })
+        coverId = id.takeIf { coverBmp != null }
+        return coverBmp
+    }
+
     private fun refresh() {
         val t = player.currentTrack
         if (t == null) { stopForeground(STOP_FOREGROUND_REMOVE); stopSelf(); return }
         val playing = player.isPlaying
-        val cover = SounosApp.instance.covers.local(t.id)?.let { BitmapFactory.decodeFile(it.path) }
+        val cover = coverFor(t.id)
         session.setMetadata(MediaMetadata.Builder()
             .putString(MediaMetadata.METADATA_KEY_TITLE, t.title)
             .putString(MediaMetadata.METADATA_KEY_ARTIST, t.artist)

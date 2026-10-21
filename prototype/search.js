@@ -93,7 +93,8 @@
   try { history = JSON.parse(localStorage.getItem(KEY)) || []; } catch {}
   if (!history.length && !NATIVE) history = [{ type: "q", text: "lofi para estudar" }, { type: "a", name: "MC Mockup" }, { type: "t", i: 3 }, { type: "q", text: "chuva" }];
   const saveHistory = () => { try { localStorage.setItem(KEY, JSON.stringify(history.slice(0, 15))); } catch {} };
-  const sameEntry = (a, b) => a.type === b.type && (a.text ?? a.name ?? a.i) === (b.text ?? b.name ?? b.i);
+  // música é comparada pelo id (antes: toda música "era igual" e cada nova apagava as outras do histórico)
+  const sameEntry = (a, b) => a.type === b.type && (a.track || b.track ? a.track?.id === b.track?.id : (a.text ?? a.name ?? a.i) === (b.text ?? b.name ?? b.i));
   function remember(entry) { history = [entry, ...history.filter(h => !sameEntry(h, entry))].slice(0, 15); saveHistory(); }
 
   // ---------- Interface ----------
@@ -191,10 +192,34 @@
     function history_push() { window.history.pushState({ search: true }, ""); pushed = true; }
     window.addEventListener("popstate", () => { if (isOpen && !history.state?.search) { pushed = false; close(true); } });
 
+    // A animação de entrada só roda quando a tela muda de tipo (recentes → sugestões → resultados).
+    // Atualizar a mesma tela (cada letra digitada) troca o conteúdo sem animar e sem piscar.
+    let lastHtml = "";
     function setPanel(html, name) {
-      view = name;
+      if (view === name && html === lastHtml) return;
+      const same = view === name && body.firstElementChild;
+      view = name; lastHtml = html;
+      if (same) return morph(body.firstElementChild, html);
       body.innerHTML = `<div class="spanel">${html}</div>`;
       [...body.firstElementChild.children].forEach((c, k) => c.style.setProperty("--k", Math.min(k, 12)));
+    }
+    // Atualiza a lista no lugar: linha igual fica como está (capa não recarrega), linha da mesma
+    // música/sugestão só troca o texto que mudou; o resto entra ou sai. Nada pisca.
+    const keyOf = el => el.nodeType === 1 ? (el.dataset.q ?? (el.dataset.pick ? el.dataset.pick + ":" + el.dataset.id : el.className)) : "#";
+    function morph(panel, html) {
+      panel.classList.add("still");
+      const tpl = document.createElement("template"); tpl.innerHTML = html;
+      const next = [...tpl.content.children], old = [...panel.children];
+      next.forEach((n, i) => {
+        const o = old[i];
+        if (o && o.outerHTML === n.outerHTML) return;
+        if (o && o.tagName === n.tagName && keyOf(o) === keyOf(n) && o.children.length === n.children.length) {
+          [...n.children].forEach((nc, k) => { const oc = o.children[k]; if (oc.outerHTML !== nc.outerHTML) oc.replaceWith(nc.cloneNode(true)); });
+          return;
+        }
+        if (o) o.replaceWith(n); else panel.appendChild(n);
+      });
+      old.slice(next.length).forEach(o => o.remove());
     }
 
     // ---- recentes ----
@@ -307,15 +332,28 @@
       const p = e.target.closest("[data-pick]"); if (p) return pick(p.dataset.pick, p.dataset.id);
     });
     // ---------------- dentro do app: busca de verdade (NewPipe) + gosto da pessoa ----------------
-    let resultTracks = [], resultArtists = [], sugT = 0;
+    let resultTracks = [], resultArtists = [], sugT = 0, lastServer = [];
     const realCover = t => `<div class="ic" style="background:url('${Sounos.coverUrl(t)}') center/cover no-repeat, ${grad(Sounos.hashColors(t.id))}"></div>`;
-    const realArtist = a => `<div class="ic round" style="background:${a.thumb ? `url('${a.thumb}') center/cover no-repeat,` : ""} ${grad(Sounos.hashColors(a.name))}"></div>`;
-    // gosto: quanto você ouve cada artista e cada música (histórico do app, mais recente pesa mais)
+    // foto de artista também passa pelo app (fica guardada; antes vinha da internet a cada busca)
+    const artistKey = n => String(n || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
+    const artistPic = a => a.thumb ? Sounos.coverUrl({ id: "artist:" + (artistKey(a.name) || "x"), thumb: a.thumb }).replace(/'/g, "%27") : "";
+    const realArtist = a => `<div class="ic round" style="background:${a.thumb ? `url('${artistPic(a)}') center/cover no-repeat,` : ""} ${grad(Sounos.hashColors(a.name))}"></div>`;
+    // gosto: quanto você ouve cada artista e cada música (histórico do app, mais recente pesa mais).
+    // Guardado por alguns segundos: antes era relido do app a cada letra digitada.
+    let tasteCache = null, tasteAt = 0;
+    if (NATIVE) Sounos.on("state", () => { tasteCache = null; });
     function taste() {
+      if (tasteCache && performance.now() - tasteAt < 15000) return tasteCache;
+      tasteAt = performance.now();
+      return (tasteCache = buildTaste());
+    }
+    function buildTaste() {
       const h = Sounos.call("getHistory"), artists = {}, songs = {};
       (Array.isArray(h) ? h : []).forEach((e, k) => { const w = 1 / (1 + k / 15); artists[e.track.artist] = (artists[e.track.artist] || 0) + w; songs[e.track.id] = w; });
       const maxA = Math.max(1, ...Object.values(artists));
-      return { artist: a => (artists[a] || 0) / maxA, song: id => songs[id] || 0, history: Array.isArray(h) ? h.map(e => e.track) : [] };
+      const seen = new Set();
+      return { artist: a => (artists[a] || 0) / maxA, song: id => songs[id] || 0,
+               history: (Array.isArray(h) ? h.map(e => e.track) : []).filter(t => t && Sounos.isSong(t) && !seen.has(t.id) && seen.add(t.id)) };
     }
     // página do artista: na tela inicial abre por cima da busca; dentro do player, o player desce e ela abre
     function openArtist(name) {
@@ -349,20 +387,26 @@
         server.filter(t => !pastQ.some(h => norm(h.text) === norm(t))).slice(0, 6).map(t => `<button class="s-row sug" data-q="${esc(t)}"><div class="ic">${ICON.search}</div>
           <div class="tx"><div class="t">${emphasize(t, q)}</div></div><span class="fill" data-fill="${esc(t)}">${ICON.fill}</span></button>`).join("")
         || `<button class="s-row sug" data-q="${esc(q)}">${cover("q")}<div class="tx"><div class="t"><b>${esc(q)}</b></div></div></button>`, "sug");
-      draw([]);
+      draw(view === "sug" ? lastServer : []);       // mantém as sugestões anteriores até as novas chegarem (sem piscar)
       clearTimeout(sugT);
-      sugT = setTimeout(() => Sounos.ask("suggest", { q }).then(r => { if (input.value === q && view === "sug") draw(r.items || []); }), 160);
+      sugT = setTimeout(() => Sounos.ask("suggest", { q }).then(r => { if (input.value === q && view === "sug") { lastServer = r.items || []; draw(lastServer); } }), 160);
     }
     function nativeResults(q) {
       setPanel(`<div class="s-empty">Buscando “${esc(q)}”…</div>`, "loading");
-      Promise.all([Sounos.ask("search", { q }), Sounos.ask("searchArtists", { q })]).then(([songs, arts]) => {
-        if (!isOpen || norm(input.value.replace(/^@/, "")) !== norm(q) && norm(input.value) !== norm(toHandle(q))) return;
-        if (songs.error && arts.error) return setPanel(`<div class="s-empty">Sem conexão agora. Tente de novo.</div>`, "res");
+      const stale = () => !isOpen || norm(input.value.replace(/^@/, "")) !== norm(q) && norm(input.value) !== norm(toHandle(q));
+      const pSongs = Sounos.ask("search", { q }), pArts = Sounos.ask("searchArtists", { q });
+      let arts = null, songsR = null;
+      // as músicas aparecem assim que chegam; os artistas entram quando chegarem (antes, uma esperava a outra)
+      pSongs.then(r => { songsR = r; if (!stale()) draw(); });
+      pArts.then(r => { arts = r; if (songsR && !stale()) draw(); });
+      function draw() {
+        const songs = songsR;
+        if (songs.error && (!arts || arts.error)) return arts ? setPanel(`<div class="s-empty">Sem conexão agora. Tente de novo.</div>`, "res") : null;
         const T = taste();
         const list = (songs.items || []).map((t, i) => ({ t, s: (1 - i / 25) + .5 * textScore(q, t.title + " " + t.artist) + .35 * T.artist(t.artist) + .15 * T.song(t.id) }));
         list.sort((a, b) => b.s - a.s);
         resultTracks = list.map(x => x.t);
-        resultArtists = (arts.items || []).filter(a => a.name);
+        resultArtists = ((arts && arts.items) || []).filter(a => a.name);
         if (!resultTracks.length && !resultArtists.length) return setPanel(`<div class="s-empty">Nada encontrado para “${esc(q)}”.</div>`, "res");
         const topArtist = resultArtists[0] && textScore(q, resultArtists[0].name) >= .9 ? resultArtists[0] : null;
         const best = topArtist ? { type: "na", i: 0, title: toHandle(topArtist.name), sub: "Artista", look: realArtist(topArtist).replace('class="ic round"', 'class="cv round"') }
@@ -376,9 +420,9 @@
             <button class="s-row" data-pick="nt" data-id="${i}">${realCover(t)}
               <div class="tx"><div class="t">${esc(t.title)}</div><div class="a">${toHandle(t.artist)} · ${fmtDur(t.dur)}</div></div></button>`).join("") : "") +
           (resultArtists.length ? `<div class="s-head"><h3>Artistas</h3></div><div class="s-hrow">` + resultArtists.map((a, i) => `
-            <button class="s-art" data-pick="na" data-id="${i}"><div class="pic" style="background:${a.thumb ? `url('${a.thumb}') center/cover,` : ""} ${grad(Sounos.hashColors(a.name))}"></div>
+            <button class="s-art" data-pick="na" data-id="${i}"><div class="pic" style="background:${a.thumb ? `url('${artistPic(a)}') center/cover,` : ""} ${grad(Sounos.hashColors(a.name))}"></div>
               <div class="n">${toHandle(a.name)}</div></button>`).join("") + `</div>` : ""), "res");
-      });
+      }
     }
     const fmtDur = s => s > 0 ? `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}` : "";
 

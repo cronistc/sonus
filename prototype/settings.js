@@ -6,6 +6,7 @@
     theme: "gradient",          // gradient | dark | light
     quality: "auto",            // auto | high | saver
     normalize: true,            // volume igual entre músicas
+    skipSilence: true,          // corta o silêncio do começo e do fim
     crossfade: 0,               // segundos
     lyricsOffset: 0,            // ajuste fino da letra, em segundos (+ = letra adiantada)
     wifiOnlyDownloads: false,
@@ -63,6 +64,8 @@
                 ${seg("quality", [["auto", "Automática"], ["high", "Alta"], ["saver", "Economia"]])}</div>
               <div class="set-row"><div class="tx"><div class="t">Volume equilibrado</div>
                 <div class="d">Deixa todas as músicas no mesmo volume.</div></div>${sw("normalize")}</div>
+              <div class="set-row"><div class="tx"><div class="t">Pular silêncio</div>
+                <div class="d">Corta o silêncio do começo e do fim: a próxima música entra na hora.</div></div>${sw("skipSilence")}</div>
               ${window.Sounos?.native ? "" : /* ainda não existe no player do app: não aparece lá */ `
               <div class="set-row stack"><div class="tx" style="display:flex;justify-content:space-between"><div class="t">Transição entre músicas</div>
                 <div class="val" data-out="crossfade"></div></div>
@@ -88,9 +91,18 @@
               <button class="set-row" data-cycle="language"><div class="tx"><div class="t">Idioma</div></div><div class="val">${name(LANGS, s.language)}</div></button>
             </div></section>
 
-            <section class="set-sec" style="--i:4">
+            ${window.Sounos?.native ? `
+            <section class="set-sec" style="--i:4"><h3>Atualizações</h3><div class="set-card">
+              <button class="set-row" data-act="upd-open"><div class="tx"><div class="t">Sonus <span data-upd="cur"></span></div>
+                <div class="d" data-upd="desc"></div></div><span class="pill" data-upd="pill"></span></button>
+              <div class="set-row" data-upd="allow-row" hidden><div class="tx"><div class="t">Atualizar sozinho</div>
+                <div class="d">Permita uma vez e o Sonus se atualiza sem pedir nada.</div></div>
+                <button class="pill" data-act="upd-allow">Permitir</button></div>
+            </div></section>` : ""}
+
+            <section class="set-sec" style="--i:5">
               <img src="logo.svg" alt="" style="display:block;margin:0 auto 10px;width:44px;height:44px;border-radius:12px">
-              <p class="set-foot">Sonus 0.1<br>Músicas via NewPipe Extractor v0.26.5 · Licença GPLv3</p>
+              <p class="set-foot">Sonus <span data-upd="cur">0.1.2</span><br>Músicas via NewPipe Extractor v0.26.5 · Licença GPLv3</p>
             </section>
           </div>
         </div>`;
@@ -103,8 +115,41 @@
       ov.querySelector('[data-desc="quality"]').textContent = desc[s.quality];
       const cf = ov.querySelector('[data-out="crossfade"]'); if (cf) cf.textContent = s.crossfade ? `${s.crossfade} s` : "Desligada";
       renderStorage();
+      renderUpd();
       ov.querySelectorAll(".seg").forEach(placeKnob);
     }
+
+    // ---------- Atualizações ----------
+    let upd = window.Sounos?.native ? Sounos.call("getUpdate") : null;
+    const updUi = SounosUpdate.attach(ov.parentElement, () => upd);
+    if (window.Sounos?.native) Sounos.on("update", st => { upd = st; renderUpd(); updUi.render(); });
+    function renderUpd() {
+      if (!upd || !upd.current) return;
+      const q = sel => ov.querySelectorAll(sel);
+      q('[data-upd="cur"]').forEach(el => el.textContent = upd.current.versionName);
+      const d = q('[data-upd="desc"]')[0], p = q('[data-upd="pill"]')[0]; if (!d) return;
+      const nv = upd.update?.versionName, pct = Math.round((upd.progress || 0) * 100);
+      const txt = {
+        idle: ["Toque para procurar atualizações.", "Buscar"],
+        checking: ["Procurando…", "…"],
+        uptodate: [upd.justUpdated ? `Atualizado para a ${upd.justUpdated}.` : "Você está na versão mais recente.", "Buscar"],
+        available: [`Nova versão ${nv} disponível.`, "Ver"],
+        downloading: [`Baixando a ${nv}… ${pct}%`, `${pct}%`],
+        ready: [`A ${nv} está pronta. Instala sozinha quando você sair do app.`, "Ver"],
+        installing: [`Instalando a ${nv}…`, "…"],
+        error: [upd.error || "Não deu para procurar agora.", "Tentar"],
+      }[upd.status] || ["", "Buscar"];
+      d.textContent = txt[0]; p.textContent = txt[1];
+      q('[data-upd="allow-row"]').forEach(r => r.hidden = !!upd.canInstall);
+    }
+    ov.addEventListener("click", e => {
+      if (e.target.closest('[data-act="upd-allow"]')) { e.stopPropagation(); return Sounos.call("allowInstalls"); }
+      if (!e.target.closest('[data-act="upd-open"]')) return;
+      if (upd.status === "idle" || upd.status === "uptodate" || upd.status === "error") Sounos.call("checkUpdate");
+      updUi.open();
+    });
+    // voltou da tela do Android de "permitir": confere de novo
+    document.addEventListener("visibilitychange", () => { if (!document.hidden && window.Sounos?.native) { upd = Sounos.call("getUpdate"); renderUpd(); updUi.render(); } });
     // Armazenamento (no protótipo os tamanhos são estimados; no app vêm dos arquivos reais)
     let cacheMB = 86;
     function renderStorage() {

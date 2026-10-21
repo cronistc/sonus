@@ -24,10 +24,11 @@ class QueuePrefetcher(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var job: Job? = null
 
-    fun onQueueChanged(upcoming: List<Track>, quality: AudioQuality) {
+    /** keep = a música que está tocando: nunca sai do cache ("Limpar cache" e limite de tamanho). */
+    fun onQueueChanged(upcoming: List<Track>, quality: AudioQuality, keep: String? = null) {
         job?.cancel()
         val next3 = upcoming.take(3)
-        audio.protectedIds = next3.map { it.id }.toSet()
+        audio.protectedIds = (next3.map { it.id } + listOfNotNull(keep)).toSet()
         if (next3.isEmpty()) return
         job = scope.launch {
             next3.forEachIndexed { i, track ->

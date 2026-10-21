@@ -6,7 +6,7 @@
 .pg.open { transform: none; }
 .pg.closing { transform: translateX(100%); transition-duration: .3s; }
 .pg.dragging { transition: none; }
-.native .mini { z-index: 57; }                 /* o mini-player continua por cima das páginas */
+.phone.has-page .mini { z-index: 57; }        /* com página aberta, o mini-player continua por cima dela */
 
 .pg .hero { position: relative; width: 100%; aspect-ratio: 1 / 1; background: linear-gradient(135deg, var(--c1), var(--c2)); overflow: hidden; }
 .pg .hero .img { position: absolute; inset: 0; background-size: cover; background-position: center; }
@@ -27,7 +27,7 @@
 .pg .desc[contenteditable]:empty::before { content: attr(data-ph); color: var(--t-faint); }
 .pg .sub { margin-top: 8px; font-size: 13px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
 
-.pg .acts { display: flex; align-items: center; gap: 8px; padding: 16px 20px 6px; }
+.pg .acts { position: relative; z-index: 1; display: flex; align-items: center; gap: 8px; padding: 16px 20px 6px; }
 .pg .acts .sp { flex: 1; }
 .pg .ab { width: 44px; height: 44px; border-radius: 14px; display: grid; place-items: center; color: var(--text-dim);
           background: none; border: 0; transition: background .25s, color .25s, transform .1s; position: relative; }
@@ -35,7 +35,7 @@
 .pg .ab.on { color: var(--text); background: var(--chip); }
 .pg .ab svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .pg .ab .ring { position: absolute; inset: 4px; width: auto; height: auto; transform: rotate(-90deg); }
-.pg .ab .ring circle { fill: none; stroke: var(--text); stroke-width: 2.4; stroke-dasharray: 0 100; transition: stroke-dasharray .3s; }
+.pg .ab .ring circle { fill: none; stroke: var(--text); stroke-width: 2.4; stroke-dasharray: 0 100; stroke-linecap: butt; transition: stroke-dasharray .3s; }
 .pg .ab.done { color: var(--text); }
 .pg .big { width: 56px; height: 56px; border-radius: 50%; background: var(--text); color: var(--bg); display: grid; place-items: center;
            border: 0; box-shadow: 0 8px 22px rgba(0,0,0,.3); transition: transform .1s; }
@@ -59,7 +59,7 @@ html[data-theme="gradient"] .pg .tr.now .t { color: #fff; text-decoration: under
 .pg .tr .grip { touch-action: none; cursor: grab; }
 .pg .tr .grip svg, .pg .tr .rm svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
 .pg .tr .rm { display: none; color: #f87171; }
-.pg.editing .row .rm { display: grid; }
+.pg.editing .tr .rm { display: grid; }
 .pg .tr.lift { z-index: 3; box-shadow: 0 10px 28px rgba(0,0,0,.35); background: var(--surface-2); transition: box-shadow .2s; }
 .pg .tr.shift { transition: transform .22s cubic-bezier(.2,.85,.25,1); }
 

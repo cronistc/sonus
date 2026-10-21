@@ -76,17 +76,28 @@ class NewPipeSource(private val service: StreamingService = ServiceList.YouTube)
             durationSec = info.duration,
             thumbs = (known?.thumbs.orEmpty() + info.thumbnails.map(::toThumb)).distinctBy { it.url },
         )
-        val radio = radioJob?.let { withTimeoutOrNull(2500) { it.await() } }.orEmpty()
-        // reserva: "relacionados" do vídeo, com os canais dos artistas primeiro
-        val related = info.relatedItems.filterIsInstance<StreamInfoItem>()
-            .sortedByDescending(MusicPicks::officialScore).mapNotNull(::toTrack)
-        val picks = MusicPicks.clean(if (radio.size >= 8) radio else radio + related, exclude = listOf(track))
-        ResolvedTrack(track, audio, picks, System.currentTimeMillis())
+        // reserva imediata: "relacionados" do vídeo, só os que são MÚSICA (canais "Topic" do YouTube Music)
+        val related = info.relatedItems.filterIsInstance<StreamInfoItem>().filter(::isSong).mapNotNull(::toTrack)
+        // o rádio quase sempre já chegou junto; se não, a música começa sem esperar e o rádio entra depois
+        val quick = radioJob?.let { withTimeoutOrNull(300) { it.await() } }
+        val later = if (quick == null && radioJob != null)
+            CoroutineScope(Dispatchers.IO).async { radioJob.await()?.takeIf { it.isNotEmpty() }?.let { MusicPicks.clean(it, exclude = listOf(track)) } }
+        else null
+        val picks = MusicPicks.clean(quick?.takeIf { it.isNotEmpty() } ?: related, exclude = listOf(track))
+        ResolvedTrack(track, audio, picks, System.currentTimeMillis(), later)
     }
 
+    private fun isSong(s: StreamInfoItem) = s.uploaderName.orEmpty().endsWith(" - Topic", ignoreCase = true)
+    private val ytm by lazy { YtMusicRadio(Sounos.http) }
+
     /** Rádio do YouTube Music a partir de uma música (a mesma lista que o app oficial toca em seguida). */
+    // Só músicas (com capa quadrada): rádio do YouTube Music; se ele falhar, o mix do YouTube filtrado para músicas.
     suspend fun radio(videoId: String): List<Track> = withContext(Dispatchers.IO) {
-        PlaylistInfo.getInfo(service, "https://www.youtube.com/watch?v=$videoId&list=RDAMVM$videoId").relatedItems.mapNotNull(::toTrack)
+        val loc = org.schabi.newpipe.extractor.NewPipe.getPreferredLocalization()
+        val gl = org.schabi.newpipe.extractor.NewPipe.getPreferredContentCountry().countryCode
+        runCatching { ytm.radio(videoId, loc.languageCode, gl) }.getOrNull()?.takeIf { it.size >= 5 }
+            ?: PlaylistInfo.getInfo(service, "https://www.youtube.com/watch?v=$videoId&list=RDAMVM$videoId").relatedItems
+                .filterIsInstance<StreamInfoItem>().filter(::isSong).mapNotNull(::toTrack)
     }
 
     // ---------- conversões ----------

@@ -55,7 +55,8 @@
 .add-new .plus { width: 40px; height: 40px; border-radius: 8px; display: grid; place-items: center; background: var(--chip, rgba(255,255,255,.1));
                  transition: transform .35s cubic-bezier(.2,.9,.25,1); }
 .add-new .plus svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; }
-.add-new.editing .plus { transform: rotate(45deg); }
+.add-new .plus svg { transition: transform .3s cubic-bezier(.2,.85,.25,1); }
+.add-new.editing .plus svg { transform: rotate(45deg); }        /* o "+" vira "×" (gira o ícone, não o quadrado) */
 .add-new .form { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .35s cubic-bezier(.2,.9,.25,1); }
 .add-new.editing .form { grid-template-rows: 1fr; }
 .add-new .form > div { overflow: hidden; }

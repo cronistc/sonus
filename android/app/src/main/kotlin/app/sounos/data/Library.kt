@@ -40,6 +40,23 @@ class Library(context: Context) {
         downloadFile(id).delete()
         prefs.edit().putString("downloads", downloadedMeta().apply { remove(id) }.toString()).apply()
     }
+    /**
+     * Consistência ao abrir o app, SEM apagar nada: metadado sem arquivo ganha "missing": true (a interface pode
+     * oferecer baixar de novo); quando o arquivo volta, a marca sai. Arquivo sem metadado fica como está.
+     */
+    @Synchronized fun checkDownloads() {
+        val meta = downloadedMeta()
+        var changed = false
+        for (id in meta.keys().asSequence().toList()) {
+            val e = meta.optJSONObject(id) ?: continue
+            val missing = downloadFile(id).length() <= 0L
+            if (missing != e.optBoolean("missing", false)) {
+                if (missing) e.put("missing", true) else e.remove("missing")
+                changed = true
+            }
+        }
+        if (changed) prefs.edit().putString("downloads", meta.toString()).apply()
+    }
     fun downloadedMeta(): JSONObject = JSONObject(prefs.getString("downloads", "{}"))
     fun downloadedTrack(id: String): Track? = downloadedMeta().optJSONObject(id)?.getJSONObject("track")?.let(Json::track)
     fun downloadsBytes(): Long = downloadsDir.listFiles()?.sumOf { it.length() } ?: 0

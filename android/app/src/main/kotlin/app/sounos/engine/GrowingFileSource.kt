@@ -14,6 +14,8 @@ class GrowingFileSource(
     private val file: File,
     private val totalSize: () -> Long,
     private val finished: () -> Boolean,
+    /** o download desistiu (sem internet): erro na hora, em vez de "fim da música" ou 25 s de silêncio */
+    private val failed: () -> Boolean = { false },
 ) : MediaDataSource() {
     private var raf: RandomAccessFile? = null
     @Volatile var closed = false
@@ -25,6 +27,7 @@ class GrowingFileSource(
         val deadline = System.currentTimeMillis() + 25_000
         while (file.length() <= position) {
             if (closed) return -1
+            if (failed()) throw IOException("o download da música parou")
             if (finished() && file.length() <= position) return -1
             if (System.currentTimeMillis() > deadline) throw IOException("áudio não chegou a tempo")
             Thread.sleep(15)

@@ -1,6 +1,7 @@
 package app.sounos.extractor
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -35,17 +36,25 @@ class CoverStore(
      * pin = true → garante que fica na área fixada (música tocada/curtida/baixada).
      */
     suspend fun get(track: Track, pin: Boolean): File? = withContext(Dispatchers.IO) {
-        local(track.id)?.let { old -> if (isSmall(old) && upgradeTried.add(track.id)) upgrade(track, old) }
-        pinnedFile(track.id).takeIf { it.length() > 0 }?.let { return@withContext it }
-        browseFile(track.id).takeIf { it.length() > 0 }?.let { cached ->
-            return@withContext if (pin) promote(track.id) ?: cached else cached.also { it.setLastModified(System.currentTimeMillis()) }
+        if (!validId(track.id)) return@withContext null
+        lockFor(track.id).withLock {                   // uma capa por vez por música (sem arquivo pela metade)
+            // capa pequena guardada antes: só vale trocar pela grande quando ela vai aparecer grande (fixada)
+            if (pin) local(track.id)?.let { old -> if (isSmall(old) && upgradeTried.add(track.id)) upgrade(track, old) }
+            pinnedFile(track.id).takeIf { it.length() > 0 }?.let { return@withLock it }
+            browseFile(track.id).takeIf { it.length() > 0 }?.let { cached ->
+                return@withLock if (pin) promote(track.id) ?: cached else cached.also { it.setLastModified(System.currentTimeMillis()) }
+            }
+            val target = if (pin) pinnedFile(track.id) else browseFile(track.id)
+            // busca/listas (não fixada): tamanho médio, que chega rápido; fixada: a maior que existir
+            for (url in candidates(track, browse = !pin)) {
+                if (download(url, target)) { if (!pin) trimBrowse(); return@withLock target }
+            }
+            null
         }
-        val target = if (pin) pinnedFile(track.id) else browseFile(track.id)
-        for (url in candidates(track)) {
-            if (download(url, target)) { if (!pin) trimBrowse(); return@withContext target }
-        }
-        null
     }
+
+    private val locks = java.util.concurrent.ConcurrentHashMap<String, kotlinx.coroutines.sync.Mutex>()
+    private fun lockFor(id: String) = locks.getOrPut(id) { kotlinx.coroutines.sync.Mutex() }
 
     private val upgradeTried = java.util.Collections.synchronizedSet(HashSet<String>())
 
@@ -79,12 +88,14 @@ class CoverStore(
     }
 
     private fun download(url: String, target: File): Boolean {
-        val tmp = File(target.parentFile, target.name + ".tmp")
+        if (!allowedUrl(url)) return false
+        val tmp = File(target.parentFile, target.name + "." + Thread.currentThread().id + ".tmp")
         return runCatching {
             client.newCall(Request.Builder().url(url).header("User-Agent", OkHttpDownloader.USER_AGENT).build()).execute().use { r ->
                 val type = r.header("Content-Type").orEmpty()
-                if (!r.isSuccessful || !type.startsWith("image/")) return false
-                val bytes = r.body!!.bytes()
+                if (!r.isSuccessful || !type.startsWith("image/") || !allowedUrl(r.request.url.toString())) return false
+                if (r.body!!.contentLength() > MAX_BYTES) return false
+                val bytes = r.body!!.source().let { src -> src.request(MAX_BYTES + 1); if (src.buffer.size > MAX_BYTES) return false; src.readByteArray() }
                 // as "capas" vazias/cinzas do YouTube têm poucos KB: não troca uma capa boa por uma ruim
                 if (bytes.size < 1024) return false
                 tmp.writeBytes(bytes)
@@ -100,6 +111,16 @@ class CoverStore(
     }
 
     companion object {
+        private const val MAX_BYTES = 6L * 1024 * 1024
+        /** Só ids de música/artista do app (sem "../" nem caminhos). */
+        fun validId(id: String) = id.length in 3..96 && Regex("""[A-Za-z0-9:_\-.]+""").matches(id) && ".." !in id
+        /** Só baixa capa dos servidores de imagem do YouTube/Google, por HTTPS. */
+        fun allowedUrl(u: String): Boolean {
+            val url = runCatching { java.net.URI(u) }.getOrNull() ?: return false
+            val h = url.host?.lowercase() ?: return false
+            return url.scheme == "https" && (h == "i.ytimg.com" || h.endsWith(".ytimg.com") || h.endsWith(".googleusercontent.com") || h.endsWith(".ggpht.com"))
+        }
+
         /** Largura × altura lidas do cabeçalho (JPEG/PNG), sem decodificar a imagem. */
         fun imageSize(f: File): Pair<Int, Int>? = runCatching {
             f.inputStream().buffered().use { s ->
@@ -145,7 +166,14 @@ class CoverStore(
          *  2. as capas informadas, da maior para a menor
          *  3. URLs montadas pelo ID do vídeo (nunca expiram): maxresdefault → hqdefault
          */
-        fun candidates(track: Track): List<String> {
+        fun candidates(track: Track, browse: Boolean = false): List<String> {
+            if (browse) {
+                // listas e busca: ~400 px chegam em ~0,2 s e ficam iguais na tela (linhas de 44–100 px)
+                val q = track.thumbs.sortedByDescending { it.width * it.height }.map { it.url }
+                val g = q.filter { "googleusercontent.com" in it && GOOGLE_SIZE.containsMatchIn(it) }.map { GOOGLE_SIZE.replace(it, "=w400-h400-l90-rj") }
+                val v = track.videoId?.let { listOf("https://i.ytimg.com/vi/$it/mqdefault.jpg") }.orEmpty()   // 16:9 sem tarja preta
+                return (g + v + candidates(track, browse = false)).distinct()
+            }
             // quadradas (capa de álbum) antes das 16:9 (miniatura de vídeo); dentro de cada grupo, a maior primeiro
             val square = { t: Thumb -> t.width > 0 && kotlin.math.abs(t.width - t.height) <= 2 }
             val sorted = track.thumbs.sortedWith(compareByDescending<Thumb> { square(it) }.thenByDescending { it.width * it.height }).map { it.url }

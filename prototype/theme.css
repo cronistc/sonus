@@ -75,7 +75,7 @@ html.theming, html.theming *, html.theming *::before, html.theming *::after {
 
 /* No topo do app aparece só a letra (o ícone azul é o da tela inicial do celular) */
 .brand-letter { width: 28px; height: 28px; color: var(--text); display: block; }
-.brand-letter path { fill: none; stroke: currentColor; stroke-width: 6.5; stroke-linecap: round; stroke-linejoin: round; }
+.brand-letter path { fill: currentColor; stroke: none; }      /* clave de sol (desenho cheio) */
 
 /* No celular a tela do app ocupa a altura toda (a moldura de 860px é só para ver no computador) */
 @media (max-width: 499px) { .phone { max-height: none !important; } }

@@ -15,6 +15,7 @@ import app.sounos.engine.AudioEngine
 import app.sounos.engine.GrowingFileSource
 import app.sounos.engine.Loudness
 import app.sounos.extractor.MusicPicks
+import app.sounos.extractor.Sounos
 import app.sounos.extractor.AudioQuality
 import app.sounos.extractor.QueuePrefetcher
 import app.sounos.extractor.ResolvedAudio
@@ -53,7 +54,7 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
     var current: ResolvedTrack? = null; private set
     var durationMs = 0L; private set
     var loading = false; private set
-    var colors = listOf("#2F6BFF", "#1D4ED8", "#60A5FA"); private set
+    var colors = listOf("#2F6BFF", "#1D4ED8", "#60A5FA", "#60A5FA"); private set
     var lyrics: Lyrics.Result? = null; private set
     private var lyricsFor: String? = null
     private var token = 0
@@ -167,11 +168,19 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
 
     fun applySettings(s: JSONObject) {
         engine.normalize = s.optBoolean("normalize", true)
+        engine.skipSilence = s.optBoolean("skipSilence", true)
+        // país e idioma valem na hora para busca e sugestões (antes só depois de reabrir o app)
+        Sounos.setRegion(s.optString("language", "pt-BR").substringBefore('-'), s.optString("country", "BR"))
     }
 
     // ---------------- download (um toque, sem janela) ----------------
     fun download(t: Track) {
         if (app.library.isDownloaded(t.id)) { emit("download", JSONObject().put("id", t.id).put("p", 1).put("done", true)); return }
+        // "Baixar só no Wi-Fi": nos dados móveis não baixa
+        val metered = (app.getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager).isActiveNetworkMetered
+        if (metered && app.library.settings().optBoolean("wifiOnlyDownloads")) {
+            emit("download", JSONObject().put("id", t.id).put("error", true).put("reason", "wifi")); return
+        }
         app.io.launch {
             runCatching {
                 val r = app.resolver.get(t.url, AudioQuality.HIGH, t)
@@ -210,14 +219,14 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
                     downloaded -> AudioEngine.Source.LocalFile(app.library.downloadFile(t.id).path)
                     app.audio.isComplete(t.id) -> AudioEngine.Source.LocalFile(app.audio.file(t.id).path)
                     else -> {
-                        val done = AtomicBoolean(false)
+                        val done = AtomicBoolean(false); val failed = AtomicBoolean(false)
                         val r = resolved!!
                         fillJob = app.io.launch {
                             app.audio.fill(t.id, r.audio, Long.MAX_VALUE,
                                 refresh = { app.resolver.invalidate(t.url); app.resolver.get(t.url, quality(), t).audio })
-                            done.set(true)
+                                .also { ok -> if (ok) done.set(true) else failed.set(true) }
                         }
-                        AudioEngine.Source.Growing(GrowingFileSource(app.audio.file(t.id), { app.audio.totalLength(t.id).takeIf { it > 0 } ?: r.audio.contentLength }, { done.get() }))
+                        AudioEngine.Source.Growing(GrowingFileSource(app.audio.file(t.id), { app.audio.totalLength(t.id).takeIf { it > 0 } ?: r.audio.contentLength }, { done.get() }, { failed.get() }))
                     }
                 }
                 requestFocus()
@@ -231,6 +240,19 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
                 computeSuggestions()
                 updatePrefetch()
                 emitState(); saveSession(); ticker()
+                // rádio que chegou depois do início (ou música baixada, que não passou pela internet)
+                launch {
+                    val more = runCatching {
+                        resolved?.relatedLater?.await() ?: if (downloaded) track.videoId?.let { id ->
+                            MusicPicks.clean(withContext(Dispatchers.IO) { app.source.radio(id) }, exclude = listOf(track)) } else null
+                    }.getOrNull()
+                    if (my == token && !more.isNullOrEmpty()) {
+                        current = current?.copy(related = more)
+                        computeSuggestions()
+                        if (isRadio() && index >= queue.size - 2) topUpRadio()
+                        updatePrefetch(); emitState()
+                    }
+                }
             } catch (e: Throwable) {
                 if (my != token) return@launch
                 loading = false
@@ -253,6 +275,7 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
 
     // ---------------- callbacks do motor de áudio ----------------
     override fun onReady(durationMs: Long) {
+        errorsInARow = 0
         if (durationMs > 0) this.durationMs = durationMs
         loading = false; emitState(); ticker()
     }
@@ -262,9 +285,13 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
         next(auto = true)
     }
 
+    private var errorsInARow = 0
     override fun onError(error: Throwable) {
+        loading = false
         emit("error", JSONObject().put("message", error.message ?: "erro no áudio"))
         val my = token
+        // 3 falhas seguidas (sem internet, por exemplo): para em vez de pular música atrás de música
+        if (++errorsInARow >= 3 || queue.size <= 1) { errorsInARow = 0; engine.pause(); emitState(); return }
         main.postDelayed({ if (my == token) next(auto = true) }, 1200)
     }
 
@@ -299,7 +326,7 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
         else -> queue.drop(index + 1).take(3)
     }
 
-    private fun updatePrefetch() = prefetcher.onQueueChanged(upcoming().filterNot { app.library.isDownloaded(it.id) }, quality())
+    private fun updatePrefetch() = prefetcher.onQueueChanged(upcoming().filterNot { app.library.isDownloaded(it.id) }, quality(), keep = currentTrack?.id)
 
     private fun quality(): AudioQuality = when (app.library.settings().optString("quality", "auto")) {
         "high" -> AudioQuality.HIGH

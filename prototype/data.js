@@ -26,12 +26,23 @@ window.SounosData = (() => {
     { id: "p4", name: "Chuva",          tracks: [11,19,14,1,8] },
   ];
   const KEY = "sounos.playlists";
+  let unsaved = null;   // última lista que não coube no localStorage (vale até a próxima gravação que couber)
   function getPlaylists() {
+    if (unsaved) return structuredClone(unsaved);
     try { const v = JSON.parse(localStorage.getItem(KEY)); if (Array.isArray(v) && (v.length || window.Sounos?.native)) return v; } catch {}
     // no app começa vazio (são as playlists da pessoa); no navegador, as de exemplo
     return window.Sounos?.native ? [] : structuredClone(DEFAULT_PLAYLISTS);
   }
-  function savePlaylists(list) { try { localStorage.setItem(KEY, JSON.stringify(list)); } catch {} }
+  function savePlaylists(list) {
+    const json = JSON.stringify(list);
+    try { localStorage.setItem(KEY, json); unsaved = null; }
+    catch (e) {
+      unsaved = list;
+      // cota do localStorage estourada (capas grandes etc.): o espelho nativo vira a fonte da verdade, nada se perde em silêncio
+      console.warn("[sounos] localStorage cheio; playlists guardadas só no espelho nativo", e);
+      try { window.__sounosSave?.(KEY, json); } catch {}
+    }
+  }
 
   // Nome do artista → @ estilo Instagram: minúsculo, sem acento, espaço vira "_"
   const toHandle = name => "@" + name.normalize("NFD").replace(/[̀-ͯ]/g, "")

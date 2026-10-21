@@ -7,7 +7,7 @@
   const root = document.documentElement.style;
 
   const toLocal = t => ({ id: t.id, title: t.title || "—", artist: t.artist || "", dur: Math.max(1, t.dur || 1),
-                          c: Sounos.hashColors(t.id), lrc: lyricsById[t.id] ?? null, plain: false, cover: Sounos.coverUrl(t, true), raw: t });
+                          c: Sounos.hashColors(t.id), lrc: lyricsById[t.id] ? lyricsById[t.id].lrc : undefined, plain: !!(lyricsById[t.id] && lyricsById[t.id].plain), cover: Sounos.coverUrl(t, true), raw: t });
   const coverBg = t => `url('${t.cover}') center/cover no-repeat, linear-gradient(135deg,${t.c[0]},${t.c[1]} 60%,${t.c[2]})`;
 
   // ---------- estado do app → tela ----------
@@ -53,7 +53,9 @@
   };
   // "A" só existe quando a música tem letra sincronizada; sem ela, a tela da letra fecha sozinha
   function syncLyrBtn() {
-    const t = track(), has = !!(t && t.lrc && !t.plain);
+    const t = track();
+    if (t && t.lrc === undefined) return;          // letra ainda carregando (undefined ≠ null "sem letra"): mantém o "A" e o modo como estão
+    const has = !!(t && t.lrc && !t.plain);
     $("lyricsBtn").hidden = !has;
     if (!has && lyricsMode) $("lyricsBtn").click();
   }
@@ -76,8 +78,7 @@
     if (playing && track() && !hidden) {
       pos = Math.min(pos + dt, track().dur);
       gradAngle = (gradAngle + dt * 6) % 360;
-      $("ringGrad").setAttribute("gradientTransform", `rotate(${gradAngle} .5 .5)`);
-      render();
+      render(true);
     }
     lastTick = now;
     requestAnimationFrame(tick);
@@ -114,8 +115,6 @@
   let seekT = 0;
   const seekSoon = () => { clearTimeout(seekT); seekT = setTimeout(() => Sounos.call("seek", { sec: pos }), 120); };
   const _scrubBy = scrubBy; scrubBy = dx => { _scrubBy(dx); seekSoon(); };
-  const _seekFrom = seekFrom; seekFrom = e => { _seekFrom(e); seekSoon(); };
-  $("ringHit").addEventListener("pointerdown", seekSoon);
 
   // ---------- letra ----------
   const _buildLyrics = buildLyrics;
@@ -134,7 +133,7 @@
     let lrc = null, plain = false;
     if (l && l.synced) lrc = l.synced;
     else if (l && l.plain) { lrc = l.plain.split("\n").filter(Boolean).map(x => [1e9, x]); plain = true; }
-    lyricsById[p.id] = lrc;
+    lyricsById[p.id] = { lrc, plain };               // lrc null = sabemos que não tem letra
     const t = tracks.find(x => x.id === p.id);
     if (t) { t.lrc = lrc; t.plain = plain; if (t === track()) { buildLyrics(); syncLyrics(); syncLyrBtn(); } }
   }
@@ -175,8 +174,8 @@
     if (!track()) return;
     if (!scrubbing && !ring.classList.contains("drag")) pos = p.pos;
     if (p.dur > 0) track().dur = p.dur;
-    if (p.playing !== playing) { playing = p.playing; }
-    render();
+    if (p.playing !== playing) { playing = p.playing; render(); return; }
+    render(true);                                   // entra no compasso visual (não gera quadro extra)
   });
   Sounos.on("lyrics", applyLyrics);
 

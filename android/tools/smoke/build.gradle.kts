@@ -14,3 +14,8 @@ tasks.named<JavaExec>("run") {
     workingDir = rootProject.layout.buildDirectory.dir("smoke").get().asFile.apply { mkdirs() }
 }
 
+
+tasks.register<JavaExec>("probe") {
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("app.sounos.smoke.ProbeKt")
+}

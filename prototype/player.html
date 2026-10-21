@@ -72,7 +72,11 @@
   .cover-area { flex-shrink: 0; margin-top: 8px; display: flex; justify-content: center; }
   .cover-box { width: var(--cover-size, 100%); flex-shrink: 0; }
   .ring { position: relative; width: 100%; aspect-ratio: 1 / 1; touch-action: none; }
-  .ring svg.prog { position: absolute; overflow: visible; pointer-events: none; z-index: 2; }
+  /* anel, capa e barrinhas em camadas próprias: quando o anel anda, só ele é redesenhado (não a tela toda) */
+  .ring svg.prog { position: absolute; overflow: visible; pointer-events: none; z-index: 2; will-change: transform; }
+  .ring canvas.prog { position: absolute; pointer-events: none; z-index: 3; will-change: transform; }
+  .cover { will-change: transform; }
+  .qi.now .eq { will-change: transform; }
   .ring .track-path { fill: none; stroke: var(--line); stroke-width: 6; }
   .ring .fill-path { fill: none; stroke: url(#ringGrad); stroke-width: 6; stroke-linecap: butt; }
   .ring .hit { fill: none; stroke: transparent; stroke-width: 30; pointer-events: stroke; cursor: pointer; }
@@ -151,10 +155,9 @@
   /* barrinhas "tocando agora" no bloco atual */
   .eq { position: absolute; right: 8px; top: 8px; display: none; gap: 2px; align-items: flex-end; height: 14px; }
   .qi.now .eq { display: flex; }
-  .eq i { width: 3px; background: #fff; border-radius: 1px; height: 4px; }
-  .phone:not(.paused) .qi.now .eq i { animation: eq .9s ease-in-out infinite; }
-  .eq i:nth-child(2) { animation-delay: -.3s !important; } .eq i:nth-child(3) { animation-delay: -.6s !important; }
-  @keyframes eq { 0%,100% { height: 4px } 50% { height: 14px } }
+  /* barrinhas: altura fixa + scaleY (mesmo desenho; antes a altura animada redesenhava o bloco inteiro, capa junto) */
+  .eq i { width: 3px; background: #fff; border-radius: 1px; height: 14px; transform: scaleY(.2857); transform-origin: bottom; will-change: transform; }
+  /* o movimento das barrinhas vem do relógio do player (drawEq), junto com o anel: a tela só redesenha ~30×/s */
 
   /* Renovação da fila: gira rápido para a esquerda e os novos blocos entram pela direita */
   .queue.spin-out .qi { animation: spinOut .18s ease-in forwards; }
@@ -270,12 +273,27 @@
                 -webkit-mask-image: linear-gradient(transparent, #000 18%, #000 78%, transparent);
                         mask-image: linear-gradient(transparent, #000 18%, #000 78%, transparent); }
   .lyr .lines::-webkit-scrollbar { display: none; }
-  .lyr .line { font-size: 22px; font-weight: 700; line-height: 1.35; margin-bottom: 16px; cursor: pointer;
+  .lyr .line { font-size: 25px; font-weight: 600; line-height: 1.38; margin-bottom: 16px; cursor: pointer;
                padding: 2px 8px; margin-left: -8px; border-radius: 8px;
                color: var(--t-faint); transition: color .4s ease; }
   .lyr .line.past { color: var(--t-mid); }
   .lyr .line.now { color: var(--text); }
   .lyr.plain .line { color: var(--text); cursor: default; }     /* letra sem tempo: mostra inteira */
+  /* preenchimento progressivo da linha atual (estilo Apple Music): cada palavra tem um degradê que varre da esquerda p/ direita.
+     O JS só define duração/atraso por palavra ao trocar de linha, pausar ou buscar; a animação roda sozinha no navegador. */
+  .lyr .line.now:not(.note) .w {
+    color: transparent; -webkit-background-clip: text; background-clip: text;
+    background-image: linear-gradient(90deg, var(--text) 0, var(--text) 47.6%, var(--t-faint) 52.4%, var(--t-faint) 100%);
+    background-size: 210% 100%; background-repeat: no-repeat; background-position: 0 0;   /* sem animação = palavra acesa */
+    animation-timing-function: linear; animation-fill-mode: both; }
+  .lyr .line.now.fa .w { animation-name: lyrfillA; }
+  .lyr .line.now.fb .w { animation-name: lyrfillB; }          /* A/B alternados: trocar o nome reinicia a animação do zero */
+  .phone.paused .lyr .line.now .w { animation-play-state: paused; }
+  .lyr.selecting .line.now .w { animation: none; background: none; color: inherit; filter: none; }
+  @keyframes lyrfillA { from { background-position: 100% 0; filter: drop-shadow(0 0 0 transparent); }
+                        to   { background-position: 0 0;    filter: drop-shadow(0 0 9px color-mix(in srgb, var(--text) 28%, transparent)); } }
+  @keyframes lyrfillB { from { background-position: 100% 0; filter: drop-shadow(0 0 0 transparent); }
+                        to   { background-position: 0 0;    filter: drop-shadow(0 0 9px color-mix(in srgb, var(--text) 28%, transparent)); } }
   .lyr .empty { color: var(--text-dim); font-size: 16px; padding-top: 20px; }
 </style>
 <script>
@@ -292,6 +310,7 @@ window.__afterReveal = new Promise(res => addEventListener("pagereveal", e => {
 <script src="add.js"></script>
 <link rel="stylesheet" href="settings.css">
 <link rel="stylesheet" href="theme.css">
+<script src="update.js"></script>
 <script src="settings.js"></script>
 </head>
 <body>
@@ -299,7 +318,7 @@ window.__afterReveal = new Promise(res => addEventListener("pagereveal", e => {
 
   <div class="top" id="top">
     <button class="icon-btn" id="gearBtn" aria-label="Configurações"><svg class="lu" viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></button>
-    <svg class="brand-letter" viewBox="0 0 64 64" role="img" aria-label="Sonus"><path d="M44.7 20.6A17 17 0 1 0 47.4 39.2V33.5H35"/></svg>
+    <svg class="brand-letter" viewBox="0 0 64 64" role="img" aria-label="Sonus"><path d="M 42.54 39.23 Q 42.54 45.1 37.09 47.15 Q 37.16 47.5 38 51.43 Q 38.55 53.99 38.55 55.74 Q 38.55 58.4 36.74 60.07 Q 34.92 61.74 32.26 61.74 Q 29.89 61.74 28.11 60.41 Q 26.13 58.95 26.13 56.68 Q 26.13 55.22 27.15 53.91 Q 28.17 52.59 29.6 52.59 Q 30.99 52.59 31.97 53.66 Q 32.94 54.74 32.94 56.13 Q 32.94 59.24 29.47 59.24 Q 30.35 60.61 32.29 60.61 Q 33.91 60.61 35.31 59.7 Q 37.35 58.37 37.35 55.09 Q 37.35 53.89 35.96 47.57 Q 34.56 47.89 33.26 47.89 Q 28.46 47.89 24.96 44.23 Q 21.46 40.56 21.46 35.73 Q 21.46 31.55 24.44 27.23 Q 26.16 24.77 30.57 20.36 Q 29.47 16.4 29.47 12.86 Q 29.47 10.01 30.28 7.32 Q 31.29 4.01 33.14 2.68 Q 33.82 2.19 34.4 2.19 Q 34.98 2.19 35.54 2.84 Q 38.16 5.96 38.16 11.79 Q 38.16 19.87 32.58 25.03 L 33.78 30.83 Q 34.66 30.67 35.24 30.67 Q 38.49 30.67 40.59 33.39 Q 42.54 35.89 42.54 39.23Z M 36.77 9.88 Q 36.77 7.12 35.08 7.12 Q 33.07 7.12 31.81 10.66 Q 30.8 13.38 30.8 15.91 Q 30.8 17.83 31.51 19.51 Q 33.36 18.38 35.06 15.23 Q 36.77 12.09 36.77 9.88Z M 40.24 40.89 Q 40.24 38.29 38.71 36.57 Q 37.09 34.79 34.53 34.79 L 36.8 46.08 Q 40.24 44.65 40.24 40.89Z M 35.76 46.43 33.46 34.92 Q 32.03 35.34 30.96 36.65 Q 29.89 37.97 29.89 39.43 Q 29.89 41.31 31.37 42.57 Q 32.84 43.84 32.84 43.74 L 32.49 43.97 Q 30.48 43.45 29.18 41.81 Q 27.88 40.17 27.88 38.1 Q 27.88 35.92 29.26 33.9 Q 30.64 31.87 32.65 31.09 L 31.64 25.87 Q 23.89 32.32 23.89 38.45 Q 23.89 42.02 26.62 44.52 Q 29.24 46.95 32.84 46.95 Q 33.72 46.95 35.76 46.43Z M 18.64 -10.91Z M 63.85 73.29Z"/></svg>
     <button class="icon-btn" id="searchBtn" aria-label="Buscar"><svg class="lu" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></button>
   </div>
 
@@ -330,10 +349,11 @@ window.__afterReveal = new Promise(res => addEventListener("pagereveal", e => {
             </mask>
           </defs>
           <path id="ringPath" class="track-path" pathLength="1000"/>
-          <path id="ringFill" class="fill-path" pathLength="1000" stroke-dasharray="0 2000" mask="url(#ringMask)"/>
+          <path id="ringFill" class="fill-path" pathLength="1000" stroke-dasharray="0 2000" mask="url(#ringMask)" style="display:none"/>
           <path id="ringHit" class="hit"/>
           <circle id="knob" class="knob"/>
         </svg>
+        <canvas class="prog" id="ringCanvas" aria-hidden="true"></canvas>
         <div class="cover" id="cover">A</div>
       </div>
       <div class="times" id="times"><span id="cur">0:00</span><span id="dur">0:00</span></div>
@@ -485,7 +505,7 @@ const suggestionsFor = ti => randomTracks(10, [ti]);
 const ringPath = $("ringPath");
 const SW = 6, RADIUS = 10;             // espessura da barra e raio da borda da capa
 const FADE_PX = 34;                    // comprimento do esfumaçado nas pontas
-let RING_LEN = 0, ringPts = [];
+let RING_LEN = 0, ringPts = [], RING = null;
 // Monta o contorno em pixels, encostado do lado de fora da borda da capa
 function layoutRing() {
   const c = $("cover"), w = c.offsetWidth, h = c.offsetHeight, o = SW / 2, r = RADIUS + o, pad = 20;
@@ -498,19 +518,42 @@ function layoutRing() {
   const d = `M${w/2} ${T} H${R - r} A${r} ${r} 0 0 1 ${R} ${T + r} V${B - r} A${r} ${r} 0 0 1 ${R - r} ${B}`
           + ` H${L + r} A${r} ${r} 0 0 1 ${L} ${B - r} V${T + r} A${r} ${r} 0 0 1 ${L + r} ${T} Z`;
   ["ringPath", "ringFill", "ringHit"].forEach(id => $(id).setAttribute("d", d));
+  // barra desenhada num canvas (placa de vídeo): mesma forma do contorno, sem refazer máscara SVG
+  const cv = $("ringCanvas"), dpr = Math.min(3, devicePixelRatio || 1);
+  Object.assign(cv.style, { left: svg.style.left, top: svg.style.top, width: svg.style.width, height: svg.style.height });
+  cv.width = Math.round(vb[2] * dpr); cv.height = Math.round(vb[3] * dpr);
+  RING = { path: new Path2D(d), vb, dpr };
   ["x", "y", "width", "height"].forEach((k, i) => { $("maskBg").setAttribute(k, vb[i]); $("ringMask").setAttribute(k, vb[i]); });
   $("fadeStart").setAttribute("cx", w / 2); $("fadeStart").setAttribute("cy", T);
   RING_LEN = ringPath.getTotalLength();
   ringPts = null;
 }
-// Barra + pontas esfumaçadas (máscara radial no início e na ponta que avança)
+// Barra em volta da capa: UMA cor, a mais chamativa da capa (--c4, escolhida pelo app), com as pontas
+// esfumaçadas. Desenhada num canvas: muda só quando o andamento avança (~8×/s), sem gradiente girando.
+const FADE_STOPS = [[0, 1], [.25, .898], [.5, .533], [.75, .169], [1, 0]];   // mesmo esfumaçado de antes
+let ringColor = null;
+new MutationObserver(() => { ringColor = null; }).observe(document.documentElement, { attributes: true, attributeFilter: ["style", "data-theme"] });
 function drawRingFill(P) {
-  P = Math.max(0, P);
-  $("ringFill").setAttribute("stroke-dasharray", `${P} 2000`);
-  const r = Math.max(0, Math.min(FADE_PX, P / 1000 * RING_LEN / 2));   // barra curta → esfumaçado menor
-  const head = ringPath.getPointAtLength(P / 1000 * RING_LEN);
-  $("fadeHead").setAttribute("cx", head.x); $("fadeHead").setAttribute("cy", head.y);
-  $("fadeHead").setAttribute("r", r); $("fadeStart").setAttribute("r", r);
+  if (!RING) return;
+  P = Math.max(0, Math.min(1000, P));
+  const cv = $("ringCanvas"), g = cv.getContext("2d"), { path, vb, dpr } = RING;
+  g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, cv.width, cv.height);
+  if (P <= 0) return;
+  if (!ringColor) { const cs = getComputedStyle(document.documentElement); ringColor = (cs.getPropertyValue("--c4") || cs.getPropertyValue("--c3")).trim() || "#fff"; }
+  const L = P / 1000 * RING_LEN;
+  g.setTransform(dpr, 0, 0, dpr, -vb[0] * dpr, -vb[1] * dpr);
+  g.lineWidth = SW; g.lineCap = "butt"; g.strokeStyle = ringColor;
+  g.setLineDash([L, RING_LEN * 2]); g.stroke(path);
+  const r = Math.max(0, Math.min(FADE_PX, L / 2));                      // barra curta → esfumaçado menor
+  if (r < .5) return;
+  const head = ringPath.getPointAtLength(L), start = ringPath.getPointAtLength(0);
+  g.setLineDash([]); g.globalCompositeOperation = "destination-out";
+  for (const p of [start, head]) {
+    const gr = g.createRadialGradient(p.x, p.y, 0, p.x, p.y, r);
+    FADE_STOPS.forEach(([o, a]) => gr.addColorStop(o, `rgba(0,0,0,${a})`));
+    g.fillStyle = gr; g.beginPath(); g.arc(p.x, p.y, r, 0, Math.PI * 2); g.fill();
+  }
+  g.globalCompositeOperation = "source-over";
 }
 
 // ---- Movimento: pequenas animações de troca (ícone, faixa) ----
@@ -542,12 +585,18 @@ function loadCurrent() {
   if (typeof renderDl === "function") renderDl();
 }
 
-function render() {
-  const t = track(), f = Math.min(pos / t.dur, 1);
-  drawRingFill(f * 1000);
-  const p = ringPath.getPointAtLength(f * RING_LEN);
-  $("knob").setAttribute("cx", p.x); $("knob").setAttribute("cy", p.y);
-  $("cur").textContent = fmt(pos);
+// Leveza: o anel (máscara + degradê) é caro de redesenhar. Ele anda ~7 px por segundo, então
+// redesenhar 15×/s fica idêntico a olho nu (120×/s só gastava bateria). Fora do relógio, desenha na hora.
+let lastRingDraw = -1e9, lastEqDraw = -1e9, lastCurText = "";
+let RING_MS = 125;      // anel anda ~0,9 px por passo: igual a olho nu
+function render(fromTick) {
+  const t = track(), f = Math.min(pos / t.dur, 1), now = performance.now();
+  // um só compasso visual (~15×/s): barrinhas, anel e tempo mudam juntos → a tela redesenha poucas vezes
+  if (fromTick && now - lastEqDraw < 66) { syncLyrics(); return; }
+  lastEqDraw = now;
+  drawEq(now);
+  if (!fromTick || now - lastRingDraw >= RING_MS) { lastRingDraw = now; drawRingFill(f * 1000); }
+  const ct = fmt(pos); if (ct !== lastCurText) { lastCurText = ct; $("cur").textContent = ct; }
   renderPlayIcon();
   if (scrubbing) { moveWave(); $("scrubTime").textContent = fmt(pos); }
   $("phone").classList.toggle("paused", !playing);
@@ -756,25 +805,104 @@ function buildLyrics() {
   box.innerHTML = ""; lastLine = -1; box.scrollTop = 0;
   exitSelect();
   $("shareBtn").classList.toggle("hidden", !t.lrc);
+  if (t.lrc === undefined) { box.innerHTML = '<div class="empty">…</div>'; return; }   // letra ainda carregando
   if (!t.lrc) { box.innerHTML = '<div class="empty">Letra indisponível para esta faixa</div>'; return; }
-  t.lrc.forEach(([s, txt], i) => {
+  t.lrc.forEach((ln, i) => {
+    const s = ln[0], txt = parseWordTags(t.lrc, i);
     const d = document.createElement("div");
-    d.className = "line" + (isNote(txt) ? " note" : ""); d.textContent = txt;
+    d.className = "line" + (isNote(txt) ? " note" : "");
+    if (d.classList.contains("note")) d.textContent = txt;
+    else txt.split(" ").forEach((w, k) => {                           // uma <span> por palavra (o preenchimento é por palavra)
+      if (k) d.appendChild(document.createTextNode(" "));
+      const sp = document.createElement("span"); sp.className = "w"; sp.textContent = w; d.appendChild(sp);
+    });
     d.onclick = () => selecting ? toggleLine(i) : (pos = s, render());
     box.appendChild(d);
   });
 }
 let lastLine = -1;
+// LRC "enhanced": <mm:ss.xx> antes de cada trecho. Tira as marcas do texto e guarda o início de cada palavra em lrc.wt[i] (segundos).
+// Sem marcas, devolve o texto normalizado (palavras separadas por 1 espaço) e o tempo sai proporcional aos caracteres.
+function parseWordTags(lrc, i) {
+  const raw = lrc[i][1];
+  if (!/<\d+:\d+(\.\d+)?>/.test(raw)) return raw.trim().split(/\s+/).join(" ");
+  const parts = raw.split(/<(\d+):(\d+(?:\.\d+)?)>/), segs = [];
+  let cur = lrc[i][0];
+  for (let k = 0; k < parts.length; k += 3) {
+    if (k) cur = (+parts[k - 2]) * 60 + (+parts[k - 1]);
+    const ws = parts[k].split(/\s+/).filter(Boolean);
+    if (ws.length) segs.push({ t: cur, ws });
+  }
+  const end = i + 1 < lrc.length ? lrc[i + 1][0] : lrc[i][0] + 5, words = [], wt = [];
+  segs.forEach((sg, k) => {
+    const e = k + 1 < segs.length ? segs[k + 1].t : Math.min(end, sg.t + 3);
+    const tot = sg.ws.reduce((a, w) => a + w.length, 0); let c = 0;
+    sg.ws.forEach(w => { words.push(w); wt.push(sg.t + (e - sg.t) * c / tot); c += w.length; });   // palavras do trecho: proporcional
+  });
+  (lrc.wt || (lrc.wt = []))[i] = wt;
+  return (lrc[i][1] = words.join(" "));
+}
+// barrinhas do bloco que está tocando: sobe e desce em 0,9 s (defasadas), param quando pausa
+function drawEq(now) {
+  const bars = document.querySelectorAll("#queue .qi.now .eq i"); if (!bars.length) return;
+  bars.forEach((b, k) => {
+    const ph = playing ? ((now / 900) + k / 3) % 1 : 0;
+    const e = .5 - .5 * Math.cos(ph * 2 * Math.PI);              // vai e volta suave (como o ease-in-out de antes)
+    b.style.transform = `scaleY(${(.2857 + .7143 * e).toFixed(3)})`;
+  });
+}
+let lyrMarked = -2, lyrMarkedFor = null;
 function syncLyrics() {
   const t = track(); if (!t.lrc) return;
-  let ln = -1; t.lrc.forEach(([s], i) => { if (pos + lyricsOffset() >= s) ln = i; });   // + ajuste de sincronia das configurações
+  const at = pos + lyricsOffset();                                  // + ajuste de sincronia das configurações
+  let ln = -1; for (let i = 0; i < t.lrc.length && t.lrc[i][0] <= at; i++) ln = i;
   const els = $("lines").children;
-  [...els].forEach((e, i) => { e.classList.toggle("now", i === ln); e.classList.toggle("past", i < ln); });
+  // só mexe nas linhas quando a linha atual muda (antes: todas as linhas, todo quadro)
+  if (ln !== lyrMarked || lyrMarkedFor !== els[0]) {
+    lyrMarked = ln; lyrMarkedFor = els[0];
+    for (let i = 0; i < els.length; i++) { els[i].classList.toggle("now", i === ln); els[i].classList.toggle("past", i < ln); }
+  }
   if (ln !== lastLine && ln >= 0 && lyricsMode && !selecting) {
     const box = $("lines");
     box.scrollTo({ top: els[ln].offsetTop - box.clientHeight * .35, behavior: "smooth" });
   }
+  syncFill(t, ln, els, at);
   lastLine = ln;
+}
+
+// Preenchimento da linha atual. Só reconfigura as palavras quando algo muda: linha, play/pause, modo letra/seleção, DOM novo
+// ou salto de posição (busca / ajuste de sincronia). Entre isso a animação CSS corre sozinha, sem escrita por quadro.
+let fillEl = null, fillPlaying = false, fillAt = 0, fillT = 0, fillFlip = false;
+function syncFill(t, ln, els, at) {
+  const el = lyricsMode && !selecting && !t.plain && ln >= 0 ? els[ln] : null;
+  if (!el || el.classList.contains("note")) {
+    if (fillEl) { fillEl.classList.remove("fa", "fb"); fillEl = null; }
+    return;
+  }
+  const now = performance.now();
+  const expect = fillAt + (fillPlaying ? (now - fillT) / 1000 : 0);            // onde a posição deveria estar se nada saltou
+  if (el === fillEl && playing === fillPlaying && Math.abs(at - expect) < .5) return;
+  if (fillEl && fillEl !== el) fillEl.classList.remove("fa", "fb");
+  fillEl = el; fillPlaying = playing; fillAt = at; fillT = now;
+  const ws = el.children, n = ws.length; if (!n) return;
+  const s = t.lrc[ln][0], e = ln + 1 < t.lrc.length ? t.lrc[ln + 1][0] : s + 5;
+  const elapsed = Math.max(0, at - s), wt = t.lrc.wt && t.lrc.wt[ln];
+  const st = [], en = [];
+  if (wt && wt.length === n) {                                                     // tempos por palavra vindos da letra
+    const last = Math.min(e, wt[n - 1] + 3);
+    for (let i = 0; i < n; i++) { st[i] = wt[i] - s; en[i] = (i + 1 < n ? wt[i + 1] : last) - s; }
+  } else {                                                                         // proporcional aos caracteres, em no máx. 8 s
+    const D = Math.min(Math.max(e - s, .4), 8);
+    let tot = 0; for (let i = 0; i < n; i++) tot += ws[i].textContent.length;
+    let c = 0;
+    for (let i = 0; i < n; i++) { st[i] = D * c / tot; c += ws[i].textContent.length; en[i] = D * c / tot; }
+  }
+  for (let i = 0; i < n; i++) {
+    ws[i].style.animationDuration = Math.max(.05, en[i] - st[i]).toFixed(3) + "s";
+    ws[i].style.animationDelay = (st[i] - elapsed).toFixed(3) + "s";               // negativo = já passou desse ponto
+  }
+  fillFlip = !fillFlip;                                                            // trocar o nome da animação reinicia o relógio dela
+  el.classList.toggle("fa", fillFlip); el.classList.toggle("fb", !fillFlip);
 }
 
 // ---- Loop: reprodução simulada + gradiente girando devagar no anel ----
@@ -782,10 +910,9 @@ function tick(now) {
   const dt = (now - lastTick) / 1000;
   if (playing) {
     pos += dt;
-    gradAngle = (gradAngle + dt * 6) % 360;    // giro lento (6°/s) só enquanto toca
-    $("ringGrad").setAttribute("gradientTransform", `rotate(${gradAngle} .5 .5)`);
+    gradAngle = (gradAngle + dt * 6) % 360;    // giro lento (6°/s) só enquanto toca (aplicado no render, 15×/s)
     if (pos >= track().dur) { pos = track().dur; next(true); }
-    render();
+    render(true);
   }
   lastTick = now;
   requestAnimationFrame(tick);
@@ -1063,20 +1190,9 @@ $("sendCard").onclick = () => cardCanvas.toBlob(async blob => {
   } else saveCard();
 });
 
-// Arrastar no anel para avançar/voltar
+// O anel só mostra o andamento: avançar/voltar é pelo botão de play (segurar e arrastar)
 const ring = $("ring");
-function seekFrom(e) {
-  const r = $("cover").getBoundingClientRect();
-  const x = e.clientX - r.left, y = e.clientY - r.top;
-  let best = 0, bd = Infinity;
-  if (!ringPts) ringPts = Array.from({ length: 600 }, (_, i) => ringPath.getPointAtLength(i / 600 * RING_LEN));
-  ringPts.forEach((p, i) => { const d = (p.x - x) ** 2 + (p.y - y) ** 2; if (d < bd) { bd = d; best = i; } });
-  pos = best / ringPts.length * track().dur; render();
-}
-$("ringHit").style.pointerEvents = "stroke";
-$("ringHit").addEventListener("pointerdown", e => { ring.setPointerCapture(e.pointerId); ring.classList.add("drag"); seekFrom(e); });
-ring.addEventListener("pointermove", e => { if (ring.classList.contains("drag")) seekFrom(e); });
-ring.addEventListener("pointerup", () => ring.classList.remove("drag"));
+$("ringHit").style.pointerEvents = "none";
 
 document.addEventListener("keydown", e => {
   if (e.code === "Space") { e.preventDefault(); setPlaying(!playing); }

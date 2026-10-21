@@ -14,7 +14,7 @@
 
   function renderHome() {
     const hist = Sounos.call("getHistory");
-    const list = Array.isArray(hist) ? hist : [];
+    const list = (Array.isArray(hist) ? hist : []).filter(e => Sounos.isSong(e.track));      // vídeos ouvidos antes não aparecem
     items = [];
     // recentes: música solta, ou a playlist de onde a música tocou
     const seenPl = new Set(), recent = [];
@@ -46,6 +46,7 @@
       return `<button class="ar tap" data-k="${k}" style="text-align:center"><div class="pic" style="background:${bg(x.t)}"></div><div class="n">${Sounos.handle(name)}</div></button>`;
     }).join("");
     renderPlaylists();
+    if (stateSeen) fitHome();   // seção de artistas pode ter aparecido/sumido
   }
   const count = p => p.tracks.length === 1 ? "1 música" : `${p.tracks.length} músicas`;
   const mosaicOf = p => {
@@ -80,12 +81,25 @@
   // ---------- mini-player ----------
   const cur = () => S && S.current && S.current !== null ? S.current : null;
   let shownId = null;                      // música que o mini-player está mostrando
+  let stateSeen = false;                   // o primeiro estado (ao abrir a tela) não anima
+  // Mini-player sobe de baixo; o conteúdo dá uma subidinha e diminui um pouco o zoom (só transform/opacity)
+  function miniRise() {
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const o = { duration: 450, easing: "cubic-bezier(.2,.85,.25,1)" };
+    $("mini").animate([{ opacity: 0, transform: "translateY(48px)" }, { opacity: 1, transform: "none" }], o);
+    document.querySelector(".scroll").animate([
+      { transform: "none" }, { transform: "translateY(-10px) scale(.97)", offset: .4 }, { transform: "none" }], o);
+  }
   function applyState(st) {
     const before = shownId;
     S = st;
     const t = cur();
+    const appeared = !!t && !$("mini").classList.contains("has-track") && stateSeen;   // mini-player acabou de aparecer
+    stateSeen = true;
     $("mini").classList.toggle("has-track", !!t);
     $("phone").style.setProperty("--mini-h", t ? $("mini").offsetHeight + "px" : "0px");
+    fitHome();                             // blocos se reajustam à nova altura disponível
+    if (appeared) miniRise();
     if (!t) return;
     (st.colors || []).forEach((c, k) => root.setProperty(`--c${k + 1}`, c));
     playing = st.playing; shuffle = st.shuffle; repeat = st.repeat;
@@ -113,7 +127,8 @@
   }
   syncMiniLyrics = function () {
     if (!lyr) { if (lastLine !== "none") { lastLine = "none"; showLine("Letra indisponível para esta faixa", "empty"); } return; }
-    let ln = -1; lyr.forEach(([s], i) => { if (pos + lyricsOffset() >= s) ln = i; });
+    const at = pos + lyricsOffset();
+    let ln = -1; for (let i = 0; i < lyr.length && lyr[i][0] <= at; i++) ln = i;
     if (ln === lastLine) return;
     lastLine = ln;
     showLine(lyr[Math.max(ln, 0)][1], ln < 0 ? "dim" : "");
@@ -172,7 +187,7 @@
         if (opts.replace) { history.replaceState({ player: true, d }, ""); pushed = true; }
         else if (!pushed) { history.pushState({ player: true, d: d + 1 }, ""); pushed = true; }
       }
-      isOpen = true;
+      isOpen = true; window.__playerOpen = true;
       win().__playerShown?.();
       slide(0, 420);
     },
@@ -180,7 +195,7 @@
     closeThen(fn) { if (isOpen && pushed) { afterBack = fn; shell.close(); } else { shell.close(); fn(); } },
     close(fromPop) {
       const wasOpen = isOpen;
-      isOpen = false;
+      isOpen = false; window.__playerOpen = false;
       // continua desenhado logo abaixo da tela (pronto para subir sem atraso), só que parado
       slide(H(), 340, () => { if (!isOpen) { win().__playerHidden?.(); y = null; } });
       if (wasOpen && !fromPop && pushed) { pushed = false; history.back(); }

@@ -34,9 +34,10 @@ class Bridge(private val web: WebView) {
     private val main = Handler(Looper.getMainLooper())
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val listener: (String, JSONObject) -> Unit = { name, payload -> send(name, payload) }
+    private val updListener: (JSONObject) -> Unit = { send("update", it) }
 
-    fun attach() = player.addListener(listener)
-    fun detach() { player.removeListener(listener); scope.cancel() }
+    fun attach() { player.addListener(listener); app.updater.addListener(updListener) }
+    fun detach() { player.removeListener(listener); app.updater.removeListener(updListener); scope.cancel() }
 
     fun send(name: String, payload: Any) {
         val js = "window.__sounos&&window.__sounos.emit(${JSONObject.quote(name)},$payload)"
@@ -46,18 +47,26 @@ class Bridge(private val web: WebView) {
     @JavascriptInterface
     fun call(method: String, args: String?): String {
         val a = runCatching { JSONObject(args?.ifBlank { "{}" } ?: "{}") }.getOrDefault(JSONObject())
+        // pedido malformado nunca derruba o app (nem a música)
+        return runCatching { sync(method, a) }.getOrElse { android.util.Log.w("Sonus", "leitura $method falhou", it); "{}" }
+    }
+
+    private fun sync(method: String, a: JSONObject): String {
         return when (method) {
             "getState" -> onMain { player.state().toString() }
             "getLyrics" -> onMain { player.lyricsJson().toString() }
             "getProgress" -> onMain { player.progress().toString() }
             "getHistory" -> app.library.history().toString()
+            "getUpdate" -> app.updater.state().toString()
+            "saveData" -> JSONObject().put("ok", app.userData.save(a.optString("key"), a.optString("value"))).toString()
+            "loadData" -> JSONObject().put("value", app.userData.load(a.optString("key")) ?: JSONObject.NULL).toString()
             "getDownloads" -> app.library.downloadedMeta().toString()
             "getStorage" -> JSONObject()
                 .put("downloadsBytes", app.library.downloadsBytes())
                 .put("downloadsCount", app.library.downloadedMeta().length())
                 .put("cacheBytes", app.audio.sizeBytes() + app.cacheDir.resolve("covers").walk().sumOf { it.length() })
                 .toString()
-            else -> { main.post { command(method, a) }; "{}" }
+            else -> { main.post { runCatching { command(method, a) }.onFailure { android.util.Log.w("Sonus", "comando $method falhou", it) } }; "{}" }
         }
     }
 
@@ -65,7 +74,7 @@ class Bridge(private val web: WebView) {
         when (m) {
             "search" -> async(a) {
                 val page = app.source.search(a.getString("q"), SearchFilter.SONGS)
-                app.resolver.prefetch(page.items.take(3))                       // início instantâneo dos 3 primeiros
+                app.resolver.prefetch(page.items.take(1))                       // início instantâneo do 1º (os outros disputavam a rede com as capas)
                 JSONObject().put("items", Json.tracks(page.items)).put("suggestion", page.serviceSuggestion ?: JSONObject.NULL)
             }
             "searchArtists" -> async(a) {
@@ -112,13 +121,19 @@ class Bridge(private val web: WebView) {
             "pause" -> player.pause()
             "next" -> player.next()
             "prev" -> player.prev()
-            "seek" -> player.seek((a.getDouble("sec") * 1000).toLong())
+            "seek" -> a.optDouble("sec").takeIf { it.isFinite() && it >= 0 }?.let { player.seek((it * 1000).toLong()) }
             "setRepeat" -> player.setRepeat(PlayerController.Repeat.valueOf(a.getString("mode").uppercase()))
             "setShuffle" -> player.setShuffle(a.getBoolean("on"))
             "move" -> player.move(a.getInt("from"), a.getInt("to"))
             "download" -> player.download(Json.track(a.getJSONObject("track")))
             "removeDownload" -> { app.library.removeDownload(a.getString("id")); send("state", player.state()) }
             "setSettings" -> { app.library.saveSettings(a); player.applySettings(a) }
+            // atualizações
+            "checkUpdate" -> app.updater.check()
+            "installUpdate" -> app.updater.install()
+            "allowInstalls" -> app.updater.openInstallPermission()
+            "seenUpdate" -> app.updater.clearJustUpdated()
+            "setUpdateUrl" -> app.updater.setTestUrl(a.optString("url").ifBlank { null })      // só em build de teste
             "clearCache" -> app.io.launch { app.audio.clear(); app.covers.clearBrowse(); send("storage", JSONObject(call("getStorage", "{}"))) }
         }
     }
