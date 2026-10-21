@@ -410,7 +410,7 @@
     const realCover = t => `<div class="ic" style="background:url('${Sounos.coverUrl(t)}') center/cover no-repeat, ${grad(Sounos.hashColors(t.id))}"></div>`;
     // foto de artista também passa pelo app (fica guardada; antes vinha da internet a cada busca)
     const artistKey = n => String(n || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
-    const artistPic = a => a.thumb ? Sounos.coverUrl({ id: "artist:" + (artistKey(a.name) || "x"), thumb: a.thumb }).replace(/'/g, "%27") : "";
+    const artistPic = a => a.thumb ? Sounos.coverUrl({ id: "artist:" + (artistKey(a.name) || "x"), name: a.name, thumb: a.thumb }).replace(/'/g, "%27") : "";
     const realArtist = a => `<div class="ic round" style="background:${a.thumb ? `url('${artistPic(a)}') center/cover no-repeat,` : ""} ${grad(Sounos.hashColors(a.name))}"></div>`;
     // gosto: quanto você ouve cada artista e cada música (histórico do app, mais recente pesa mais).
     // Guardado por alguns segundos: antes era relido do app a cada letra digitada.

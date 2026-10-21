@@ -79,7 +79,7 @@ class Bridge(private val web: WebView) {
             }
             "searchArtists" -> async(a) {
                 JSONObject().put("items", JSONArray().apply {
-                    app.source.searchArtists(a.getString("q")).take(8).forEach { r ->
+                    app.source.searchArtists(a.getString("q")) { android.util.Log.i("Sonus", it) }.take(8).forEach { r ->
                         put(JSONObject().put("name", r.name).put("url", r.url)
                             .put("thumb", r.thumbs.maxByOrNull { it.width * it.height }?.url ?: JSONObject.NULL))
                     }
@@ -102,26 +102,45 @@ class Bridge(private val web: WebView) {
             // página do artista: foto do canal oficial + músicas dele (busca de músicas filtrada pelo artista)
             "artist" -> async(a) {
                 val name = a.getString("name")
+                val thumb = a.optString("thumb").takeIf { it.isNotBlank() }
                 val norm = { s: String -> TitleNormalizer.key("", s) }
                 val target = norm(name)
+                val started = System.nanoTime()
                 val (artists, page) = coroutineScope {
-                    val ar = async { runCatching { app.source.searchArtists(name) }.getOrDefault(emptyList()) }
-                    val so = async { app.source.search(name, SearchFilter.SONGS) }
+                    val ar = async {
+                        runCatching {
+                            app.covers.resolveArtistPhoto(
+                                name,
+                                hintUrl = thumb,
+                                lookup = { q -> app.source.searchArtist(q) { android.util.Log.i("Sonus", it) } },
+                                trace = { android.util.Log.i("Sonus", "foto artista $it") },
+                            )
+                        }.getOrNull()
+                    }
+                    val so = async {
+                        val searchStarted = System.nanoTime()
+                        app.source.search(name, SearchFilter.SONGS).also {
+                            android.util.Log.i("Sonus", "Bridge.artist.searchSongs_ms=${(System.nanoTime() - searchStarted) / 1_000_000} resultados=${it.items.size}")
+                        }
+                    }
                     ar.await() to so.await()
                 }
                 val by = { t: Track -> norm(t.artist).let { it == target || it.contains(target) || target.contains(it) && it.length > 2 } }
                 val songs = page.items.filter(by).toMutableList()
                 var next = page.nextPage
                 var pages = 0
-                while (songs.size < 30 && next != null && pages++ < 2) {
+                val moreStarted = System.nanoTime()
+                while (songs.size < 30 && next != null && pages < 2) {
+                    pages++
                     val more = runCatching { app.source.search(name, SearchFilter.SONGS, next) }.getOrNull() ?: break
                     more.items.filter(by).filter { m -> songs.none { it.id == m.id } }.forEach(songs::add)
                     next = more.nextPage
                 }
-                val art = artists.firstOrNull { norm(it.name) == target } ?: artists.firstOrNull()
+                if (pages > 0) android.util.Log.i("Sonus", "Bridge.artist.moreSongs_ms=${(System.nanoTime() - moreStarted) / 1_000_000} paginas=$pages")
                 app.resolver.prefetch(songs.take(2))
-                JSONObject().put("name", art?.name ?: name).put("url", art?.url ?: JSONObject.NULL)
-                    .put("thumb", art?.thumbs?.maxByOrNull { it.width * it.height }?.url ?: JSONObject.NULL)
+                android.util.Log.i("Sonus", "Bridge.artist_ms=${(System.nanoTime() - started) / 1_000_000} nome=$name")
+                JSONObject().put("name", artists?.name ?: name).put("url", artists?.channelUrl ?: JSONObject.NULL)
+                    .put("thumb", artists?.url ?: JSONObject.NULL)
                     .put("items", Json.tracks(MusicPicks.clean(songs)))
             }
             "suggest" -> async(a) { JSONObject().put("items", JSONArray(app.source.suggestions(a.getString("q")).take(6))) }

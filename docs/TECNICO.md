@@ -132,3 +132,11 @@ O NewPipe Extractor é GPLv3; por isso o Sonus também é distribuído sob GPLv3
 - A ponte recebeu os comandos assíncronos `searchAlbums` e `album`.
 - A busca nativa exibe álbuns, abre sua página a partir da tela inicial ou do player, e a página de artista passou a mostrar os álbuns correspondentes.
 - Validado com `node --check prototype/search.js`, `node --check prototype/pages.js` e `JAVA_HOME=~/Android/jdk17 ./gradlew -q :app:assembleDebug -PversionCode=5`.
+
+## Resumo da tarefa: foto de artista rápida e persistente
+
+- A rota `/cover/artist:*` agora usa a chave normalizada do artista, guarda a imagem em `files/covers` e mantém o índice nome→URL em `artist-urls.properties`. O perfil e a tela inicial consultam o mesmo cache; buscas simultâneas do mesmo nome compartilham a resolução e o download.
+- Quando o índice e a imagem ainda não existem, o app busca o artista mais próximo em `searchArtists`, redimensiona o pedido do avatar para cerca de 400 px e persiste o resultado. A resposta da rota informa `Cache-Control: public, max-age=31536000, immutable` ao WebView.
+- A seção de artistas da tela inicial e o topo do perfil usam a mesma rota. A busca de músicas do perfil continua paralela à resolução da foto.
+- Medição antes/depois: antes não havia tempos por etapa nem cache persistente de foto de artista, portanto não há baseline numérico confiável. Foram adicionados logs para `NewPipe.searchArtists_ms`, espera e consulta ao índice/disco, busca, download, rota `/cover/artist:*` e `Bridge.artist`; eles registram valores em ms e distinguem cache de rede. Não foi coletado tempo de execução depois da mudança porque a tarefa proíbe instalar no celular.
+- Verificado: `node --check` em `prototype/native.js`, `prototype/home-native.js`, `prototype/pages.js` e `prototype/search.js`; compilação `JAVA_HOME=~/Android/jdk17 ./gradlew -q :app:assembleDebug -PversionCode=5`; `git diff --check`.

@@ -43,13 +43,39 @@ class NewPipeSource(private val service: StreamingService = ServiceList.YouTube)
         }
 
     /** Artistas (canais "Topic"/oficiais) para a seção de artistas dos resultados. */
-    suspend fun searchArtists(query: String): List<ArtistResult> = withContext(Dispatchers.IO) {
+    suspend fun searchArtists(query: String, trace: (String) -> Unit = {}): List<ArtistResult> = withContext(Dispatchers.IO) {
+        val started = System.nanoTime()
         val handler = service.searchQHFactory.fromQuery(query, listOf(SearchFilter.ARTISTS.youtube), "")
-        SearchInfo.getInfo(service, handler).relatedItems.mapNotNull { item ->
+        val artists = SearchInfo.getInfo(service, handler).relatedItems.mapNotNull { item ->
             (item as? org.schabi.newpipe.extractor.channel.ChannelInfoItem)?.let {
-                ArtistResult(TitleNormalizer.cleanArtist(it.name), it.url, it.thumbnails.map(::toThumb))
+                ArtistResult(TitleNormalizer.cleanArtist(it.name), it.url, it.thumbnails.map { image ->
+                    val thumb = toThumb(image)
+                    thumb.copy(url = CoverStore.artistImageUrl(thumb.url))
+                })
             }
         }
+        trace("NewPipe.searchArtists_ms=${(System.nanoTime() - started) / 1_000_000} resultados=${artists.size}")
+        artists
+    }
+
+    /** Busca uma vez e escolhe o canal que mais se aproxima do nome pedido. */
+    suspend fun searchArtist(query: String, trace: (String) -> Unit = {}): ArtistResult? {
+        val artists = searchArtists(query, trace)
+        val target = CoverStore.artistKey(query)
+        if (target.isBlank()) return artists.firstOrNull()
+        val targetWords = TitleNormalizer.key("", query).split(' ').filter { it.isNotBlank() }.toSet()
+        val ranked = artists.map { artist ->
+            val key = CoverStore.artistKey(artist.name)
+            val words = TitleNormalizer.key("", artist.name).split(' ').filter { it.isNotBlank() }.toSet()
+            val overlap = targetWords.intersect(words).size
+            val score = when {
+                key == target -> 10_000 - kotlin.math.abs(key.length - target.length)
+                key.contains(target) || target.contains(key) -> 5_000 - kotlin.math.abs(key.length - target.length)
+                else -> overlap * 500 - kotlin.math.abs(key.length - target.length)
+            }
+            artist to score
+        }
+        return ranked.maxByOrNull { it.second }?.takeIf { it.second > 0 }?.first ?: artists.firstOrNull()
     }
 
     /** Álbuns do YouTube Music; o resultado da busca vem como uma playlist especial. */

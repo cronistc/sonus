@@ -306,8 +306,7 @@ window.SounosPages = (() => {
     if (name && typeof name === "object") { artistInfo = name; name = artistInfo.name; }
     name = String(name || "").trim() || "Artista";
     const key = s => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
-    const photoUrl = artistInfo.photoUrl || (artistInfo.thumb
-      ? Sounos.coverUrl({ id: "artist:" + (key(name) || "x"), thumb: artistInfo.thumb }, true) : "");
+    const photoUrl = Sounos.coverUrl({ id: "artist:" + (key(name) || "x"), name, thumb: artistInfo.thumb || "" }, true);
     remember({ type: "a", name, thumb: artistInfo.thumb || "" });
     const page = mount("artist");
     const el = page.el;
@@ -316,7 +315,7 @@ window.SounosPages = (() => {
     const hist = (() => { try { return (Sounos.call("getHistory") || []).map(e => e.track).filter(Sounos.isSong); } catch { return []; } })();
     const mine = []; hist.forEach(t => { if (key(t.artist) === key(name) && !mine.some(m => m.id === t.id)) mine.push(t); });
 
-    el.innerHTML = `<div class="hero" style="background:var(--surface)">${photoUrl ? `<div class="img" style="background-image:url('${photoUrl.replace(/'/g, "%27")}')"></div>` : ""}</div>
+    el.innerHTML = `<div class="hero" style="background:var(--surface)"><div class="img" style="background-image:url('${photoUrl.replace(/'/g, "%27")}')"></div></div>
       <div class="ph"><div class="name">${handle(name)}</div><div class="sub">Artista</div></div>
       <div class="acts">
         <button class="big" data-a="play" aria-label="Tocar" disabled>${I.play}</button>
@@ -328,17 +327,10 @@ window.SounosPages = (() => {
     const $ = s => el.querySelector(s);
     if (mine.length) $("[data-a=play]").disabled = false;
 
-    Sounos.ask("artist", { name }).then(r => {
+    Sounos.ask("artist", { name, thumb: artistInfo.thumb || "" }).then(r => {
       if (page.closing) return;
       if (r.error) { $(".songs").innerHTML = `<div class="note">Não deu para carregar agora.</div>`; return; }
       songs = r.items || [];
-      if (!photoUrl && r.thumb) {                // foto do canal oficial, em alta (guardada como as capas)
-        const id = "artist:" + key(r.name || name);
-        const u = Sounos.coverUrl({ id, thumb: r.thumb }, true);
-        const img = new Image();
-        img.onload = () => { if (!page.closing) $(".hero").innerHTML = `<div class="img" style="background-image:url('${u.replace(/'/g, "%27")}')"></div>`; };
-        img.src = u;
-      }
       $(".name").textContent = handle(String(r.name || name || "Artista").trim() || "Artista");
       $(".sub").textContent = songs.length ? `Artista · ${count(songs.length)}` : "Artista";
       $("[data-a=play]").disabled = !(songs.length || mine.length);

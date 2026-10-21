@@ -80,7 +80,11 @@ window.Sounos = (() => {
     },
     on(name, f) { (listeners[name] ||= []).push(f); },
     /** capa servida pelo app (do disco quando já guardada) */
-    coverUrl(t, pin = false) { return t ? `/cover/${encodeURIComponent(t.id)}?u=${encodeURIComponent(t.thumb || "")}${pin ? "&pin=1" : ""}` : ""; },
+    coverUrl(t, pin = false) {
+      if (!t) return "";
+      const artist = String(t.id).startsWith("artist:") ? (t.name || t.artist || "") : "";
+      return `/cover/${encodeURIComponent(t.id)}?u=${encodeURIComponent(t.thumb || "")}${artist ? `&n=${encodeURIComponent(artist)}` : ""}${pin ? "&pin=1" : ""}`;
+    },
     /** cores provisórias (até a capa chegar): derivadas do id, sempre as mesmas para a mesma música */
     hashColors(id) { const h = hash(id || "x") % 360; return [`hsl(${h} 65% 42%)`, `hsl(${(h + 40) % 360} 70% 50%)`, `hsl(${(h + 80) % 360} 80% 58%)`]; },
     /** É música (capa quadrada do álbum)? Vídeos e clipes só têm miniatura 16:9 — esses não aparecem no app. */
