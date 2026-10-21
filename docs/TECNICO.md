@@ -123,3 +123,12 @@ Objetivo: o app se consertar sozinho, em segundo plano, sem o usuário perceber.
 ## 6. Licença
 
 O NewPipe Extractor é GPLv3; por isso o Sonus também é distribuído sob GPLv3.
+
+---
+
+## Resumo da tarefa: busca e página de álbuns
+
+- O extrator agora busca álbuns pelo filtro do YouTube Music e carrega a página de um álbum com faixas e capas quadradas.
+- A ponte recebeu os comandos assíncronos `searchAlbums` e `album`.
+- A busca nativa exibe álbuns, abre sua página a partir da tela inicial ou do player, e a página de artista passou a mostrar os álbuns correspondentes.
+- Validado com `node --check prototype/search.js`, `node --check prototype/pages.js` e `JAVA_HOME=~/Android/jdk17 ./gradlew -q :app:assembleDebug -PversionCode=5`.

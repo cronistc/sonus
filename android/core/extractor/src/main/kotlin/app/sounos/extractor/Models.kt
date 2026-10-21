@@ -45,6 +45,12 @@ data class SearchPage(
 /** Artista encontrado na busca (canal do YouTube Music). */
 data class ArtistResult(val name: String, val url: String, val thumbs: List<Thumb>)
 
+/** Álbum encontrado no YouTube Music. */
+data class AlbumResult(val name: String, val artist: String, val url: String, val thumbs: List<Thumb>)
+
+/** Página completa de um álbum, com suas faixas já no formato do player. */
+data class Album(val name: String, val artist: String, val thumbs: List<Thumb>, val items: List<Track>)
+
 enum class AudioQuality { AUTO, HIGH, SAVER }
 
 /** URL de áudio pronta para tocar. Expira (o YouTube assina a URL com prazo). */

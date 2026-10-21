@@ -253,11 +253,49 @@ window.SounosPages = (() => {
     return openPlaylist(p.id, { fresh: true });
   }
 
+  // ---------- álbum ----------
+  function openAlbum(url, name, artist, thumb) {
+    const page = mount("album");
+    const el = page.el;
+    let songs = [];
+    const key = s => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
+    const albumCover = (n, t) => t ? `url('${Sounos.coverUrl({ id: "album:" + (key(n) || "x"), thumb: t }, true)}')` : `linear-gradient(135deg,${Sounos.hashColors(n).join(",")})`;
+    el.innerHTML = `<div class="hero"><div class="img" style="background-image:${albumCover(name, thumb)}"></div></div>
+      <div class="ph"><div class="name"></div><div class="sub"></div></div>
+      <div class="acts"><button class="big" data-a="play" aria-label="Tocar" disabled>${I.play}</button>
+        <button class="ab" data-a="shuffle" aria-label="Aleatório">${I.shuffle}</button></div>
+      <div class="list"><div class="sec">Músicas</div><div class="songs">${'<div class="sk"></div>'.repeat(6)}</div></div>`;
+    const $ = s => el.querySelector(s);
+    $(".name").textContent = name;
+    $(".sub").textContent = handle(artist);
+    Sounos.ask("album", { url }).then(r => {
+      if (page.closing) return;
+      if (r.error) { $(".songs").innerHTML = `<div class="note">Não deu para carregar agora.</div>`; return; }
+      name = r.name || name; artist = r.artist || artist; songs = r.items || [];
+      $(".name").textContent = name;
+      $(".sub").textContent = `${handle(artist)}${songs.length ? ` · ${count(songs.length)}` : ""}`;
+      if (r.thumb) $(".hero").innerHTML = `<div class="img" style="background-image:${albumCover(name, r.thumb)}"></div>`;
+      $("[data-a=play]").disabled = !songs.length;
+      $(".songs").innerHTML = songs.length ? songs.map((t, i) => rowHtml(t, i)).join("") : `<div class="note">Nenhuma música encontrada.</div>`;
+      markNow();
+    });
+    function markNow() { const id = nowId(); el.querySelectorAll(".tr").forEach(r => r.classList.toggle("now", r.dataset.id === id)); }
+    page.markNow = markNow;
+    el.addEventListener("click", e => {
+      const a = e.target.closest("[data-a]")?.dataset.a;
+      const ctx = { type: "album", name };
+      if (a === "play") return playFrom(songs, 0, ctx);
+      if (a === "shuffle") return playFrom(songs, 0, ctx, true);
+      const row = e.target.closest(".tr"); if (row) playFrom(songs, +row.dataset.i, ctx);
+    });
+    return page;
+  }
+
   // ---------- artista ----------
   function openArtist(name) {
     const page = mount("artist");
     const el = page.el;
-    let songs = [];
+    let songs = [], albums = [];
     // primeiro o que já se sabe (histórico), depois o resto da rede
     const hist = (() => { try { return (Sounos.call("getHistory") || []).map(e => e.track).filter(Sounos.isSong); } catch { return []; } })();
     const key = s => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -271,6 +309,7 @@ window.SounosPages = (() => {
         <button class="ab" data-a="shuffle" aria-label="Aleatório">${I.shuffle}</button>
       </div>
       <div class="list">${mine.length ? `<div class="sec">Você ouviu</div>` + mine.slice(0, 5).map((t, i) => rowHtml(t, "m" + i)).join("") : ""}
+        <div class="albums"></div>
         <div class="sec">Músicas</div><div class="songs">${'<div class="sk"></div>'.repeat(6)}</div></div>`;
     const $ = s => el.querySelector(s);
     if (mine.length) $("[data-a=play]").disabled = false;
@@ -293,6 +332,20 @@ window.SounosPages = (() => {
       $(".songs").innerHTML = songs.length ? songs.map((t, i) => rowHtml(t, i)).join("") : `<div class="note">Nenhuma música encontrada.</div>`;
       markNow();
     });
+    // A busca de álbuns é independente das músicas, para a página aparecer sem esperar ambas.
+    Sounos.ask("searchAlbums", { q: name }).then(r => {
+      if (page.closing || r.error) return;
+      const target = key(name);
+      albums = (r.items || []).filter(a => {
+        const by = key(a.artist);
+        return by && (by === target || by.includes(target) || target.includes(by));
+      });
+      if (!albums.length) return;
+      $(".albums").innerHTML = `<div class="sec">Álbuns</div><div class="s-hrow">` + albums.map((a, i) => {
+        const u = a.thumb ? Sounos.coverUrl({ id: "album:" + (key(a.name) || "x"), thumb: a.thumb }, true).replace(/'/g, "%27") : "";
+        return `<button class="s-album" data-album="${i}"><div class="pic" style="background:${u ? `url('${u}') center/cover,` : ""} linear-gradient(135deg,${Sounos.hashColors(a.name).join(",")})"></div><div class="n">${esc(a.name)}</div><div class="a">${handle(a.artist)}</div></button>`;
+      }).join("") + `</div>`;
+    });
 
     function markNow() { const id = nowId(); el.querySelectorAll(".tr").forEach(r => r.classList.toggle("now", r.dataset.id === id)); }
     page.markNow = markNow;
@@ -302,6 +355,7 @@ window.SounosPages = (() => {
       const ctx = { type: "artist", name };
       if (a === "play") return playFrom(all(), 0, ctx);
       if (a === "shuffle") return playFrom(all(), 0, ctx, true);
+      const album = e.target.closest("[data-album]"); if (album) { const x = albums[+album.dataset.album]; return openAlbum(x.url, x.name, x.artist, x.thumb); }
       const row = e.target.closest(".tr"); if (!row) return;
       const i = row.dataset.i;
       if (String(i).startsWith("m")) playFrom(mine, +i.slice(1), ctx); else playFrom(songs, +i, ctx);
@@ -310,6 +364,6 @@ window.SounosPages = (() => {
     return page;
   }
 
-  const api = { attach, openPlaylist, openArtist, newPlaylist, isOpen: () => stack.length > 0, closeTop: () => close(stack[stack.length - 1]) };
+  const api = { attach, openPlaylist, openArtist, openAlbum, newPlaylist, isOpen: () => stack.length > 0, closeTop: () => close(stack[stack.length - 1]) };
   return api;
 })();

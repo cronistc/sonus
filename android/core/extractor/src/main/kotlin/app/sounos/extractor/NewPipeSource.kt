@@ -6,6 +6,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import org.schabi.newpipe.extractor.playlist.PlaylistInfo
+import org.schabi.newpipe.extractor.playlist.PlaylistInfoItem
 import org.schabi.newpipe.extractor.Image
 import org.schabi.newpipe.extractor.InfoItem
 import org.schabi.newpipe.extractor.MediaFormat
@@ -49,6 +50,27 @@ class NewPipeSource(private val service: StreamingService = ServiceList.YouTube)
                 ArtistResult(TitleNormalizer.cleanArtist(it.name), it.url, it.thumbnails.map(::toThumb))
             }
         }
+    }
+
+    /** Álbuns do YouTube Music; o resultado da busca vem como uma playlist especial. */
+    suspend fun searchAlbums(query: String): List<AlbumResult> = withContext(Dispatchers.IO) {
+        val handler = service.searchQHFactory.fromQuery(query, listOf(SearchFilter.ALBUMS.youtube), "")
+        SearchInfo.getInfo(service, handler).relatedItems.mapNotNull { item ->
+            (item as? PlaylistInfoItem)?.let {
+                AlbumResult(it.name, it.uploaderName ?: "", it.url, albumThumbs(it.thumbnails.map(::toThumb)))
+            }
+        }
+    }
+
+    /** Dados e músicas de um álbum. As capas são mantidas quadradas para a interface. */
+    suspend fun album(url: String): Album = withContext(Dispatchers.IO) {
+        val info = PlaylistInfo.getInfo(service, url)
+        Album(
+            name = info.name,
+            artist = info.uploaderName ?: "",
+            thumbs = albumThumbs(info.thumbnails.map(::toThumb)),
+            items = info.relatedItems.mapNotNull(::toTrack),
+        )
     }
 
     /** Sugestões do próprio serviço enquanto a pessoa digita (o app mistura com histórico e gosto). */
@@ -117,6 +139,11 @@ class NewPipeSource(private val service: StreamingService = ServiceList.YouTube)
     }
 
     private fun toThumb(i: Image) = Thumb(i.url, i.width.coerceAtLeast(0), i.height.coerceAtLeast(0))
+
+    private fun albumThumbs(thumbs: List<Thumb>): List<Thumb> {
+        val squares = thumbs.filter { it.width > 0 && it.height > 0 && kotlin.math.abs(it.width - it.height) * 20 <= maxOf(it.width, it.height) }
+        return squares.ifEmpty { thumbs }
+    }
 
     companion object {
         /**

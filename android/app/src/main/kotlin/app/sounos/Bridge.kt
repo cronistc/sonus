@@ -85,6 +85,20 @@ class Bridge(private val web: WebView) {
                     }
                 })
             }
+            "searchAlbums" -> async(a) {
+                JSONObject().put("items", JSONArray().apply {
+                    app.source.searchAlbums(a.getString("q")).take(12).forEach { r ->
+                        put(JSONObject().put("name", r.name).put("artist", r.artist).put("url", r.url)
+                            .put("thumb", r.thumbs.maxByOrNull { it.width * it.height }?.url ?: JSONObject.NULL))
+                    }
+                })
+            }
+            "album" -> async(a) {
+                val album = app.source.album(a.getString("url"))
+                JSONObject().put("name", album.name).put("artist", album.artist)
+                    .put("thumb", album.thumbs.maxByOrNull { it.width * it.height }?.url ?: JSONObject.NULL)
+                    .put("items", Json.tracks(album.items))
+            }
             // página do artista: foto do canal oficial + músicas dele (busca de músicas filtrada pelo artista)
             "artist" -> async(a) {
                 val name = a.getString("name")

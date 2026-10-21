@@ -297,6 +297,7 @@
     function pick(type, id) {
       if (type === "nt") return playTrack(resultTracks[+id]);
       if (type === "na") { const a = resultArtists[+id]; remember({ type: "a", name: a.name, thumb: a.thumb }); return openArtist(a.name) || (input.value = toHandle(a.name), bar.classList.add("has-text"), showResults(a.name)); }
+      if (type === "nal") { const a = resultAlbums[+id]; return openAlbum(a.url, a.name, a.artist, a.thumb); }
       if (type === "t") { remember({ type: "t", i: +id }); location.href = `player.html?t=${id}`; }
       else if (type === "p") { remember({ type: "p", i: +id }); location.href = `player.html?p=${id}`; }
       else { remember({ type: "a", name: id }); input.value = toHandle(id); bar.classList.add("has-text"); showResults(id); }   // perfil do artista: próxima tela
@@ -332,7 +333,7 @@
       const p = e.target.closest("[data-pick]"); if (p) return pick(p.dataset.pick, p.dataset.id);
     });
     // ---------------- dentro do app: busca de verdade (NewPipe) + gosto da pessoa ----------------
-    let resultTracks = [], resultArtists = [], sugT = 0, lastServer = [], shownMine = new Set();
+    let resultTracks = [], resultArtists = [], resultAlbums = [], sugT = 0, lastServer = [], shownMine = new Set();
     const realCover = t => `<div class="ic" style="background:url('${Sounos.coverUrl(t)}') center/cover no-repeat, ${grad(Sounos.hashColors(t.id))}"></div>`;
     // foto de artista também passa pelo app (fica guardada; antes vinha da internet a cada busca)
     const artistKey = n => String(n || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -361,6 +362,13 @@
       const P = window.parent !== window && window.parent.SounosPages;
       if (!P) return false;
       close(); window.parent.__playerShell.closeThen(() => P.openArtist(name)); return true;
+    }
+    // Álbum segue o mesmo caminho da página de artista, inclusive a partir da busca do player.
+    function openAlbum(url, name, artist, thumb) {
+      if (window.SounosPages) { window.SounosPages.openAlbum(url, name, artist, thumb); return true; }
+      const P = window.parent !== window && window.parent.SounosPages;
+      if (!P) return false;
+      close(); window.parent.__playerShell.closeThen(() => P.openAlbum(url, name, artist, thumb)); return true;
     }
     function playTrack(t) {
       if (!t) return;
@@ -396,24 +404,29 @@
     function nativeResults(q) {
       setPanel(`<div class="s-empty">Buscando “${esc(q)}”…</div>`, "loading");
       const stale = () => !isOpen || norm(input.value.replace(/^@/, "")) !== norm(q) && norm(input.value) !== norm(toHandle(q));
-      const pSongs = Sounos.ask("search", { q }), pArts = Sounos.ask("searchArtists", { q });
-      let arts = null, songsR = null;
-      // as músicas aparecem assim que chegam; os artistas entram quando chegarem (antes, uma esperava a outra)
+      const pSongs = Sounos.ask("search", { q }), pArts = Sounos.ask("searchArtists", { q }), pAlbums = Sounos.ask("searchAlbums", { q });
+      let arts = null, albums = null, songsR = null;
+      // As músicas aparecem assim que chegam; artistas e álbuns entram sem bloquear uma à outra.
       pSongs.then(r => { songsR = r; if (!stale()) draw(); });
       pArts.then(r => { arts = r; if (songsR && !stale()) draw(); });
+      pAlbums.then(r => { albums = r; if (songsR && !stale()) draw(); });
       function draw() {
         const songs = songsR;
-        if (songs.error && (!arts || arts.error)) return arts ? setPanel(`<div class="s-empty">Sem conexão agora. Tente de novo.</div>`, "res") : null;
+        if (songs.error && (!arts || arts.error) && (!albums || albums.error)) return arts || albums ? setPanel(`<div class="s-empty">Sem conexão agora. Tente de novo.</div>`, "res") : null;
         const T = taste();
         const list = (songs.items || []).map((t, i) => ({ t, s: (1 - i / 25) + .5 * textScore(q, t.title + " " + t.artist) + .35 * T.artist(t.artist) + .15 * T.song(t.id) }));
         list.sort((a, b) => b.s - a.s);
         resultTracks = list.map(x => x.t);
         resultArtists = ((arts && arts.items) || []).filter(a => a.name);
-        if (!resultTracks.length && !resultArtists.length) return setPanel(`<div class="s-empty">Nada encontrado para “${esc(q)}”.</div>`, "res");
+        resultAlbums = ((albums && albums.items) || []).filter(a => a.name && a.url);
+        if (!resultTracks.length && !resultArtists.length && !resultAlbums.length) return setPanel(`<div class="s-empty">Nada encontrado para “${esc(q)}”.</div>`, "res");
         const topArtist = resultArtists[0] && textScore(q, resultArtists[0].name) >= .9 ? resultArtists[0] : null;
+        const topAlbum = resultAlbums[0];
         const best = topArtist ? { type: "na", i: 0, title: toHandle(topArtist.name), sub: "Artista", look: realArtist(topArtist).replace('class="ic round"', 'class="cv round"') }
-                               : { type: "nt", i: 0, title: esc(resultTracks[0].title), sub: "Música · " + toHandle(resultTracks[0].artist),
-                                   look: realCover(resultTracks[0]).replace('class="ic"', 'class="cv"') };
+          : resultTracks.length ? { type: "nt", i: 0, title: esc(resultTracks[0].title), sub: "Música · " + toHandle(resultTracks[0].artist),
+            look: realCover(resultTracks[0]).replace('class="ic"', 'class="cv"') }
+          : { type: "nal", i: 0, title: esc(topAlbum.name), sub: "Álbum · " + toHandle(topAlbum.artist),
+            look: `<div class="cv" style="background:${topAlbum.thumb ? `url('${Sounos.coverUrl({ id: "album:" + (artistKey(topAlbum.name) || "x"), thumb: topAlbum.thumb }).replace(/'/g, "%27")}') center/cover,` : ""} ${grad(Sounos.hashColors(topAlbum.name))}"></div>` };
         setPanel(`
           <div class="s-head"><h3>Melhor resultado</h3></div>
           <button class="s-best" data-pick="${best.type}" data-id="${best.i}">${best.look}
@@ -423,7 +436,10 @@
               <div class="tx"><div class="t">${esc(t.title)}</div><div class="a">${toHandle(t.artist)} · ${fmtDur(t.dur)}</div></div></button>`).join("") : "") +
           (resultArtists.length ? `<div class="s-head"><h3>Artistas</h3></div><div class="s-hrow">` + resultArtists.map((a, i) => `
             <button class="s-art" data-pick="na" data-id="${i}"><div class="pic" style="background:${a.thumb ? `url('${artistPic(a)}') center/cover,` : ""} ${grad(Sounos.hashColors(a.name))}"></div>
-              <div class="n">${toHandle(a.name)}</div></button>`).join("") + `</div>` : ""), "res");
+              <div class="n">${toHandle(a.name)}</div></button>`).join("") + `</div>` : "") +
+          (resultAlbums.length ? `<div class="s-head"><h3>Álbuns</h3></div><div class="s-hrow">` + resultAlbums.map((a, i) => `
+            <button class="s-album" data-pick="nal" data-id="${i}"><div class="pic" style="background:${a.thumb ? `url('${Sounos.coverUrl({ id: "album:" + (artistKey(a.name) || "x"), thumb: a.thumb }).replace(/'/g, "%27")}') center/cover,` : ""} ${grad(Sounos.hashColors(a.name))}"></div>
+              <div class="n">${esc(a.name)}</div><div class="a">${toHandle(a.artist)}</div></button>`).join("") + `</div>` : ""), "res");
       }
     }
     const fmtDur = s => s > 0 ? `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}` : "";
