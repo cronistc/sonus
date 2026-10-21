@@ -3,6 +3,7 @@
   if (!Sounos.native) return;
   const esc = s => String(s ?? "").replace(/[&<>"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
   const bg = (t, round) => `url('${Sounos.coverUrl(t, true)}') center/cover no-repeat, linear-gradient(135deg,${Sounos.hashColors(t.id).join(",")})`;
+  const artistKey = n => String(n || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
   let S = Sounos.call("getState");
   let offline = !!Sounos.call("getOffline").offline;
   let mineData = Sounos.call("getMineTracks");
@@ -45,7 +46,8 @@
     artistsSec.style.display = arts.length ? "" : "none";
     $("artists").innerHTML = arts.map(([name, x]) => {
       const k = items.push({ kind: "artist", name }) - 1;
-      return `<button class="ar tap" data-k="${k}" style="text-align:center"><div class="pic" style="background:${bg(x.t)}"></div><div class="n">${Sounos.handle(name)}</div></button>`;
+      const photo = Sounos.coverUrl({ id: "artist:" + (artistKey(name) || "x"), name }).replace(/&/g, "&amp;").replace(/'/g, "%27");
+      return `<button class="ar tap" data-k="${k}" style="text-align:center"><div class="pic" style="background:url('${photo}') center/cover no-repeat,${grad(Sounos.hashColors(name))}"></div><div class="n">${Sounos.handle(name)}</div></button>`;
     }).join("");
     renderPlaylists();
     renderMine();

@@ -96,7 +96,10 @@ class MainActivity : Activity() {
             val url = request.url
             if (url.host != HOST) return null
             val path = url.path.orEmpty().trimStart('/').ifEmpty { "home.html" }
-            if (path.startsWith("cover/")) return cover(path.removePrefix("cover/"), url.getQueryParameter("u"), url.getQueryParameter("pin") == "1")
+            if (path.startsWith("cover/")) return cover(
+                path.removePrefix("cover/"), url.getQueryParameter("u"),
+                url.getQueryParameter("pin") == "1", url.getQueryParameter("n"),
+            )
             return try {
                 WebResourceResponse(mimeOf(path), "utf-8", assets.open(path))
             } catch (e: IOException) { notFound() }
@@ -105,9 +108,10 @@ class MainActivity : Activity() {
     }
 
     /** Capa: do disco se já guardada; senão baixa na maior qualidade (e guarda). */
-    private fun cover(id: String, hint: String?, pin: Boolean): WebResourceResponse {
+    private fun cover(id: String, hint: String?, pin: Boolean, artistName: String?): WebResourceResponse {
         val app = SounosApp.instance
         if (!CoverStore.validId(id)) return notFound()
+        if (id.startsWith("artist:")) return artistCover(id, hint, artistName)
         // já guardada: serve na hora (fixada e pequena → passa pelo get, que troca pela grande e fixa)
         val file: File? = app.covers.local(id)?.takeUnless { pin && (app.covers.isSmall(it) || app.covers.pinnedFile(id).length() == 0L) } ?: run {
             val videoId = id.removePrefix("yt:").takeIf { id.startsWith("yt:") }
@@ -116,6 +120,31 @@ class MainActivity : Activity() {
             runCatching { runBlocking { app.covers.get(track, pin) } }.getOrNull() ?: app.covers.local(id)
         }
         if (file == null || file.length() == 0L) return notFound()
+        return imageResponse(file)
+    }
+
+    private fun artistCover(id: String, hint: String?, suppliedName: String?): WebResourceResponse {
+        val started = System.nanoTime()
+        val key = id.removePrefix("artist:")
+        val name = suppliedName?.takeIf { CoverStore.artistKey(it) == key } ?: key
+        val app = SounosApp.instance
+        val photo = runCatching {
+            runBlocking {
+                app.covers.getArtistPhoto(
+                    name,
+                    hint?.takeIf { it.isNotBlank() },
+                    lookup = { query -> app.source.searchArtist(query) { android.util.Log.i("Sonus", it) } },
+                    trace = { android.util.Log.i("Sonus", "foto artista $it") },
+                )
+            }
+        }.onFailure { android.util.Log.w("Sonus", "foto artista falhou nome=$key", it) }.getOrNull()
+        val file = photo?.file
+        android.util.Log.i("Sonus", "rota cover/artist etapa=total_ms=${(System.nanoTime() - started) / 1_000_000} cache=${file != null}")
+        if (file == null || file.length() == 0L) return notFound()
+        return imageResponse(file)
+    }
+
+    private fun imageResponse(file: File): WebResourceResponse {
         val head = file.inputStream().use { s -> ByteArray(12).also { s.read(it) } }
         val mime = when {
             head[0] == 0xFF.toByte() -> "image/jpeg"
@@ -123,7 +152,7 @@ class MainActivity : Activity() {
             String(head, 8, 4) == "WEBP" -> "image/webp"
             else -> "image/*"
         }
-        return WebResourceResponse(mime, null, 200, "OK", mapOf("Cache-Control" to "max-age=31536000"), file.inputStream())
+        return WebResourceResponse(mime, null, 200, "OK", mapOf("Cache-Control" to "public, max-age=31536000, immutable"), file.inputStream())
     }
 
     private fun notFound() = WebResourceResponse("text/plain", "utf-8", 404, "Not Found", emptyMap(), "".byteInputStream())

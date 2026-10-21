@@ -6,6 +6,10 @@ import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
+import java.io.FileOutputStream
+import java.text.Normalizer
+import java.util.Locale
+import java.util.Properties
 
 /**
  * Capas que não somem.
@@ -23,6 +27,14 @@ class CoverStore(
 ) {
     init { pinnedDir.mkdirs(); browseDir.mkdirs() }
 
+    data class ArtistPhoto(val name: String, val url: String?, val file: File?, val channelUrl: String? = null)
+
+    private val artistIndexFile = File(pinnedDir, "artist-urls.properties")
+    private val artistIndexLock = Any()
+    private val artistUrls = Properties()
+    private var artistIndexLoaded = false
+    private val artistLookupMisses = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
     private fun name(trackId: String) = trackId.replace(':', '_') + ".img"
     fun pinnedFile(trackId: String) = File(pinnedDir, name(trackId))
     fun browseFile(trackId: String) = File(browseDir, name(trackId))
@@ -30,6 +42,126 @@ class CoverStore(
     /** Capa local (fixada primeiro). Não acessa a rede. */
     fun local(trackId: String): File? =
         pinnedFile(trackId).takeIf { it.length() > 0 } ?: browseFile(trackId).takeIf { it.length() > 0 }
+
+    /** Resolve e persiste a URL pelo nome; o perfil e a rota de imagem compartilham esta busca. */
+    suspend fun resolveArtistPhoto(
+        name: String,
+        hintUrl: String? = null,
+        lookup: suspend (String) -> ArtistResult? = { null },
+        trace: (String) -> Unit = {},
+    ): ArtistPhoto? = withContext(Dispatchers.IO) {
+        val key = artistKey(name)
+        if (key.isBlank()) return@withContext null
+        val id = "artist:$key"
+        val started = System.nanoTime()
+        val waitStarted = System.nanoTime()
+        lockFor(id).withLock {
+            trace("chave=$key etapa=lock_ms=${elapsedMs(waitStarted)}")
+            val indexStarted = System.nanoTime()
+            val indexed = readArtistUrl(key)
+            val cached = pinnedFile(id).takeIf { it.length() > 0 }
+            trace("chave=$key etapa=disco_indice_ms=${elapsedMs(indexStarted)} imagem=${cached != null} url=${indexed != null}")
+
+            var matchedName = name
+            var channelUrl: String? = null
+            var found: ArtistResult? = null
+            var searched = false
+            val hint = hintUrl?.takeIf { allowedUrl(it) }?.let(::artistImageUrl)
+            val url = indexed?.takeIf { allowedUrl(it) } ?: hint ?: run {
+                val missUntil = artistLookupMisses[key] ?: 0L
+                if (missUntil > System.currentTimeMillis()) {
+                    trace("chave=$key etapa=searchArtists_ms=0 resultado=negativo_em_cache")
+                    null
+                } else {
+                    searched = true
+                    val searchStarted = System.nanoTime()
+                    found = runCatching { lookup(name) }.getOrNull()
+                    trace("chave=$key etapa=searchArtists_ms=${elapsedMs(searchStarted)} encontrado=${found != null}")
+                    matchedName = found?.name?.ifBlank { name } ?: name
+                    channelUrl = found?.url
+                    found?.thumbs?.maxByOrNull { it.width * it.height }?.url?.let(::artistImageUrl)
+                        ?.takeIf { allowedUrl(it) }
+                }
+            }
+
+            if (url != null) {
+                artistLookupMisses.remove(key)
+                val persistStarted = System.nanoTime()
+                saveArtistUrl(key, url)
+                val matchedKey = artistKey(matchedName)
+                if (matchedKey.isNotBlank() && matchedKey != key) saveArtistUrl(matchedKey, url)
+                trace("chave=$key etapa=indice_gravar_ms=${elapsedMs(persistStarted)}")
+            } else if (searched) {
+                artistLookupMisses[key] = System.currentTimeMillis() + 5 * 60 * 1000L
+            }
+            trace("chave=$key etapa=resolver_ms=${elapsedMs(started)} origem=${when { indexed != null -> "indice"; hintUrl != null -> "pista"; url != null -> "busca"; else -> "vazio" }}")
+            ArtistPhoto(matchedName, url, cached, channelUrl)
+        }
+    }
+
+    /** Baixa a foto resolvida para a área permanente, em tamanho de avatar (~400 px). */
+    suspend fun getArtistPhoto(
+        name: String,
+        hintUrl: String? = null,
+        lookup: suspend (String) -> ArtistResult? = { null },
+        trace: (String) -> Unit = {},
+    ): ArtistPhoto? = withContext(Dispatchers.IO) {
+        val key = artistKey(name)
+        if (key.isBlank()) return@withContext null
+        val totalStarted = System.nanoTime()
+        val photo = resolveArtistPhoto(name, hintUrl, lookup, trace) ?: return@withContext null
+        if (photo.file != null || photo.url == null) {
+            trace("chave=$key etapa=total_ms=${elapsedMs(totalStarted)} origem=${if (photo.file != null) "disco" else "sem_url"}")
+            return@withContext photo
+        }
+
+        val id = "artist:$key"
+        val lockStarted = System.nanoTime()
+        var sharedCache = false
+        lockFor(id).withLock {
+            trace("chave=$key etapa=download_lock_ms=${elapsedMs(lockStarted)}")
+            val target = pinnedFile(id)
+            if (target.length() > 0) {
+                sharedCache = true
+                return@withLock photo.copy(file = target)
+            }
+            val downloadStarted = System.nanoTime()
+            val ok = download(photo.url, target)
+            trace("chave=$key etapa=download_ms=${elapsedMs(downloadStarted)} bytes=${if (ok) target.length() else 0} ok=$ok")
+            photo.copy(file = target.takeIf { ok })
+        }.also {
+            val origin = when { it.file == null -> "falha"; sharedCache -> "disco_compartilhado"; else -> "rede" }
+            trace("chave=$key etapa=total_ms=${elapsedMs(totalStarted)} origem=$origin")
+        }
+    }
+
+    private fun readArtistUrl(key: String): String? = synchronized(artistIndexLock) {
+        loadArtistIndexLocked()
+        artistUrls.getProperty(key)
+    }
+
+    private fun saveArtistUrl(key: String, url: String) = synchronized(artistIndexLock) {
+        loadArtistIndexLocked()
+        if (artistUrls.getProperty(key) == url) return@synchronized
+        artistUrls.setProperty(key, url)
+        val tmp = File(pinnedDir, artistIndexFile.name + ".tmp")
+        runCatching {
+            FileOutputStream(tmp).use { artistUrls.store(it, null) }
+            if (!tmp.renameTo(artistIndexFile)) {
+                artistIndexFile.delete()
+                tmp.renameTo(artistIndexFile)
+            }
+        }.onFailure { tmp.delete() }
+        Unit
+    }
+
+    private fun loadArtistIndexLocked() {
+        if (artistIndexLoaded) return
+        if (artistIndexFile.isFile) runCatching { artistIndexFile.inputStream().use(artistUrls::load) }
+        artistIndexLoaded = true
+    }
+
+    private fun elapsedMs(started: Long) = (System.nanoTime() - started) / 1_000_000
 
     /**
      * Devolve a capa, baixando se preciso.
@@ -119,6 +251,22 @@ class CoverStore(
             val url = runCatching { java.net.URI(u) }.getOrNull() ?: return false
             val h = url.host?.lowercase() ?: return false
             return url.scheme == "https" && (h == "i.ytimg.com" || h.endsWith(".ytimg.com") || h.endsWith(".googleusercontent.com") || h.endsWith(".ggpht.com"))
+        }
+
+        /** Chave estável para foto e índice, igual à normalização usada pela interface. */
+        fun artistKey(name: String): String = Normalizer.normalize(name, Normalizer.Form.NFD)
+            .replace(Regex("\\p{M}"), "").lowercase(Locale.ROOT).replace(Regex("[^a-z0-9]"), "")
+
+        /** Pede avatares de canais no tamanho que a tela inicial e o perfil realmente exibem. */
+        fun artistImageUrl(raw: String): String {
+            if (!allowedUrl(raw)) return raw
+            val host = runCatching { java.net.URI(raw).host?.lowercase(Locale.ROOT) }.getOrNull().orEmpty()
+            if (!(host.endsWith(".googleusercontent.com") || host.endsWith(".ggpht.com"))) return raw
+            val queryAt = raw.indexOf('?').takeIf { it >= 0 } ?: raw.length
+            val path = raw.substring(0, queryAt)
+            val query = raw.substring(queryAt)
+            val sized = Regex("=(?:s\\d+|w\\d+-h\\d+)[^/?&#]*$").replace(path, "=s400-c")
+            return (if (sized == path) "$path=s400-c" else sized) + query
         }
 
         /** Largura × altura lidas do cabeçalho (JPEG/PNG), sem decodificar a imagem. */
