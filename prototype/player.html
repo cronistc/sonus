@@ -474,8 +474,7 @@ const PLAYLIST = { name: "Minha playlist", tracks: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9
 
 // Nome do artista → @ estilo Instagram: minúsculo, sem acento, espaço vira "_"
 function toHandle(name) {
-  return "@" + name.normalize("NFD").replace(/[̀-ͯ]/g, "")
-    .toLowerCase().trim().replace(/\s+/g, "_").replace(/[^a-z0-9._]/g, "");
+  return String(name ?? "").trim();  // nome do artista como vem (sem @)
 }
 
 // ---- Estado ----

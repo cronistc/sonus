@@ -45,8 +45,7 @@ window.SounosData = (() => {
   }
 
   // Nome do artista → @ estilo Instagram: minúsculo, sem acento, espaço vira "_"
-  const toHandle = name => "@" + name.normalize("NFD").replace(/[̀-ͯ]/g, "")
-    .toLowerCase().trim().replace(/\s+/g, "_").replace(/[^a-z0-9._]/g, "");
+  const toHandle = name => String(name ?? "").trim();  // nome do artista como vem (sem @)
   const grad = c => `linear-gradient(135deg,${c[0]},${c[1]} 60%,${c[2]})`;
   const esc = s => String(s).replace(/[&<>"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
 

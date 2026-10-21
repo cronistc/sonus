@@ -62,8 +62,7 @@
 
   // ---------- Texto: normalização e comparação tolerante a erros ----------
   // mesma regra das outras telas: minúsculo, sem acento, espaço vira "_", o resto sai
-  const toHandle = name => "@" + name.normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase().trim().replace(/\s+/g, "_").replace(/[^a-z0-9._]/g, "");
+  const toHandle = name => String(name ?? "").trim();  // nome do artista como vem (sem @)
   function lev(a, b, max) {                                 // distância de edição (com transposição)
     if (Math.abs(a.length - b.length) > max) return max + 1;
     const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);

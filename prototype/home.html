@@ -274,8 +274,7 @@ const LRC = {
   1: [[0,"♪"],[6,"A maré subiu e eu nem vi"],[13,"Fiquei olhando o céu de abril"],[21,"Tudo que eu quero é ficar aqui"],[29,"Na beira do mar, longe do frio"]],
 };
 const grad = c => `linear-gradient(135deg,${c[0]},${c[1]} 60%,${c[2]})`;
-const toHandle = name => "@" + name.normalize("NFD").replace(/[̀-ͯ]/g, "")
-  .toLowerCase().trim().replace(/\s+/g, "_").replace(/[^a-z0-9._]/g, "");
+const toHandle = name => String(name ?? "").trim();  // nome do artista como vem (sem @)
 const artistColors = a => tracks.find(x => x.artist === a).c;
 const $ = id => document.getElementById(id);
 
