@@ -1,0 +1,17 @@
+/* O trilho só se move quando o texto está visível na tela. */
+.marquee-ativo { text-overflow: clip !important; }
+.marquee-trilho {
+  display: block;
+  width: max-content;
+  min-width: 100%;
+  white-space: inherit;
+  animation-duration: var(--marquee-duracao);
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+.marquee-ativo.marquee-visivel .marquee-trilho { animation-play-state: running; }
+.marquee-trilho { animation-play-state: paused; }
+html.page-hidden .marquee-trilho,
+.phone.player-hidden .marquee-trilho,
+.phone.player-open .marquee-trilho,
+.phone.overlay-open .marquee-trilho { animation-play-state: paused !important; }

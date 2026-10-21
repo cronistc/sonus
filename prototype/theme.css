@@ -1,6 +1,7 @@
 /* Temas do Sonus: Gradiente (padrão), Escuro e Claro.
    Azul é a cor da marca: aparece nos destaques e é o fundo do Gradiente quando nada está tocando. */
 :root {
+  --fs: .94;             /* fator único para ajustar os tamanhos do texto */
   --brand: #2f6bff;
   --brand-deep: #1d4ed8;
   --c1: #2f6bff;
@@ -72,6 +73,8 @@ html.theming, html.theming *, html.theming *::before, html.theming *::after {
   transition: background-color .5s ease, background .5s ease, color .5s ease, border-color .5s ease,
               outline-color .5s ease, fill .5s ease, stroke .5s ease !important;
 }
+
+html { font-size: calc(16px * var(--fs)); }
 
 /* No topo do app aparece só a letra (o ícone azul é o da tela inicial do celular) */
 .brand-letter { width: 28px; height: 28px; color: var(--text); display: block; }
