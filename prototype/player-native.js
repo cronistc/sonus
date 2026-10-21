@@ -81,7 +81,7 @@
       render(true);
     }
     lastTick = now;
-    requestAnimationFrame(tick);
+    return playing && track() && !hidden ? VIS_MS : IDLE_MS;   // parado/escondido: só vigia, sem desenhar
   };
 
   // ---------- comandos → app ----------

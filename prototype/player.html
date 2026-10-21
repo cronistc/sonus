@@ -593,7 +593,7 @@ let RING_MS = 125;      // anel anda ~0,9 px por passo: igual a olho nu
 function render(fromTick) {
   const t = track(), f = Math.min(pos / t.dur, 1), now = performance.now();
   // um só compasso visual (~15×/s): barrinhas, anel e tempo mudam juntos → a tela redesenha poucas vezes
-  if (fromTick && now - lastEqDraw < 66) { syncLyrics(); return; }
+  if (fromTick && now - lastEqDraw < 50) { syncLyrics(); return; }
   lastEqDraw = now;
   drawEq(now);
   if (!fromTick || now - lastRingDraw >= RING_MS) { lastRingDraw = now; drawRingFill(f * 1000); }
@@ -916,8 +916,12 @@ function tick(now) {
     render(true);
   }
   lastTick = now;
-  requestAnimationFrame(tick);
+  return playing ? VIS_MS : IDLE_MS;
 }
+// Relógio por timer (não rAF): rAF contínuo faz o WebView redesenhar a cada vsync (~120 quadros/s) sem necessidade.
+// O visual só muda ~15×/s; a posição vem de performance.now(), então o atraso do timer não acumula erro.
+const VIS_MS = 66, IDLE_MS = 100;
+function clockLoop() { const d = tick(performance.now()); setTimeout(clockLoop, d || VIS_MS); }
 
 // ---- Eventos ----
 $("next").onclick = () => next(false);
@@ -1229,7 +1233,7 @@ if (!window.Sounos?.native) {
   loadCurrent();
   if (qp.has("t") || qp.has("p")) setPlaying(true);
 }
-requestAnimationFrame(t => { lastTick = t; tick(t); });
+lastTick = performance.now(); clockLoop();
 </script>
 <script src="search.js"></script>
 <script>

@@ -165,6 +165,8 @@
   .mini.scrub .time { display: block; }
   .mini.scrub .t, .mini.scrub .a { display: none; }
   .mini.scrub .bar { height: 6px; }
+  /* tela inicial travada: não rola na vertical (as seções já esticam para caber; os carrosséis seguem rolando para o lado) */
+  .scroll { overflow-y: hidden !important; overscroll-behavior: none; }
 </style>
 <link rel="stylesheet" href="search.css">
 <link rel="stylesheet" href="add.css">
@@ -565,6 +567,7 @@ let atEnd = () => { if (repeat === "one") pos = 0; else step(1); };   // no app:
 // o texto do tempo só muda quando muda o segundo; com o player aberto por cima, nada é desenhado aqui.
 let lastDraw = -1e9, lastBarF = -1, lastTimeTxt = "";
 const miniBar = $("miniBar"), miniTime = $("miniTime");
+// Relógio por timer (~15×/s) em vez de rAF contínuo (que fazia o WebView redesenhar a cada vsync); rAF só enquanto arrasta (scrubbing).
 (function tick(now) {
   const d = curDur();
   if (playing && last) {
@@ -580,7 +583,7 @@ const miniBar = $("miniBar"), miniTime = $("miniTime");
     const tt = `${fmt(pos)} / ${fmt(d)}`; if (tt !== lastTimeTxt) { lastTimeTxt = tt; miniTime.textContent = tt; }
   }
   if (!window.__playerOpen) syncMiniLyrics();          // letra: todo quadro (barato; só mexe na tela quando muda a linha)
-  requestAnimationFrame(tick);
+  if (scrubbing) requestAnimationFrame(tick); else setTimeout(() => tick(performance.now()), 66);
 })(0);
 loadMini();
 </script>

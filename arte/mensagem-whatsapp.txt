@@ -1,0 +1,26 @@
+🎵 *Sonus — teste fechado (versão 0.1.2)*
+
+Oi, pessoal! Criei o *Sonus*, um app de música para Android, e quero que vocês testem antes de todo mundo.
+
+*O que ele faz*
+• Toca qualquer música, com capas grandes e bonitas
+• Letra sincronizada, acendendo junto com a música
+• Baixa músicas para ouvir sem internet (ficam só dentro do app)
+• Playlists, página de artista e rádio só com músicas parecidas
+• Sem anúncios
+• Se atualiza sozinho: vocês recebem as melhorias sem fazer nada
+
+*Como instalar*
+1. Baixe o arquivo *Sonus-0.1.2.apk* aqui do grupo (ou pelo link: https://raw.githubusercontent.com/cronistc/sonus/updates/Sonus.apk)
+2. Abra o arquivo. O Android vai pedir para *permitir instalar apps desta fonte* → permita e toque em *Instalar*
+3. Na primeira vez que abrir, ele pede para *permitir atualizar sozinho* → permita (é só uma vez)
+
+⚠️ Só funciona em *Android*. O celular pode avisar que o app é "desconhecido" — é normal, porque ele não está na Play Store.
+
+*Como ajudar*
+Usem no dia a dia e mandem aqui:
+• Algo que travou, ficou lento ou deu erro (se der, mandem print)
+• Música que não tocou ou letra errada
+• O que vocês acharam e o que sentem falta
+
+Valeu demais! 🙌
