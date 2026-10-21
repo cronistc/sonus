@@ -6,38 +6,57 @@
   const artistKey = n => String(n || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
   let S = Sounos.call("getState");
   let offline = !!Sounos.call("getOffline").offline;
-  let mineData = Sounos.call("getMineTracks");
   let lyr = null;                          // letra da música atual (sincronizada)
   let items = [];                          // o que está na tela (para os toques)
 
   // ---------- seções ----------
   const artistsSec = $("artists").closest("section");
+  const recentTitle = $("recentTitle");
   artistsSec.querySelector("h2").textContent = "Seus artistas";
   document.querySelectorAll(".sec-head button").forEach(b => b.style.display = "none");   // "Ver tudo": tela ainda não existe
+  function syncOfflineMark() {
+    $("brandLetter").hidden = offline;
+    $("offlineMark").hidden = !offline;
+  }
+  syncOfflineMark();
 
   function renderHome() {
     const hist = Sounos.call("getHistory");
     const list = (Array.isArray(hist) ? hist : []).filter(e => Sounos.isSong(e.track));      // vídeos ouvidos antes não aparecem
+    const mineData = Sounos.call("getMineTracks");
+    const downloaded = Array.isArray(mineData.downloaded) ? mineData.downloaded : [];
+    const cached = offline && Array.isArray(mineData.cached) ? mineData.cached : [];
+    const mine = [...new Map([...downloaded, ...cached].map(t => [t.id, t])).values()];
     items = [];
-    // recentes: música solta, ou a playlist de onde a música tocou
-    const seenPl = new Set(), recent = [];
-    for (const e of list) {
-      const src = e.source || {};
-      if (src.type === "playlist" && src.id) {
-        if (seenPl.has(src.id)) continue; seenPl.add(src.id);
-        const p = SounosData.getPlaylists().find(x => x.id === src.id);
-        if (p) { recent.push({ kind: "playlist", p }); continue; }
+    recentTitle.textContent = offline ? "Minhas músicas" : "Ouvidos recentemente";
+    if (offline) {
+      // No modo offline, cada cartão inicia a fila inteira de músicas disponíveis.
+      $("recent").innerHTML = mine.length ? mine.map((t, index) => {
+        const k = items.push({ kind: "mineTrack", tracks: mine, index }) - 1;
+        return `<button class="blk big tap" data-k="${k}" style="background:${bg(t)}">${meta(esc(t.title), Sounos.handle(t.artist))}</button>`;
+      }).join("") : `<div class="blk big" style="background:linear-gradient(135deg,var(--c1),var(--c2))">
+        <div class="ini" style="font-size:44px">♪</div>${meta("Minhas músicas", "Nenhuma música disponível offline")}</div>`;
+    } else {
+      // Recentes: música solta, ou a playlist de onde a música tocou.
+      const seenPl = new Set(), recent = [];
+      for (const e of list) {
+        const src = e.source || {};
+        if (src.type === "playlist" && src.id) {
+          if (seenPl.has(src.id)) continue; seenPl.add(src.id);
+          const p = SounosData.getPlaylists().find(x => x.id === src.id);
+          if (p) { recent.push({ kind: "playlist", p }); continue; }
+        }
+        recent.push({ kind: "track", t: e.track });
+        if (recent.length >= 12) break;
       }
-      recent.push({ kind: "track", t: e.track });
-      if (recent.length >= 12) break;
+      $("recent").innerHTML = recent.length ? recent.map(r => {
+        const k = items.push(r) - 1;
+        if (r.kind === "playlist") return `<button class="blk big tap" data-k="${k}">${mosaicOf(r.p)}
+          <span class="kind">${ICON.playlist}Playlist</span>${meta(esc(r.p.name), count(r.p))}</button>`;
+        return `<button class="blk big tap" data-k="${k}" style="background:${bg(r.t)}">${meta(esc(r.t.title), Sounos.handle(r.t.artist))}</button>`;
+      }).join("") : `<button class="blk big tap" data-k="search" style="background:linear-gradient(135deg,var(--c1),var(--c2))">
+          <div class="ini" style="font-size:44px">♪</div>${meta("Busque uma música", "para começar")}</button>`;
     }
-    $("recent").innerHTML = recent.length ? recent.map(r => {
-      const k = items.push(r) - 1;
-      if (r.kind === "playlist") return `<button class="blk big tap" data-k="${k}">${mosaicOf(r.p)}
-        <span class="kind">${ICON.playlist}Playlist</span>${meta(esc(r.p.name), count(r.p))}</button>`;
-      return `<button class="blk big tap" data-k="${k}" style="background:${bg(r.t)}">${meta(esc(r.t.title), Sounos.handle(r.t.artist))}</button>`;
-    }).join("") : `<button class="blk big tap" data-k="search" style="background:linear-gradient(135deg,var(--c1),var(--c2))">
-        <div class="ini" style="font-size:44px">♪</div>${meta("Busque uma música", "para começar")}</button>`;
 
     // seus artistas: os que você mais ouve (no app ainda não existe o botão "seguir")
     const by = new Map();
@@ -50,7 +69,6 @@
       return `<button class="ar tap" data-k="${k}" style="text-align:center"><div class="pic" style="background:url('${photo}') center/cover no-repeat,${grad(Sounos.hashColors(name))}"></div><div class="n">${Sounos.handle(name)}</div></button>`;
     }).join("");
     renderPlaylists();
-    renderMine();
     if (stateSeen) fitHome();   // seção de artistas pode ter aparecido/sumido
   }
   const count = p => p.tracks.length === 1 ? "1 música" : `${p.tracks.length} músicas`;
@@ -68,31 +86,15 @@
         <svg class="lu" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Nova playlist</span></button>`;
   };
 
-  function renderMine() {
-    mineData = Sounos.call("getMineTracks");
-    const downloaded = Array.isArray(mineData.downloaded) ? mineData.downloaded : [];
-    const cached = offline && Array.isArray(mineData.cached) ? mineData.cached : [];
-    const mine = [...new Map([...downloaded, ...cached].map(t => [t.id, t])).values()];
-    const k = items.push({ kind: "mine", tracks: mine }) - 1;
-    const label = offline ? "Disponíveis sem internet" : "Baixadas para ouvir offline";
-    const title = mine.length ? `${mine.length} música${mine.length === 1 ? "" : "s"}` : (offline ? "Nenhuma disponível" : "Baixe músicas para ouvir offline");
-    const cover = mine.length
-      ? `<div class="mosaic">${[0, 1, 2, 3].map(i => mine[Math.min(i, mine.length - 1)]).map(t => `<i style="background:${bg(t)}"></i>`).join("")}</div>`
-      : `<div class="ini">♪</div>`;
-    $("mine").innerHTML = `<button class="blk mine tap" data-k="${k}" style="background:linear-gradient(135deg,var(--c1),var(--c2))">${cover}
-      <span class="kind">${ICON.playlist}${offline ? "Offline" : "Baixadas"}</span>${meta("Minhas músicas", title || label)}</button>`;
-    if (!mine.length) $("mine").querySelector(".a").textContent = offline ? "Nenhuma música disponível offline" : label;
-  }
-
   // toques nas seções
   document.addEventListener("click", e => {
     const el = e.target.closest("[data-k]"); if (!el || e.target.closest("#mini")) return;
     if (el.dataset.k === "search") return $("searchBtn").click();
     const it = items[+el.dataset.k]; if (!it) return;
     if (it.kind === "track") { Sounos.call("playSingle", { track: it.t, context: { type: "radio" } }); openPlayer(); }
+    else if (it.kind === "mineTrack") { Sounos.call("playQueue", { tracks: it.tracks, index: it.index, context: { type: "mine" } }); openPlayer(); }
     else if (it.kind === "playlist") pages.openPlaylist(it.p.id);
     else if (it.kind === "artist") pages.openArtist(it.name);
-    else if (it.kind === "mine") pages.openMine(it.tracks);
   }, true);
   // "Nova playlist": abre o fluxo sem guardar nada até a confirmação.
   document.addEventListener("click", e => {
@@ -106,9 +108,16 @@
     if (!pages.isOpen()) return false;
     pages.closeTop(); return true;
   };
-  Sounos.on("offline", ev => { offline = !!ev.offline; renderMine(); fitHome(); });
-  Sounos.on("library", () => { renderMine(); fitHome(); });
-  Sounos.on("download", ev => { if (ev.done || ev.error) { renderMine(); fitHome(); } });
+  Sounos.on("offline", ev => {
+    const next = !!ev.offline;
+    if (next === offline) return;
+    offline = next;
+    syncOfflineMark();
+    renderHome();
+    fitHome();
+  });
+  Sounos.on("library", () => { renderHome(); fitHome(); });
+  Sounos.on("download", ev => { if (ev.done || ev.error) { renderHome(); fitHome(); } });
 
   // ---------- mini-player ----------
   const cur = () => S && S.current && S.current !== null ? S.current : null;
