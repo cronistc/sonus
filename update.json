@@ -1,0 +1,22 @@
+{
+  "versionCode": 4,
+  "versionName": "0.1.2",
+  "apk": "https://raw.githubusercontent.com/cronistc/sonus/updates/Sonus-0.1.2.apk",
+  "size": 2950663,
+  "sha256": "23a80c36630b37f57621aa9499a1b9980fd2dc0efee431f0dc3802489f4d8b1c",
+  "date": "2026-10-20",
+  "notes": [
+    "Novo ícone: clave de sol",
+    "Atualizações automáticas: o Sonus se atualiza sozinho, sem tela de instalação",
+    "Seus dados protegidos: playlists, histórico e downloads com cópia de segurança",
+    "Fila e indicadas só com músicas (sem vídeos), com capas quadradas",
+    "Busca sem piscar e capas aparecendo mais rápido",
+    "Letra: o brilho acompanha a música na linha, fonte mais leve, e o modo letra continua ligado na troca de música",
+    "Mais músicas com letra sincronizada (nova fonte de letras)",
+    "Pular silêncio: a próxima música entra na hora",
+    "Barra em volta da capa na cor mais marcante da capa",
+    "Tela inicial ocupa a tela toda e o mini-player chega com animação",
+    "App mais leve: menos uso de bateria e processador",
+    "Correções: música que cortava sozinha, cache que apagava a música tocando, remover música da playlist"
+  ]
+}
