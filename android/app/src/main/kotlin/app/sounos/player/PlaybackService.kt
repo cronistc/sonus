@@ -16,6 +16,7 @@ import android.media.AudioManager
 import android.media.MediaMetadata
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
+import android.os.Build
 import android.os.IBinder
 import app.sounos.MainActivity
 import app.sounos.R
@@ -29,7 +30,6 @@ class PlaybackService : Service() {
 
     private lateinit var session: MediaSession
     private val player get() = SounosApp.instance.player
-    private var foreground = false
 
     private val noisy = object : BroadcastReceiver() {
         override fun onReceive(c: Context, i: Intent) { if (i.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY) player.pause() }
@@ -111,9 +111,9 @@ class PlaybackService : Service() {
             .setStyle(Notification.MediaStyle().setMediaSession(session.sessionToken).setShowActionsInCompactView(0, 1, 2))
             .build()
 
-        // sempre entra em primeiro plano (exigência do Android ao iniciar o serviço); pausado, solta a notificação
-        startForeground(ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK); foreground = true
-        if (!playing) { stopForeground(STOP_FOREGROUND_DETACH); foreground = false }
+        // Mantém o serviço em primeiro plano durante a pausa e a troca de faixa.
+        if (Build.VERSION.SDK_INT >= 29) startForeground(ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
+        else startForeground(ID, n)
     }
 
     override fun onDestroy() {

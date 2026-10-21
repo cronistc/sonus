@@ -5,6 +5,8 @@ import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
 import android.os.Handler
 import android.os.Looper
 import app.sounos.SounosApp
@@ -59,22 +61,40 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
     private var lyricsFor: String? = null
     private var token = 0
     private var fillJob: Job? = null
+    @Volatile private var currentUsesCache = false
     private var resumeAtMs = 0L                     // sessão restaurada: continua de onde parou
     private val listeners = mutableListOf<(String, JSONObject) -> Unit>()
+    private val connectivity = app.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+    @Volatile private var online = hasValidatedNetwork()
+    val isOnline: Boolean get() = online
 
-    private val prefetcher = QueuePrefetcher(app.resolver, app.audio, app.covers) { r ->
+    private val networkCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: Network) = refreshNetworkState()
+        override fun onLost(network: Network) = refreshNetworkState()
+        override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) = refreshNetworkState()
+    }
+
+    private val prefetcher = QueuePrefetcher(app.resolver, app.audio, app.covers, onNextReady = { r ->
         // a próxima ficou inteira em disco: mede o volume dela agora, para tocar já equilibrada
+        app.library.markCached(r.track)
         if (app.library.gain(r.track.id) == null) app.io.launch {
             Loudness.analyzeFile(app.audio.file(r.track.id))?.let { app.library.setGain(r.track.id, it) }
         }
+    }, onCacheChanged = { emit("library", JSONObject()) })
+
+    init {
+        runCatching { connectivity.registerDefaultNetworkCallback(networkCallback) }
+        restoreSession(); applySettings(app.library.settings())
     }
 
-    init { restoreSession(); applySettings(app.library.settings()) }
-
     // ---------------- eventos para a interface ----------------
-    fun addListener(l: (String, JSONObject) -> Unit) { listeners += l }
+    fun addListener(l: (String, JSONObject) -> Unit) { listeners += l; l("offline", JSONObject().put("offline", !online)) }
     fun removeListener(l: (String, JSONObject) -> Unit) { listeners -= l }
-    private fun emit(name: String, payload: JSONObject) = listeners.toList().forEach { it(name, payload) }
+    private fun emit(name: String, payload: JSONObject) {
+        if (Looper.myLooper() != Looper.getMainLooper()) { main.post { emit(name, payload) }; return }
+        listeners.toList().forEach { it(name, payload) }
+    }
+    fun notifyLibraryChanged() = emit("library", JSONObject())
     private fun emitState() { emit("state", state()); PlaybackService.update(app) }
 
     val currentTrack: Track? get() = queue.getOrNull(index)
@@ -88,7 +108,7 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
         .put("repeat", repeat.name.lowercase()).put("shuffle", shuffle)
         .put("context", context).put("suggestions", Json.tracks(suggestions))
         .put("colors", JSONArray(colors)).put("durationMs", durationMs).put("positionMs", positionMs())
-        .put("downloaded", currentTrack?.let { app.library.isDownloaded(it.id) } ?: false)
+        .put("downloaded", currentTrack?.let { app.library.isDownloaded(it.id) } ?: false).put("offline", !online)
 
     // pending = ainda procurando (a tela não deve concluir "sem letra" e sair do modo letra)
     @Volatile private var lyricsPending = false
@@ -107,6 +127,7 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
     fun playIndex(i: Int) { if (i in queue.indices) { index = i; resumeAtMs = 0; startCurrent() } }
 
     fun playSuggestion(t: Track) {
+        if (!online && !isAvailableOffline(t)) return
         val existing = queue.indexOfFirst { it.id == t.id }
         if (existing >= 0) { queue.removeAt(existing); if (existing < index) index-- }
         queue.add(index + 1, t); index++
@@ -118,8 +139,12 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
 
     fun play() {
         if (index < 0 || loading) return
+        val t = currentTrack ?: return
+        if (!online && !isAvailableOffline(t)) { skipUnavailableOffline(); return }
+        if (currentUsesCache && !app.audio.isFreshComplete(t.id)) { startCurrent(resumeAtMs); return }
         if (current == null) { startCurrent(resumeAtMs); return }
         if (!requestFocus()) return
+        currentTrack?.takeUnless { app.library.isDownloaded(it.id) }?.let { app.audio.markHeard(it.id) }
         engine.play(); emitState(); ticker()
     }
 
@@ -197,16 +222,27 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
                 app.covers.get(r.track, pin = true)                       // capa guardada
                 runCatching { app.lyrics.get(r.track) }                   // letra guardada
                 app.library.markDownloaded(r.track.copy(id = t.id))
-                main.post { emit("download", JSONObject().put("id", t.id).put("p", 1).put("done", true)); if (currentTrack?.id == t.id) emitState() }
-            }.onFailure { main.post { emit("download", JSONObject().put("id", t.id).put("error", true)) } }
+                main.post {
+                    emit("download", JSONObject().put("id", t.id).put("p", 1).put("done", true))
+                    emit("library", JSONObject())
+                    if (currentTrack?.id == t.id) emitState()
+                }
+            }.onFailure {
+                main.post {
+                    emit("download", JSONObject().put("id", t.id).put("error", true))
+                    emit("library", JSONObject())
+                }
+            }
         }
     }
 
     // ---------------- tocar a música atual ----------------
     private fun startCurrent(startMs: Long = 0) {
         val t = currentTrack ?: return
+        if (!online && !isAvailableOffline(t)) { skipUnavailableOffline(); return }
+        app.audio.protectedIds = (upcoming().map { it.id } + t.id).toSet()
         val my = ++token
-        loading = true; current = null; durationMs = t.durationSec * 1000
+        loading = true; current = null; currentUsesCache = false; durationMs = t.durationSec * 1000
         fillJob?.cancel()
         engine.release()
         app.covers.local(t.id)?.let { colors = CoverColors.of(it) }
@@ -214,13 +250,23 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
         scope.launch {
             try {
                 val downloaded = app.library.isDownloaded(t.id)
-                val resolved = if (downloaded) null else withContext(Dispatchers.IO) { app.resolver.get(t.url, quality(), t) }
+                val resolved = if (downloaded || !online) null else try {
+                    withContext(Dispatchers.IO) { app.resolver.get(t.url, quality(), t) }
+                } catch (e: Throwable) {
+                    if (e is kotlinx.coroutines.CancellationException) throw e
+                    if (app.audio.isFreshComplete(t.id)) null else throw e
+                }
                 if (my != token) return@launch
                 val track = resolved?.track?.copy(id = t.id) ?: t
                 current = resolved ?: ResolvedTrack(track, OFFLINE_AUDIO, emptyList(), System.currentTimeMillis())
                 val source = when {
                     downloaded -> AudioEngine.Source.LocalFile(app.library.downloadFile(t.id).path)
-                    app.audio.isComplete(t.id) -> AudioEngine.Source.LocalFile(app.audio.file(t.id).path)
+                    app.audio.isFreshComplete(t.id) -> {
+                        currentUsesCache = true
+                        app.library.markCached(track)
+                        emit("library", JSONObject())
+                        AudioEngine.Source.LocalFile(app.audio.file(t.id).path)
+                    }
                     else -> {
                         val done = AtomicBoolean(false); val failed = AtomicBoolean(false)
                         val r = resolved!!
@@ -229,7 +275,16 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
                             runCatching {
                                 app.audio.fill(t.id, r.audio, Long.MAX_VALUE,
                                     refresh = { app.resolver.invalidate(t.url); app.resolver.get(t.url, quality(), t).audio })
-                            }.getOrDefault(false).also { ok -> if (ok) done.set(true) else failed.set(true) }
+                            }.getOrDefault(false).also { ok ->
+                                if (ok) {
+                                    done.set(true)
+                                    if (app.audio.isFreshComplete(t.id)) {
+                                        app.library.markCached(track)
+                                        if (my == token) currentUsesCache = true
+                                    }
+                                    main.post { emit("library", JSONObject()) }
+                                } else failed.set(true)
+                            }
                         }
                         AudioEngine.Source.Growing(GrowingFileSource(app.audio.file(t.id), { app.audio.totalLength(t.id).takeIf { it > 0 } ?: r.audio.contentLength }, { done.get() }, { failed.get() }))
                     }
@@ -238,7 +293,9 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
                 engine.load(source, startMs, playWhenReady = true, knownGainDb = app.library.gain(t.id))
                 app.library.addHistory(track, context)
                 launch(Dispatchers.IO) {                                   // capa (fica guardada) + cores do fundo
-                    app.covers.get(track, pin = true)?.let { f -> val c = CoverColors.of(f); main.post { if (my == token) { colors = c; emitState() } } }
+                    runCatching { app.covers.get(track, pin = true) }.getOrNull()?.let { f ->
+                        val c = CoverColors.of(f); main.post { if (my == token) { colors = c; emitState() } }
+                    }
                 }
                 loadLyrics(track, my)
                 if (isRadio() && index >= queue.size - 2) topUpRadio()
@@ -248,7 +305,7 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
                 // rádio que chegou depois do início (ou música baixada, que não passou pela internet)
                 launch {
                     val more = runCatching {
-                        resolved?.relatedLater?.await() ?: if (downloaded) track.videoId?.let { id ->
+                        resolved?.relatedLater?.await() ?: if (downloaded && online) track.videoId?.let { id ->
                             MusicPicks.clean(withContext(Dispatchers.IO) { app.source.radio(id) }, exclude = listOf(track)) } else null
                     }.getOrNull()
                     if (my == token && !more.isNullOrEmpty()) {
@@ -282,6 +339,7 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
     // ---------------- callbacks do motor de áudio ----------------
     override fun onReady(durationMs: Long) {
         errorsInARow = 0
+        currentTrack?.takeUnless { app.library.isDownloaded(it.id) }?.let { app.audio.markHeard(it.id) }
         if (durationMs > 0) this.durationMs = durationMs
         loading = false; emitState(); ticker()
     }
@@ -304,16 +362,100 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
     // ---------------- auxiliares ----------------
     private fun isRadio() = context.optString("type") == "radio"
 
+    private fun isAvailableOffline(t: Track) = runCatching {
+        app.library.isDownloaded(t.id) || app.audio.isFreshComplete(t.id)
+    }.getOrDefault(false)
+
+    private fun offlineTracks(): List<Track> {
+        val known = linkedMapOf<String, Track>()
+        app.library.cachedTracks().forEach { (id, track) -> known[id] = track }
+        runCatching { app.library.history() }.getOrNull()?.let { history ->
+            for (i in 0 until history.length()) runCatching { Json.track(history.getJSONObject(i).getJSONObject("track")) }
+                .getOrNull()?.let { known.putIfAbsent(it.id, it) }
+        }
+        val downloads = runCatching { app.library.downloadedMeta() }.getOrDefault(JSONObject())
+        downloads.keys().asSequence().forEach { id -> app.library.downloadedTrack(id)?.let { known[id] = it } }
+        queue.forEach { known.putIfAbsent(it.id, it) }
+        return known.values.filter(::isAvailableOffline)
+    }
+
+    private fun skipUnavailableOffline() {
+        if (isRadio() && repeat != Repeat.ONE) topUpRadio()
+        val forward = (index + 1 until queue.size).firstOrNull { isAvailableOffline(queue[it]) }
+        val wrapped = if (repeat == Repeat.ALL || isRadio()) {
+            (0..index.coerceAtMost(queue.lastIndex)).firstOrNull { isAvailableOffline(queue[it]) }
+        } else null
+        val nextIndex = if (repeat == Repeat.ONE) null else forward ?: wrapped
+        if (nextIndex != null) {
+            index = nextIndex
+            resumeAtMs = 0
+            startCurrent()
+        } else {
+            ++token
+            fillJob?.cancel()
+            engine.release()
+            loading = false
+            current = null
+            currentUsesCache = false
+            resumeAtMs = 0
+            emitState()
+            saveSession()
+        }
+    }
+
+    private fun hasValidatedNetwork(): Boolean {
+        return runCatching {
+            val network = connectivity.activeNetwork ?: return false
+            val caps = connectivity.getNetworkCapabilities(network) ?: return false
+            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+        }.getOrDefault(false)
+    }
+
+    private fun refreshNetworkState() {
+        val available = hasValidatedNetwork()
+        main.post {
+            try {
+                if (available == online) return@post
+                online = available
+                emit("offline", JSONObject().put("offline", !online))
+                computeSuggestions()
+                updatePrefetch()
+                if (!online) {
+                    val t = currentTrack
+                    if (t != null && !isAvailableOffline(t)) skipUnavailableOffline() else emitState()
+                } else {
+                    emitState()
+                    val t = currentTrack ?: return@post
+                    val id = t.videoId ?: return@post
+                    scope.launch {
+                        val more = runCatching { withContext(Dispatchers.IO) { app.source.radio(id) } }.getOrDefault(emptyList())
+                        if (online && currentTrack?.id == t.id && more.isNotEmpty()) {
+                            current = current?.copy(related = MusicPicks.clean(more, exclude = listOf(t)))
+                            computeSuggestions()
+                            if (isRadio() && index >= queue.size - 2) topUpRadio()
+                            updatePrefetch(); emitState()
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                android.util.Log.w("Sonus", "não foi possível atualizar o modo offline", e)
+            }
+        }
+    }
+
     /** Música solta: quando a fila está acabando, emenda músicas relacionadas (lista que nunca acaba). */
     private fun topUpRadio(): Boolean {
-        val related = MusicPicks.clean(current?.related.orEmpty(), exclude = queue).take(10)
+        val source = if (online) current?.related.orEmpty() else offlineTracks()
+        val related = MusicPicks.clean(source, exclude = queue).take(10)
         if (related.isEmpty()) return false
         queue.addAll(related); original = original + related
         return true
     }
 
     private fun computeSuggestions() {
-        suggestions = albumPicks() ?: MusicPicks.clean(current?.related.orEmpty(), exclude = listOfNotNull(currentTrack)).take(12)
+        val source = if (online) current?.related.orEmpty() else offlineTracks()
+        suggestions = albumPicks() ?: MusicPicks.clean(source, exclude = listOfNotNull(currentTrack)).take(12)
     }
 
     // álbum em "repetir uma": as sugestões embaixo são as outras músicas do próprio álbum
@@ -321,7 +463,8 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
         if (repeat == Repeat.ONE && context.optString("type") == "album") original.filter { it.id != currentTrack?.id }.take(12) else null
 
     private fun renewSuggestions() {
-        suggestions = albumPicks() ?: MusicPicks.clean(current?.related.orEmpty(), exclude = listOfNotNull(currentTrack)).shuffled().take(12)
+        val source = if (online) current?.related.orEmpty() else offlineTracks()
+        suggestions = albumPicks() ?: MusicPicks.clean(source, exclude = listOfNotNull(currentTrack)).shuffled().take(12)
         emit("suggestionsRenewed", JSONObject()); emitState()
     }
 
@@ -336,7 +479,9 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
         else -> queue.drop(index + 1).take(3)
     }
 
-    private fun updatePrefetch() = prefetcher.onQueueChanged(upcoming().filterNot { app.library.isDownloaded(it.id) }, quality(), keep = currentTrack?.id)
+    private fun updatePrefetch() = prefetcher.onQueueChanged(
+        upcoming().filterNot { app.library.isDownloaded(it.id) }, quality(), keep = currentTrack?.id, allowPrefetch = online,
+    )
 
     private fun quality(): AudioQuality = when (app.library.settings().optString("quality", "auto")) {
         "high" -> AudioQuality.HIGH
