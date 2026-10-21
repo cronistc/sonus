@@ -100,8 +100,12 @@
     e.stopImmediatePropagation(); add.openCreate();
   }, true);
   const pages = SounosPages.attach($("phone"), { onChange: () => renderHome() });
-  // botão voltar do Android: fecha a página de cima mesmo se o histórico do navegador não tiver a entrada
-  window.__sonusBack = () => { if (window.__playerOpen || !pages.isOpen()) return false; pages.closeTop(); return true; };
+  // botão voltar do Android: fecha a tela interna mais alta antes de sair do player ou da página
+  window.__sonusBack = () => {
+    if (window.__playerOpen) return window.__playerBack?.() || false;
+    if (!pages.isOpen()) return false;
+    pages.closeTop(); return true;
+  };
   Sounos.on("offline", ev => { offline = !!ev.offline; renderMine(); fitHome(); });
   Sounos.on("library", () => { renderMine(); fitHome(); });
   Sounos.on("download", ev => { if (ev.done || ev.error) { renderMine(); fitHome(); } });
@@ -220,6 +224,7 @@
   let y = null, isOpen = false, pushed = false, anim = null, loaded = false, onLoad = null;
   const H = () => window.innerHeight;
   const win = () => f.contentWindow;
+  window.__playerBack = () => win().__sonusBack?.() || false;
   function place(v) { y = v; f.style.transform = `translateY(${v}px)`; }
   function slide(to, ms, done) {
     const from = y ?? H();
