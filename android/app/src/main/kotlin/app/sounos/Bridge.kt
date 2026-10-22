@@ -34,7 +34,11 @@ import java.util.Locale
  *  - JS → app:  SounosNative.call("comando", "{...json...}")
  *  - app → JS:  window.__sounos.emit("evento", {...})   (estado, progresso, letra, download, resultados)
  */
-class Bridge(private val web: WebView) {
+class Bridge(
+    private val web: WebView,
+    private val batteryOptimizationIgnored: () -> Boolean,
+    private val requestBatteryOptimization: (manual: Boolean) -> Unit,
+) {
     private val app = SounosApp.instance
     private val player get() = app.player
     private val main = Handler(Looper.getMainLooper())
@@ -84,6 +88,7 @@ class Bridge(private val web: WebView) {
             "getProgress" -> onMain { player.progress().toString() }
             "getHistory" -> app.library.history().toString()
             "getUpdate" -> app.updater.state().toString()
+            "getBatteryOptimization" -> JSONObject().put("enabled", batteryOptimizationIgnored()).toString()
             "getOffline" -> JSONObject().put("offline", !player.isOnline).toString()
             "getMineTracks" -> mineTracks().toString()
             "getCoverArtistKeys" -> JSONObject().put("keys", JSONArray(if (BuildConfig.DEBUG) app.covers.knownArtistKeys() else emptyList<String>())).toString()
@@ -201,12 +206,13 @@ class Bridge(private val web: WebView) {
             }
             "suggest" -> cachedAsync(a, "suggest", a.getString("q")) { JSONObject().put("items", JSONArray(app.source.suggestions(a.getString("q")).take(6))) }
             "prefetch" -> app.resolver.prefetch(Json.tracks(a.optJSONArray("tracks")))
-            "playQueue" -> player.playQueue(Json.tracks(a.getJSONArray("tracks")), a.optInt("index"), a.optJSONObject("context") ?: JSONObject().put("type", "playlist"))
-            "playSingle" -> player.playQueue(listOf(Json.track(a.getJSONObject("track"))), 0, a.optJSONObject("context") ?: JSONObject().put("type", "radio"))
-            "playIndex" -> player.playIndex(a.getInt("index"))
-            "playSuggestion" -> player.playSuggestion(Json.track(a.getJSONObject("track")))
-            "toggle" -> player.toggle()
-            "play" -> player.play()
+            "playQueue" -> { requestBatteryOptimization(false); player.playQueue(Json.tracks(a.getJSONArray("tracks")), a.optInt("index"), a.optJSONObject("context") ?: JSONObject().put("type", "playlist")) }
+            "playSingle" -> { requestBatteryOptimization(false); player.playQueue(listOf(Json.track(a.getJSONObject("track"))), 0, a.optJSONObject("context") ?: JSONObject().put("type", "radio")) }
+            "playIndex" -> { requestBatteryOptimization(false); player.playIndex(a.getInt("index")) }
+            "playSuggestion" -> { requestBatteryOptimization(false); player.playSuggestion(Json.track(a.getJSONObject("track"))) }
+            "toggle" -> { requestBatteryOptimization(false); player.toggle() }
+            "play" -> { requestBatteryOptimization(false); player.play() }
+            "requestBatteryOptimization" -> requestBatteryOptimization(true)
             "pause" -> player.pause()
             "next" -> player.next()
             "prev" -> player.prev()

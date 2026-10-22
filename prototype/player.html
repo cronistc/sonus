@@ -287,6 +287,8 @@ window.__afterReveal = new Promise(res => addEventListener("pagereveal", e => {
 <script src="data.js"></script>
 <script src="add.js"></script>
 <link rel="stylesheet" href="theme.css">
+<link rel="stylesheet" href="dicas.css">
+<script src="dicas.js"></script>
 <script src="settings.js"></script>
 </head>
 <body>
@@ -884,6 +886,7 @@ function refreshNativePosition() {
 function setPlayerVisible(visible) {
   playerVisible = !!visible;
   $("phone").classList.toggle("player-hidden", !playerVisible);
+  if (playerVisible) window.SounosTips?.offer("player");
   if (playerCanAnimate()) refreshNativePosition();
   lastTick = performance.now();
   if (playerCanAnimate()) render();

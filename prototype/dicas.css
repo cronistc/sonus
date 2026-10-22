@@ -1,0 +1,72 @@
+/* Balão contextual acima das telas do app, com alvo tocável e animação ancorada na seta. */
+.sonus-dica {
+  position: fixed;
+  z-index: 2147483000;
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  box-sizing: border-box;
+  width: max-content;
+  max-width: min(280px, calc(100vw - 24px));
+  padding: 8px 8px 8px 12px;
+  border: 1px solid var(--line, rgba(255, 255, 255, .12));
+  border-radius: 16px;
+  background: var(--sheet, #1a1a1e);
+  color: var(--text, #f5f5f7);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, .42), 0 2px 8px rgba(0, 0, 0, .2);
+  font: 600 calc(var(--fs, 1) * 12.5px)/1.45 "SonusFont", system-ui, sans-serif;
+  opacity: 0;
+  filter: blur(10px);
+  transform: translateY(var(--dica-salto, -9px)) scale(.68);
+  transform-origin: var(--dica-seta, 50%) var(--dica-origem-y, top);
+  pointer-events: auto;
+  touch-action: manipulation;
+  will-change: opacity, transform, filter;
+}
+.sonus-dica.visivel { animation: sonus-dica-entrada .52s cubic-bezier(.18, .9, .25, 1.18) both; }
+.sonus-dica.saindo { animation: sonus-dica-saida .24s cubic-bezier(.4, 0, .8, .35) both; }
+.sonus-dica-text { flex: 1 1 auto; min-width: 0; }
+.sonus-dica-fechar {
+  display: grid;
+  flex: 0 0 28px;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin: -2px -2px 0 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--text) 12%, var(--sheet, #1a1a1e));
+  color: inherit;
+  font: 400 23px/1 system-ui, sans-serif;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.sonus-dica-fechar:active { background: rgba(255, 255, 255, .2); transform: scale(.9); }
+.sonus-dica-fechar:focus-visible { outline: 2px solid var(--accent, #7c9cff); outline-offset: 2px; }
+.sonus-dica-fechar:disabled { pointer-events: none; }
+.sonus-dica::after {
+  content: "";
+  position: absolute;
+  left: var(--dica-seta, 50%);
+  width: 0;
+  height: 0;
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+  transform: translateX(-50%);
+}
+.sonus-dica[data-lado="baixo"]::after { top: -8px; border-bottom: 8px solid var(--sheet, #1a1a1e); }
+.sonus-dica[data-lado="cima"]::after { bottom: -8px; border-top: 8px solid var(--sheet, #1a1a1e); }
+@keyframes sonus-dica-entrada {
+  0% { opacity: 0; filter: blur(10px); transform: translateY(var(--dica-salto)) scale(.68); }
+  62% { opacity: 1; filter: blur(0); transform: translateY(1px) scale(1.045); }
+  82% { transform: translateY(-1px) scale(.985); }
+  100% { opacity: 1; filter: blur(0); transform: none; }
+}
+@keyframes sonus-dica-saida {
+  0% { opacity: 1; filter: blur(0); transform: none; }
+  100% { opacity: 0; filter: blur(8px); transform: translateY(var(--dica-salto)) scale(.78); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sonus-dica.visivel, .sonus-dica.saindo { animation-duration: 1ms; }
+}

@@ -3,6 +3,7 @@ package app.sounos
 import android.Manifest
 import android.app.Activity
 import android.content.pm.PackageManager
+import android.content.Intent
 import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
@@ -11,6 +12,9 @@ import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
 import android.widget.TextView
 import android.widget.FrameLayout
+import android.os.PowerManager
+import android.provider.Settings
+import android.net.Uri
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
@@ -76,7 +80,7 @@ class MainActivity : Activity() {
                 }
             }
         }
-        bridge = Bridge(web).also { it.attach() }
+        bridge = Bridge(web, ::batteryOptimizationIgnored, ::requestBatteryOptimization).also { it.attach() }
         web.addJavascriptInterface(bridge, "SounosNative")
         val shell = FrameLayout(this).apply {
             background = if (theme == "gradient" && !coldOpening) GradientDrawable(
@@ -139,6 +143,7 @@ class MainActivity : Activity() {
         bridge.setPageActive(true)
         web.onResume()
         web.evaluateJavascript("window.__sounosPageActive?.(true)", null)
+        web.evaluateJavascript("window.dispatchEvent(new Event('sounos:resume'))", null)
         SounosApp.instance.updater.run { foreground = true; maybeCheck() }
     }
 
@@ -146,6 +151,19 @@ class MainActivity : Activity() {
         bridge.detach()
         web.destroy()
         super.onDestroy()
+    }
+
+    private fun batteryOptimizationIgnored(): Boolean =
+        getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(packageName)
+
+    private fun requestBatteryOptimization(manual: Boolean) {
+        if (batteryOptimizationIgnored()) return
+        val prefs = getSharedPreferences("sounos_battery", MODE_PRIVATE)
+        if (!manual && prefs.getBoolean("pedido", false)) return
+        prefs.edit().putBoolean("pedido", true).apply()
+        val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName"))
+        runCatching { startActivity(intent) }
+            .onFailure { android.util.Log.w("Sonus", "pedido para tocar sem interrupções falhou", it) }
     }
 
     private inner class AssetClient : WebViewClient() {

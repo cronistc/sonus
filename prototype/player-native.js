@@ -10,6 +10,12 @@
                           c: Sounos.hashColors(t.id), lrc: lyricsById[t.id] ? lyricsById[t.id].lrc : undefined, plain: !!(lyricsById[t.id] && lyricsById[t.id].plain), cover: Sounos.coverUrl(t), raw: t });
   const coverBg = t => `url('${t.cover}') center/cover no-repeat, linear-gradient(135deg,${t.c[0]},${t.c[1]} 60%,${t.c[2]})`;
 
+  const offerPlayerTips = () => {
+    SounosTips?.offer("player");
+    if (queueMode() === "sugg") SounosTips?.offer("suggestions");
+  };
+  window.__offerPlayerTips = offerPlayerTips;
+
   // ---------- estado do app → tela ----------
   function applyState(st, first) {
     const ids = l => (l || []).map(t => t.id).join("|");
@@ -41,6 +47,7 @@
     renderDl(); render();
     syncPlayerClock();
     $("phone").classList.toggle("loading", !!st.loading);
+    if (playerVisible) offerPlayerTips();
   }
 
   // ---------- telas: capa de verdade, fila com capas, duração real ----------
@@ -136,7 +143,7 @@
     else if (l && l.plain) { lrc = l.plain.split("\n").filter(Boolean).map(x => [1e9, x]); plain = true; }
     lyricsById[p.id] = { lrc, plain };               // lrc null = sabemos que não tem letra
     const t = tracks.find(x => x.id === p.id);
-    if (t) { t.lrc = lrc; t.plain = plain; if (t === track()) { buildLyrics(); syncLyrics(); syncLyrBtn(); } }
+    if (t) { t.lrc = lrc; t.plain = plain; if (t === track()) { buildLyrics(); syncLyrics(); syncLyrBtn(); if (playerVisible) offerPlayerTips(); } }
   }
 
   // ---------- baixar ----------
@@ -189,7 +196,7 @@
       if (theme) $("phone").dataset.theme = theme;
     } catch {}
   }
-  window.__playerShown = () => { syncTheme(); fitCover(); setPlayerVisible(true); if (S) centerQueue(false); };
+  window.__playerShown = () => { syncTheme(); fitCover(); setPlayerVisible(true); if (S) centerQueue(false); offerPlayerTips(); };
   window.__playerHidden = () => setPlayerVisible(false);
 
   // tema trocado na tela inicial
