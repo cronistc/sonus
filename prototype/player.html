@@ -106,6 +106,9 @@
   .act.dl.loading { color: var(--text); }
   .act.dl.loading .dl-track { opacity: .25; }
   .act.dl.loading .dl-prog { opacity: 1; }
+  /* baixando: o arco gira o tempo todo (mesmo sem saber o tamanho) e cresce com o progresso */
+  .act.dl.loading .dl-prog { animation: dlGira 1s linear infinite; }
+  @keyframes dlGira { from { transform: rotate(-90deg); } to { transform: rotate(270deg); } }
   .act.dl.loading .dl-arrow { animation: dlNudge 1s ease-in-out infinite; }
   @keyframes dlNudge { 50% { transform: translateY(1.5px); } }
   .act.dl.done { color: var(--text); }
