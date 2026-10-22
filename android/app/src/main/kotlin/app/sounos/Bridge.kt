@@ -38,6 +38,8 @@ class Bridge(
     private val web: WebView,
     private val batteryOptimizationIgnored: () -> Boolean,
     private val requestBatteryOptimization: (manual: Boolean) -> Unit,
+    private val notificationPermissionGranted: () -> Boolean,
+    private val requestNotificationPermission: () -> Unit,
 ) {
     private val app = SounosApp.instance
     private val player get() = app.player
@@ -89,6 +91,7 @@ class Bridge(
             "getHistory" -> app.library.history().toString()
             "getUpdate" -> app.updater.state().toString()
             "getBatteryOptimization" -> JSONObject().put("enabled", batteryOptimizationIgnored()).toString()
+            "getNotificationPermission" -> JSONObject().put("granted", notificationPermissionGranted()).toString()
             "getOffline" -> JSONObject().put("offline", !player.isOnline).toString()
             "getMineTracks" -> mineTracks().toString()
             "getCoverArtistKeys" -> JSONObject().put("keys", JSONArray(if (BuildConfig.DEBUG) app.covers.knownArtistKeys() else emptyList<String>())).toString()
@@ -213,6 +216,7 @@ class Bridge(
             "toggle" -> { requestBatteryOptimization(false); player.toggle() }
             "play" -> { requestBatteryOptimization(false); player.play() }
             "requestBatteryOptimization" -> requestBatteryOptimization(true)
+            "requestNotificationPermission" -> requestNotificationPermission()
             "pause" -> player.pause()
             "next" -> player.next()
             "prev" -> player.prev()

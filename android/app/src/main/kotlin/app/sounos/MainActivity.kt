@@ -80,7 +80,13 @@ class MainActivity : Activity() {
                 }
             }
         }
-        bridge = Bridge(web, ::batteryOptimizationIgnored, ::requestBatteryOptimization).also { it.attach() }
+        bridge = Bridge(
+            web,
+            ::batteryOptimizationIgnored,
+            ::requestBatteryOptimization,
+            ::notificationPermissionGranted,
+            ::requestNotificationPermission,
+        ).also { it.attach() }
         web.addJavascriptInterface(bridge, "SounosNative")
         val shell = FrameLayout(this).apply {
             background = if (theme == "gradient" && !coldOpening) GradientDrawable(
@@ -112,9 +118,11 @@ class MainActivity : Activity() {
         setContentView(shell)
         if (coldOpening || savedInstanceState == null) web.loadUrl("https://$HOST/home.html") else web.restoreState(savedInstanceState)
 
-        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)   // controles da música na notificação
-        }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQUEST_NOTIFICATIONS) web.evaluateJavascript("window.dispatchEvent(new Event('sounos:resume'))", null)
     }
 
     @Deprecated("Deprecated in Java")
@@ -155,6 +163,15 @@ class MainActivity : Activity() {
 
     private fun batteryOptimizationIgnored(): Boolean =
         getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(packageName)
+
+    private fun notificationPermissionGranted(): Boolean =
+        Build.VERSION.SDK_INT < 33 || checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+
+    private fun requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= 33 && !notificationPermissionGranted()) {
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQUEST_NOTIFICATIONS)
+        }
+    }
 
     private fun requestBatteryOptimization(manual: Boolean) {
         if (batteryOptimizationIgnored()) return
@@ -305,5 +322,6 @@ class MainActivity : Activity() {
     private companion object {
         const val HOST = "appassets.androidplatform.net"
         const val PICK_IMAGE = 7
+        const val REQUEST_NOTIFICATIONS = 42
     }
 }
