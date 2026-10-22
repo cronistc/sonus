@@ -103,6 +103,7 @@
              opacity: 0; transition: stroke-dasharray .25s linear, opacity .2s; }
   .dl-fill { fill: var(--text); transform: scale(0); transform-origin: 12px 12px; transition: transform .38s cubic-bezier(.3,1.4,.5,1); }
   .dl-arrow { stroke: currentColor; stroke-width: 2.2; transition: stroke .3s; }
+  .act.dl.dl-snap .dl-fill, .act.dl.dl-snap .dl-arrow { transition: none !important; }
   .act.dl.loading { color: var(--text); }
   .act.dl.loading .dl-track { opacity: .25; }
   .act.dl.loading .dl-prog { opacity: 1; }
@@ -349,7 +350,7 @@ window.__afterReveal = new Promise(res => addEventListener("pagereveal", e => {
             <circle class="dl-track" cx="12" cy="12" r="9.5"/>
             <circle class="dl-prog" cx="12" cy="12" r="9.5" pathLength="100"/>
             <circle class="dl-fill" cx="12" cy="12" r="10.6"/>
-            <path class="dl-arrow" d="M12 7.5v8M8.5 12.2 12 15.7l3.5-3.5"/>
+            <path class="dl-arrow" d="M12 7.5L12 15.7M8.5 12.2L12 15.7M15.5 12.2L12 15.7"/>
           </svg>
         </button>
         <button class="act" id="addBtn" aria-label="Adicionar">
@@ -1056,11 +1057,58 @@ function stepMockDownload() {
   renderDl();
   scheduleMockDownload();
 }
+// Seta e ✓ usam a mesma estrutura de três segmentos para permitir interpolar o traço.
+const DL_ARROW_POINTS = [12, 7.5, 12, 15.7, 8.5, 12.2, 12, 15.7, 15.5, 12.2, 12, 15.7];
+const DL_CHECK_POINTS = [7.3, 12.2, 10, 15.3, 10, 15.3, 12.2, 13.1, 12.2, 13.1, 17, 8.5];
+function dlPath(points) {
+  return `M${points[0]} ${points[1]}L${points[2]} ${points[3]}M${points[4]} ${points[5]}L${points[6]} ${points[7]}M${points[8]} ${points[9]}L${points[10]} ${points[11]}`;
+}
+function dlEase(p) {
+  const curve = (t, a, b) => 3 * (1 - t) ** 2 * t * a + 3 * (1 - t) * t ** 2 * b + t ** 3;
+  let lo = 0, hi = 1, t = p;
+  for (let i = 0; i < 6; i++) { if (curve(t, .2, .25) < p) lo = t; else hi = t; t = (lo + hi) / 2; }
+  return curve(t, .85, 1);
+}
+function syncDlMark(button, done, trackId) {
+  const path = button.querySelector(".dl-arrow"); if (!path) return;
+  const id = String(trackId ?? ""), goal = done ? "true" : "false";
+  const trackChanged = path.dataset.track !== id;
+  const target = done ? DL_CHECK_POINTS : DL_ARROW_POINTS;
+  const setPath = points => path.setAttribute("d", dlPath(points));
+  if (trackChanged || path.dataset.done == null) {
+    if (path._dlRaf) cancelAnimationFrame(path._dlRaf);
+    path._dlRaf = 0; path._dlPoints = target.slice(); path._dlTarget = goal;
+    path.dataset.track = id; path.dataset.done = goal; setPath(target);
+    button.classList.add("dl-snap");
+    const token = button._dlSnapToken = (button._dlSnapToken || 0) + 1;
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (button._dlSnapToken === token) button.classList.remove("dl-snap");
+    }));
+    return;
+  }
+  if (path.dataset.done === goal && path._dlTarget === goal) return;
+  const from = path._dlPoints || (path.dataset.done === "true" ? DL_CHECK_POINTS : DL_ARROW_POINTS);
+  if (path._dlRaf) cancelAnimationFrame(path._dlRaf);
+  path.dataset.done = goal; path._dlTarget = goal;
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    path._dlPoints = target.slice(); setPath(target); return;
+  }
+  const started = performance.now(), duration = 400;
+  const frame = now => {
+    const p = Math.min(1, (now - started) / duration), eased = dlEase(p);
+    const points = from.map((value, i) => value + (target[i] - value) * eased);
+    path._dlPoints = points; setPath(points);
+    if (p < 1) path._dlRaf = requestAnimationFrame(frame);
+    else { path._dlRaf = 0; path._dlPoints = target.slice(); }
+  };
+  path._dlRaf = requestAnimationFrame(frame);
+}
 function renderDl() {
   const b = $("dlBtn"), done = !!SounosData.getDownloads()[nowT], loading = dl.track === nowT && !done;
   b.classList.toggle("done", done);
   b.classList.toggle("loading", loading);
   b.querySelector(".dl-prog").style.strokeDasharray = `${loading ? dl.p : 0} 100`;
+  syncDlMark(b, done, nowT);
   b.setAttribute("aria-label", done ? "Baixada" : loading ? "Baixando" : "Baixar música");
 }
 $("dlBtn").onclick = () => {

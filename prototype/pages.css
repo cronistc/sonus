@@ -34,6 +34,10 @@
 .pg .ab:active { transform: scale(.92); }
 .pg .ab.on { color: var(--text); background: var(--chip); }
 .pg .ab svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.pg .ab svg.dl-icon { position: relative; z-index: 1; }
+.pg .ab .dl-disc { fill: none; }
+.pg .ab.done .dl-disc, .pg .tr .dl-disc { fill: var(--text); stroke: var(--text); }
+.pg .ab.done .dl-mark, .pg .tr .dl-mark { stroke: var(--bg); }
 .pg .ab .ring { position: absolute; inset: 4px; width: auto; height: auto; transform: rotate(-90deg); }
 .pg .ab .ring circle { fill: none; stroke: var(--text); stroke-width: 2.4; stroke-dasharray: 0 100; stroke-linecap: butt; transition: stroke-dasharray .3s; }
 .pg .ab.done { color: var(--text); }
@@ -56,7 +60,7 @@
 .pg .tr .tx { flex: 1; min-width: 0; }
 .pg .tr .t { font-size: calc(var(--fs) * (15px)); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pg .tr .a { font-size: calc(var(--fs) * (13px)); color: var(--text-dim); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pg .tr .dl { width: 20px; height: 20px; flex-shrink: 0; color: var(--t-mid, var(--text)); opacity: .85; display: grid; place-items: center; }
+.pg .tr .dl { width: 20px; height: 20px; flex-shrink: 0; color: var(--t-mid, var(--text)); display: grid; place-items: center; }
 .pg .tr .dl svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .pg .tr .grip, .pg .tr .rm { width: 40px; height: 40px; display: grid; place-items: center; color: var(--text-dim); background: none; border: 0; flex-shrink: 0; }
 .pg .tr .grip { touch-action: none; cursor: grab; }
