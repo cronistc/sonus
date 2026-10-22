@@ -158,6 +158,12 @@
       if (changed) { D.savePlaylists(lists); onChange?.(lists); }
       changed = false; searchSeq++;
       if (!fromPop && pushed) { pushed = false; window.history.back(); }
+      setTimeout(() => {
+        window.SounosTips?.offer("home");
+        window.SounosTips?.offer("offline");
+        window.SounosTips?.offer("mini");
+        window.__offerPlayerTips?.();
+      }, 450);
     }
     window.addEventListener("popstate", () => { if (isOpen && !history.state?.addSheet) { pushed = false; close(true); } });
 

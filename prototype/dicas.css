@@ -1,0 +1,33 @@
+/* Balão pequeno, acima da tela e sem bloquear toques nos controles. */
+.sonus-dica {
+  position: fixed;
+  z-index: 10000;
+  width: max-content;
+  max-width: min(260px, calc(100vw - 24px));
+  padding: 10px 12px;
+  border: 1px solid var(--line, rgba(255, 255, 255, .12));
+  border-radius: 14px;
+  background: var(--surface-2, var(--surface, #1a1a1e));
+  color: var(--text, #f5f5f7);
+  box-shadow: 0 8px 26px rgba(0, 0, 0, .34);
+  font: 600 calc(var(--fs, 1) * 12.5px)/1.4 "SonusFont", system-ui, sans-serif;
+  opacity: 0;
+  transform: translateY(5px) scale(.98);
+  transition: opacity .2s ease, transform .2s cubic-bezier(.2, .85, .25, 1);
+  pointer-events: none;
+}
+.sonus-dica.visivel { opacity: 1; transform: none; }
+.sonus-dica.saindo { opacity: 0; transform: translateY(-3px) scale(.98); }
+.sonus-dica::after {
+  content: "";
+  position: absolute;
+  left: var(--dica-seta, 50%);
+  width: 0;
+  height: 0;
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+  transform: translateX(-50%);
+}
+.sonus-dica[data-lado="baixo"]::after { top: -8px; border-bottom: 8px solid var(--surface-2, var(--surface, #1a1a1e)); }
+.sonus-dica[data-lado="cima"]::after { bottom: -8px; border-top: 8px solid var(--surface-2, var(--surface, #1a1a1e)); }
+@media (prefers-reduced-motion: reduce) { .sonus-dica { transition: none; } }

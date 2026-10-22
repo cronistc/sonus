@@ -72,6 +72,9 @@
                 <div class="d">Deixa todas as músicas no mesmo volume.</div></div>${sw("normalize")}</div>
               <div class="set-row"><div class="tx"><div class="t">Pular silêncio</div>
                 <div class="d">Corta o silêncio do começo e do fim: a próxima música entra na hora.</div></div>${sw("skipSilence")}</div>
+              ${window.Sounos?.native ? `
+              <button class="set-row" data-act="battery-allow"><div class="tx"><div class="t">Tocar sem interrupções</div>
+                <div class="d" data-battery-desc></div></div><span class="pill" data-battery-state></span></button>` : ""}
               ${window.Sounos?.native ? "" : /* ainda não existe no player do app: não aparece lá */ `
               <div class="set-row stack"><div class="tx" style="display:flex;justify-content:space-between"><div class="t">Transição entre músicas</div>
                 <div class="val" data-out="crossfade"></div></div>
@@ -128,6 +131,18 @@
       renderStorage();
       renderUpd(); showSup?.();
       ov.querySelectorAll(".seg").forEach(placeKnob);
+      refreshBattery();
+    }
+
+    function refreshBattery() {
+      const row = ov.querySelector('[data-act="battery-allow"]');
+      if (!row || !window.Sounos?.native) return;
+      const allowed = !!Sounos.call("getBatteryOptimization").enabled;
+      row.querySelector("[data-battery-desc]").textContent = allowed
+        ? "O Sonus pode continuar tocando em segundo plano."
+        : "Permita que o Sonus continue tocando em segundo plano.";
+      row.querySelector("[data-battery-state]").textContent = allowed ? "Ativo" : "Permitir";
+      row.dataset.enabled = String(allowed);
     }
 
     // ---------- Atualizações ----------
@@ -157,6 +172,10 @@
       q('[data-upd="allow-row"]').forEach(r => r.hidden = !!upd.canInstall);
     }
     ov.addEventListener("click", e => {
+      if (e.target.closest('[data-act="battery-allow"]')) {
+        if (!Sounos.call("getBatteryOptimization").enabled) Sounos.call("requestBatteryOptimization");
+        return;
+      }
       if (e.target.closest('[data-act="upd-allow"]')) { e.stopPropagation(); return Sounos.call("allowInstalls"); }
       if (e.target.closest('[data-act="support"]')) return supUi?.open();
       if (!e.target.closest('[data-act="upd-open"]')) return;
@@ -164,7 +183,8 @@
       updUi.open();
     });
     // voltou da tela do Android de "permitir": confere de novo
-    document.addEventListener("visibilitychange", () => { if (!document.hidden && window.Sounos?.native) { upd = Sounos.call("getUpdate"); renderUpd(); updUi.render(); } });
+    document.addEventListener("visibilitychange", () => { if (!document.hidden && window.Sounos?.native) { upd = Sounos.call("getUpdate"); renderUpd(); updUi.render(); refreshBattery(); } });
+    window.addEventListener("sounos:resume", refreshBattery);
     // Armazenamento (no protótipo os tamanhos são estimados; no app vêm dos arquivos reais)
     let cacheMB = 86;
     function renderStorage() {
@@ -235,6 +255,7 @@
       ov.classList.remove("open");
       applyThemeAfterClose();
       button.animate?.([{ transform: "rotate(90deg)" }, { transform: "rotate(0)" }], { duration: 480, easing: "cubic-bezier(.2,.85,.25,1)" });
+      setTimeout(() => { window.SounosTips?.offer("home"); window.SounosTips?.offer("offline"); window.SounosTips?.offer("mini"); }, 500);
       if (!fromPop && pushed) { pushed = false; window.history.back(); }
     }
     window.addEventListener("popstate", () => { if (isOpen && !history.state?.settings) { pushed = false; close(true); } });

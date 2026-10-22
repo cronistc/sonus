@@ -379,6 +379,7 @@ window.SounosPages = (() => {
         return by && (by === target || by.includes(target) || target.includes(by));
       });
       if (!albums.length) { $(".albums").innerHTML = ""; return; }
+      setTimeout(() => { if (!page.closing) window.SounosTips?.offer("artist-albums"); }, 450);
       $(".albums").innerHTML = `<div class="sec">Álbuns</div><div class="s-hrow">` + albums.map((a, i) => {
         const u = a.thumb ? Sounos.coverUrl({ id: "album:" + (key(a.name) || "x"), thumb: a.thumb }).replace(/'/g, "%27") : "";
         return `<button class="s-album" data-album="${i}"><div class="pic" style="background:${u ? `url('${u}') center/cover,` : ""} linear-gradient(135deg,${Sounos.hashColors(a.name).join(",")})"></div><div class="n">${esc(a.name)}</div><div class="a">${handle(a.artist)}</div></button>`;
@@ -396,6 +397,7 @@ window.SounosPages = (() => {
 
     function markNow() { const id = nowId(); el.querySelectorAll(".tr").forEach(r => r.classList.toggle("now", r.dataset.id === id)); }
     page.markNow = markNow;
+    setTimeout(() => { if (!page.closing) window.SounosTips?.offer("artist"); }, 450);
     const all = () => songs.length ? songs : mine;
     el.addEventListener("click", e => {
       const a = e.target.closest("[data-a]")?.dataset.a;

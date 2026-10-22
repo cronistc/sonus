@@ -280,3 +280,10 @@ sem o topo de configurações/busca e as otimizações da letra. Uma revisão po
 cache e auditoria visual, também foi integrada; a execução final de `git merge main` retornou
 `Already up to date.`. A compilação final `JAVA_HOME=~/Android/jdk17 ./gradlew -q :app:assembleDebug -PversionCode=7`
 passou. O APK integrado foi instalado no Galaxy A54 e abriu normalmente na tela inicial.
+
+## Dicas contextuais e reprodução sem interrupções (21/10/2026)
+
+- Foram adicionados balões curtos para a lupa, criação de playlist, artistas, mini-player, busca por álbuns e vários artistas, modo offline, perfil do artista, letra, fila, sugestões e gestos do botão principal. Cada dica aparece uma vez quando o alvo está visível; os balões não bloqueiam toques, fecham com qualquer toque e respeitam intervalo mínimo de 20 segundos. As duas telas compartilham o controle para nunca mostrar dois ao mesmo tempo.
+- A versão do app vem de `getUpdate`. As dicas vistas e a versão de referência ficam em `sounos.tips` e `sounos.tipsVersion`, espelhadas pelo `native.js`. Quem começa sem histórico recebe as dicas básicas aos poucos; quem já tem biblioteca recebe as dicas de versões posteriores à sua referência.
+- No primeiro comando de reprodução, o app consulta `PowerManager.isIgnoringBatteryOptimizations` e, se necessário, abre uma vez o pedido do Android. Configurações ganhou a linha “Tocar sem interrupções”, com estado atualizado ao voltar do sistema e opção de tentar novamente quando desligado.
+- Validação: `node --check` em todos os scripts de `prototype/`, `git diff --check` e `JAVA_HOME=~/Android/jdk17 ./gradlew -q clean :app:assembleDebug -PversionCode=7`. Não houve instalação nem acesso ao celular.

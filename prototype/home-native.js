@@ -100,7 +100,10 @@
     if (!e.target.closest("#playlists .blk.new")) return;
     e.stopImmediatePropagation(); add.openCreate();
   }, true);
-  const pages = SounosPages.attach($("phone"), { onChange: () => renderHome() });
+  const pages = SounosPages.attach($("phone"), { onChange: () => {
+    renderHome();
+    setTimeout(() => { SounosTips?.offer("home"); if (offline) SounosTips?.offer("offline"); if (cur()) SounosTips?.offer("mini"); }, 350);
+  } });
   // botão voltar do Android: fecha a tela interna mais alta antes de sair do player ou da página
   window.__sonusBack = () => {
     if (window.__playerOpen) return window.__playerBack?.() || false;
@@ -114,9 +117,11 @@
     syncOfflineMark();
     renderHome();
     fitHome();
+    if (offline) SounosTips?.offer("offline");
   });
   Sounos.on("library", () => { renderHome(); fitHome(); });
   Sounos.on("download", ev => { if (ev.done || ev.error) { renderHome(); fitHome(); } });
+  document.querySelectorAll(".row").forEach(row => row.addEventListener("scroll", () => SounosTips?.offer("home"), { passive: true }));
 
   // ---------- mini-player ----------
   const cur = () => S && S.current && S.current !== null ? S.current : null;
@@ -150,6 +155,7 @@
     if (!t) return;
     (st.colors || []).forEach((c, k) => root.setProperty(`--c${k + 1}`, c));
     if (before !== t.id) { shownId = t.id; lastBarPixel = -1; loadMini(); if (before) renderHome(); }
+    SounosTips?.offer("mini");
   }
   loadMini = function () {
     const t = cur(); if (!t) return;
@@ -194,6 +200,9 @@
   });
   renderHome();
   applyState(S);
+  SounosTips?.offer("home");
+  if (offline) SounosTips?.offer("offline");
+  if (cur()) SounosTips?.offer("mini");
   // O player embutido lê a letra nativa; este envio mantém o quadro sincronizado ao carregá-la.
   if (cur()) window.__sounos.emit("lyrics", Sounos.call("getLyrics"));
 
@@ -246,7 +255,7 @@
       const wasOpen = isOpen;
       isOpen = false;
       // continua desenhado logo abaixo da tela (pronto para subir sem atraso), só que parado
-      slide(H(), 340, () => { if (!isOpen) { win().__playerHidden?.(); y = null; window.__playerOpen = false; $("phone").classList.remove("player-open"); syncTheme(); homeClockChanged(); } });
+      slide(H(), 340, () => { if (!isOpen) { win().__playerHidden?.(); y = null; window.__playerOpen = false; $("phone").classList.remove("player-open"); syncTheme(); homeClockChanged(); SounosTips?.offer("home"); if (offline) SounosTips?.offer("offline"); if (cur()) SounosTips?.offer("mini"); } });
       if (wasOpen && !fromPop && pushed) { pushed = false; history.back(); }
     },
     // arrastando o mini-player para cima: o player aparece por baixo do dedo

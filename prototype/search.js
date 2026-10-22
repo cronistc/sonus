@@ -226,6 +226,7 @@
       bar.classList.add("collapsed");
       place(iconRect());
       setTimeout(() => { if (!isOpen) bar.classList.add("idle"); }, 400);
+      setTimeout(() => { window.SounosTips?.offer("home"); window.SounosTips?.offer("offline"); window.SounosTips?.offer("mini"); }, 430);
       if (!fromPop && pushed) { pushed = false; window.history.back(); }
     }
     // o "voltar" do celular fecha a busca antes de sair da tela
@@ -251,8 +252,8 @@
         const next = body.querySelector(`.s-row[data-pick="nt"][data-id="${anchorId}"]`);
         if (next) body.scrollTop += next.getBoundingClientRect().top - anchorTop;
       }
-      if (same) return;
-      [...body.firstElementChild.children].forEach((c, k) => c.style.setProperty("--k", Math.min(k, 12)));
+      if (!same) [...body.firstElementChild.children].forEach((c, k) => c.style.setProperty("--k", Math.min(k, 12)));
+      window.SounosTips?.offer(name === "res" ? "search-results" : "search");
     }
     // Atualiza a lista no lugar: linha igual fica como está (capa não recarrega), linha da mesma
     // música/sugestão só troca o texto que mudou; o resto entra ou sai. Nada pisca.
