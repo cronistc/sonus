@@ -182,12 +182,20 @@
   Sounos.on("lyrics", applyLyrics);
 
   // dentro da tela inicial (quadro do player): parado enquanto escondido, arruma a fila ao aparecer
-  window.__playerShown = () => { fitCover(); setPlayerVisible(true); if (S) centerQueue(false); };
+  function syncTheme() {
+    try {
+      const theme = JSON.parse(localStorage.getItem("sounos.settings"))?.theme;
+      if (theme) $("phone").dataset.theme = theme;
+    } catch {}
+  }
+  window.__playerShown = () => { syncTheme(); fitCover(); setPlayerVisible(true); if (S) centerQueue(false); };
   window.__playerHidden = () => setPlayerVisible(false);
 
   // tema trocado na tela inicial
   addEventListener("storage", e => {
-    if (e.key === "sounos.settings") { try { document.documentElement.dataset.theme = JSON.parse(e.newValue).theme; } catch {} }
+    if (e.key === "sounos.settings" && !$("phone").classList.contains("player-hidden")) {
+      try { $("phone").dataset.theme = JSON.parse(e.newValue).theme; } catch {}
+    }
   });
 
   // estado inicial: durante a transição de abertura, a fila (muitas capinhas) espera a animação terminar

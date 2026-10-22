@@ -24,10 +24,32 @@
   --t-mid: rgba(255,255,255,.55);
   --mini-bg: color-mix(in srgb, var(--c1) 35%, #18181b);
   --phone-bg: linear-gradient(180deg, color-mix(in srgb, var(--c1) 40%, var(--bg)) 0%, var(--bg) 65%);
+  --home-bg: var(--bg);
   --tile-shadow: 0 6px 16px rgba(0,0,0,.38);
   color-scheme: dark;
 }
-html[data-theme="light"] {
+html[data-theme="dark"], .phone[data-theme="dark"], .set-panel[data-theme="dark"],
+html[data-theme="gradient"], .phone[data-theme="gradient"], .set-panel[data-theme="gradient"] {
+  --bg: #0e0e10;
+  --surface: #1a1a1e;
+  --surface-2: #232328;
+  --sheet: #1a1a1f;
+  --text: #f5f5f7;
+  --text-dim: #a1a1aa;
+  --line: rgba(255,255,255,.10);
+  --line-strong: rgba(255,255,255,.24);
+  --chip: rgba(255,255,255,.12);
+  --chip-soft: rgba(255,255,255,.06);
+  --field: rgba(0,0,0,.35);
+  --t-faint: rgba(255,255,255,.32);
+  --t-mid: rgba(255,255,255,.55);
+  --mini-bg: color-mix(in srgb, var(--c1) 35%, #18181b);
+  --phone-bg: linear-gradient(180deg, color-mix(in srgb, var(--c1) 40%, var(--bg)) 0%, var(--bg) 65%);
+  --home-bg: var(--bg);
+  --tile-shadow: 0 6px 16px rgba(0,0,0,.38);
+  color-scheme: dark;
+}
+html[data-theme="light"], .phone[data-theme="light"], .set-panel[data-theme="light"] {
   --bg: #f4f4f6;
   --surface: #ffffff;
   --surface-2: #e9e9ee;
@@ -43,10 +65,11 @@ html[data-theme="light"] {
   --t-mid: rgba(17,17,20,.5);
   --mini-bg: color-mix(in srgb, var(--c1) 16%, #ffffff);
   --phone-bg: linear-gradient(180deg, color-mix(in srgb, var(--c1) 22%, var(--bg)) 0%, var(--bg) 60%);
+  --home-bg: var(--bg);
   --tile-shadow: 0 4px 12px rgba(17,17,20,.10), 0 1px 3px rgba(17,17,20,.08);
   color-scheme: light;
 }
-html[data-theme="gradient"] {
+html[data-theme="gradient"], .phone[data-theme="gradient"], .set-panel[data-theme="gradient"] {
   --bg: color-mix(in srgb, var(--c1) 18%, #0b0b0d);
   --surface: rgba(255,255,255,.09);
   --surface-2: rgba(255,255,255,.13);
@@ -58,6 +81,7 @@ html[data-theme="gradient"] {
                                      color-mix(in srgb, var(--c3) 20%, #0b0b0d) 100%);
   --home-bg: var(--phone-bg);
 }
+.phone[data-theme] { color: var(--text); }
 
 /* o fundo troca de cor suavemente quando a música muda */
 @property --c1 { syntax: "<color>"; inherits: true; initial-value: #2f6bff; }
@@ -68,11 +92,11 @@ html[data-theme="gradient"] {
 :root { transition: --c1 .8s ease, --c2 .8s ease, --c3 .8s ease,
                     --cover-size .45s cubic-bezier(.2,.85,.25,1), --tile .45s cubic-bezier(.2,.85,.25,1); }
 
-/* Troca de tema suave: só durante a troca, as cores fazem fade */
-html.theming, html.theming *, html.theming *::before, html.theming *::after {
-  transition: background-color .5s ease, background .5s ease, color .5s ease, border-color .5s ease,
-              outline-color .5s ease, fill .5s ease, stroke .5s ease !important;
-}
+/* Transições permanentes só nos componentes visíveis, sem animar cores herdadas da página toda */
+.set-panel { transition: transform .48s cubic-bezier(.2,.85,.25,1); }
+.set-card { transition: background-color .24s ease, border-color .24s ease; }
+.set-sec h3 { transition: color .24s ease; }
+.theme .pv { transition: background .24s ease, outline-color .3s, transform .2s; }
 
 html { font-size: calc(16px * var(--fs)); }
 

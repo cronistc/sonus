@@ -203,6 +203,12 @@
 {
   const f = document.createElement("iframe");
   window.__playerOpen = false;
+  function syncTheme() {
+    try {
+      const theme = JSON.parse(localStorage.getItem("sounos.settings"))?.theme;
+      if (theme) $("phone").dataset.theme = theme;
+    } catch {}
+  }
   f.title = "Player";
   f.style.cssText = "position:fixed;left:0;top:0;width:100%;height:100%;border:0;z-index:60;background:#0e0e10;" +
                     "visibility:hidden;transform:translateY(100%)";
@@ -240,7 +246,7 @@
       const wasOpen = isOpen;
       isOpen = false;
       // continua desenhado logo abaixo da tela (pronto para subir sem atraso), só que parado
-      slide(H(), 340, () => { if (!isOpen) { win().__playerHidden?.(); y = null; window.__playerOpen = false; $("phone").classList.remove("player-open"); homeClockChanged(); } });
+      slide(H(), 340, () => { if (!isOpen) { win().__playerHidden?.(); y = null; window.__playerOpen = false; $("phone").classList.remove("player-open"); syncTheme(); homeClockChanged(); } });
       if (wasOpen && !fromPop && pushed) { pushed = false; history.back(); }
     },
     // arrastando o mini-player para cima: o player aparece por baixo do dedo
@@ -259,7 +265,7 @@
   setTimeout(() => { f.src = "player.html"; document.body.appendChild(f); }, 350);
   // o "+" ou as configurações mudaram algo no player → a tela inicial acompanha
   addEventListener("storage", e => {
-    if (e.key === "sounos.settings") { try { document.documentElement.dataset.theme = JSON.parse(e.newValue).theme; } catch {} }
+    if (e.key === "sounos.settings") { if (!window.__playerOpen) syncTheme(); }
     else renderHome();
   });
 }

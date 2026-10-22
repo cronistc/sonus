@@ -16,7 +16,7 @@
     --c1: #5b21b6;
     --c2: #db2777;
     --c3: #f59e0b;
-    --fade: .28s;               /* duração de cada metade da troca info ⇄ letra */
+    --fade: .09s;               /* duração de cada metade da troca info ⇄ letra */
     --tile: 116px;              /* tamanho dos blocos da fila */
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -34,7 +34,6 @@
     width: 100%; max-width: 400px; height: 100%; max-height: 860px;
     position: relative; overflow: clip;
     background: var(--phone-bg);
-    transition: background .6s;
     display: flex; flex-direction: column;
     padding: 10px 24px 10px;
   }
@@ -51,9 +50,9 @@
   /* Topo: configurações (esq.) e busca (dir.) */
   .top { display: flex; align-items: center; justify-content: space-between; height: 40px; margin: 0 -10px; flex-shrink: 0;
           position: relative; transition: height .45s cubic-bezier(.2,.85,.25,1); }
-  .top .icon-btn { transition: opacity .3s ease, transform .45s cubic-bezier(.2,.85,.25,1); }
+  .top .icon-btn { transition: opacity .3s ease, transform .45s cubic-bezier(.2,.85,.25,1), color .24s ease; }
   .top .brand-letter { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
-                       transition: transform .45s cubic-bezier(.2,.85,.25,1), opacity .3s ease; }
+                       transition: transform .45s cubic-bezier(.2,.85,.25,1), opacity .3s ease, color .24s ease; }
   /* Tela cheia (deslizar para cima ou abrir a letra): engrenagem, G e busca somem e a capa sobe até o topo */
   .phone.immersive .top { height: 0; }
   .phone.immersive .top .icon-btn, .phone.immersive .top .brand-letter { opacity: 0; pointer-events: none; }
@@ -92,7 +91,7 @@
     user-select: none;
   }
   .times { display: flex; justify-content: space-between; font-size: calc(var(--fs) * (12px)); color: var(--text-dim);
-           margin-top: 10px; font-variant-numeric: tabular-nums; }
+           margin-top: 10px; font-variant-numeric: tabular-nums; transition: color .24s ease; }
 
   /* Área abaixo da capa */
   .below { position: relative; flex: 1; display: flex; flex-direction: column; min-height: 0; }
@@ -103,7 +102,7 @@
   .info { position: relative; display: flex; align-items: center; gap: 12px; margin-top: 12px; height: 52px; }
   .info .txt { flex: 1; min-width: 0; }
   .info h1 { font-size: calc(var(--fs) * (22px)); font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .info p { font-size: calc(var(--fs) * (15px)); color: var(--text-dim); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .info p { font-size: calc(var(--fs) * (15px)); color: var(--text-dim); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: color .24s ease; }
   .actions { display: flex; align-items: center; gap: 6px; }
   .act[hidden] { display: none; }               /* "A" só aparece com letra sincronizada */
   .act { width: 40px; height: 40px; border-radius: 12px; color: var(--text-dim); transition: background .3s, color .3s; }
@@ -214,7 +213,7 @@
   /* Compartilhar letra */
   .share-btn { position: absolute; left: -8px; top: 50%; margin-top: -20px;
                width: 40px; height: 40px; border-radius: 12px; color: var(--text);
-               transition: opacity var(--fade) ease, transform var(--fade) ease, background .3s; }
+               transition: opacity var(--fade) ease, transform var(--fade) ease, background .3s, color .24s ease; }
   .share-btn svg { width: 24px; height: 24px; }
   .share-btn.on { background: var(--chip); }
   .share-btn:active { transform: scale(.95); }
@@ -813,17 +812,24 @@ document.addEventListener("keydown", e => {
 // ---- Letras ----
 const lyricsOffset = () => SounosSettings.get().lyricsOffset;
 addEventListener("sounos:settings", () => { lastLine = -1; syncLyrics(); });
+let lastLine = -1, lyrMarked = -2, lyrMarkedFor = null;
+function lyricIndex(lrc, at) {
+  let lo = 0, hi = lrc.length;
+  while (lo < hi) { const mid = (lo + hi) >>> 1; if (lrc[mid][0] <= at) lo = mid + 1; else hi = mid; }
+  return lo - 1;
+}
 function buildLyrics() {
   const box = $("lines"), t = track();
-  box.innerHTML = ""; lastLine = -1; box.scrollTop = 0;
+  box.innerHTML = ""; lastLine = -1; lyrMarked = -2; lyrMarkedFor = null; box.scrollTop = 0;
   exitSelect();
   $("shareBtn").classList.toggle("hidden", !t.lrc);
   if (t.lrc === undefined) { box.innerHTML = '<div class="empty">…</div>'; return; }   // letra ainda carregando
   if (!t.lrc) { box.innerHTML = '<div class="empty">Letra indisponível para esta faixa</div>'; return; }
+  const marked = lyricIndex(t.lrc, pos + lyricsOffset());
   t.lrc.forEach((ln, i) => {
     const s = ln[0], txt = parseWordTags(t.lrc, i);
     const d = document.createElement("div");
-    d.className = "line" + (isNote(txt) ? " note" : "");
+    d.className = "line" + (isNote(txt) ? " note" : "") + (i === marked ? " now" : i < marked ? " past" : "");
     if (d.classList.contains("note")) d.textContent = txt;
     else txt.split(" ").forEach((w, k) => {                           // uma <span> por palavra (o preenchimento é por palavra)
       if (k) d.appendChild(document.createTextNode(" "));
@@ -832,8 +838,8 @@ function buildLyrics() {
     d.onclick = () => selecting ? toggleLine(i) : (pos = s, render());
     box.appendChild(d);
   });
+  lyrMarked = marked; lyrMarkedFor = box.firstElementChild;
 }
-let lastLine = -1;
 // LRC "enhanced": <mm:ss.xx> antes de cada trecho. Tira as marcas do texto e guarda o início de cada palavra em lrc.wt[i] (segundos).
 // Sem marcas, devolve o texto normalizado (palavras separadas por 1 espaço) e o tempo sai proporcional aos caracteres.
 function parseWordTags(lrc, i) {
@@ -865,19 +871,19 @@ function drawEq(now) {
     if (b.style.transform !== transform) b.style.transform = transform;
   });
 }
-let lyrMarked = -2, lyrMarkedFor = null;
 function syncLyrics() {
-  if (!lyricsMode) return;
   const t = track(); if (!t.lrc) return;
   const at = pos + lyricsOffset();                                  // + ajuste de sincronia das configurações
-  let lo = 0, hi = t.lrc.length;
-  while (lo < hi) { const mid = (lo + hi) >>> 1; if (t.lrc[mid][0] <= at) lo = mid + 1; else hi = mid; }
-  const ln = lo - 1;
+  const ln = lyricIndex(t.lrc, at);
   const els = $("lines").children;
-  // só mexe nas linhas quando a linha atual muda (antes: todas as linhas, todo quadro)
-  if (ln !== lyrMarked || lyrMarkedFor !== els[0]) {
-    lyrMarked = ln; lyrMarkedFor = els[0];
+  // A montagem já deixa todas as linhas marcadas. Depois, só atualiza o trecho entre uma linha e outra.
+  if (lyrMarkedFor !== els[0]) {
     for (let i = 0; i < els.length; i++) { els[i].classList.toggle("now", i === ln); els[i].classList.toggle("past", i < ln); }
+    lyrMarkedFor = els[0]; lyrMarked = ln;
+  } else if (ln !== lyrMarked) {
+    const from = Math.max(0, Math.min(ln, lyrMarked)), to = Math.min(els.length - 1, Math.max(ln, lyrMarked));
+    for (let i = from; i <= to; i++) { els[i].classList.toggle("now", i === ln); els[i].classList.toggle("past", i < ln); }
+    lyrMarked = ln;
   }
   if (ln !== lastLine && ln >= 0 && lyricsMode && !selecting) {
     const box = $("lines");
@@ -1148,7 +1154,7 @@ let lyricsMode = false;
 let immersiveByLyrics = false;
 function setImmersive(on) {
   $("phone").classList.toggle("immersive", on);
-  fitCover();
+  requestAnimationFrame(fitCover);
 }
 const isImmersive = () => $("phone").classList.contains("immersive");
 $("lyricsBtn").onclick = () => {
@@ -1158,7 +1164,10 @@ $("lyricsBtn").onclick = () => {
   else if (!lyricsMode && immersiveByLyrics) { immersiveByLyrics = false; setImmersive(false); }
   $("phone").classList.toggle("lyr-mode", lyricsMode);
   $("lyricsBtn").classList.toggle("on", lyricsMode);
-  if (lyricsMode) { lastLine = -1; syncLyrics(); } else exitSelect();
+  if (lyricsMode) {
+    lastLine = -1;
+    requestAnimationFrame(() => { if (lyricsMode) syncLyrics(); });
+  } else exitSelect();
 };
 window.__sonusBack = () => {
   if (!lyricsMode) return false;
@@ -1179,7 +1188,9 @@ function toggleLine(i) {
   updateSel();
 }
 function updateSel() {
-  [...$("lines").children].forEach((el, i) => el.classList.toggle("sel", selected.has(i)));
+  const lines = $("lines");
+  lines.querySelectorAll(".line.sel").forEach(el => el.classList.remove("sel"));
+  selected.forEach(i => lines.children[i]?.classList.add("sel"));
   $("selCount").textContent = `${selected.size}/${MAX_LINES}`;
   $("selCount").classList.toggle("full", selected.size === MAX_LINES);
   $("selGo").disabled = selected.size === 0;

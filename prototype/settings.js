@@ -21,12 +21,6 @@
 
   // aplica o tema já no carregamento (antes de pintar)
   document.documentElement.dataset.theme = s.theme;
-  function setTheme(v) {
-    const root = document.documentElement;
-    root.classList.add("theming");
-    root.dataset.theme = v;
-    clearTimeout(setTheme.t); setTheme.t = setTimeout(() => root.classList.remove("theming"), 550);
-  }
 
   const ICON = {
     back: '<svg class="lu" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>',
@@ -38,8 +32,20 @@
   function attach(button, phone) {
     const ov = document.createElement("div");
     ov.className = "set-ov";
+    phone.dataset.theme = s.theme;
     phone.appendChild(ov);
     let isOpen = false, pushed = false;
+    let pendingTheme = false, themeTimer = 0;
+
+    function applyThemeAfterClose() {
+      if (!pendingTheme) return;
+      clearTimeout(themeTimer);
+      themeTimer = setTimeout(() => {
+        if (isOpen) return;
+        phone.dataset.theme = s.theme;
+        pendingTheme = false;
+      }, 520);
+    }
 
     const sw = (k) => `<button class="sw" role="switch" aria-checked="${s[k]}" data-sw="${k}"></button>`;
     const seg = (k, opts) => `<div class="seg" data-seg="${k}"><span class="knob"></span>${opts.map(([v, l]) =>
@@ -48,7 +54,7 @@
     function render() {
       ov.innerHTML = `
         <div class="veil"></div>
-        <div class="set-panel" role="dialog" aria-label="Configurações">
+        <div class="set-panel" data-theme="${s.theme}" role="dialog" aria-label="Configurações">
           <div class="set-head"><button class="close" aria-label="Voltar">${ICON.back}</button><h2>Configurações</h2></div>
           <div class="set-body">
             <section class="set-sec" style="--i:0"><h3>Aparência</h3><div class="set-card">
@@ -182,14 +188,19 @@
       if (!on) return;
       k.style.left = on.offsetLeft + "px"; k.style.width = on.offsetWidth + "px";
     }
-    function set(k, v) { s[k] = v; save(); emit(); refresh(); }
+    function set(k, v, refreshUi = true) {
+      s[k] = v; save(); emit();
+      if (refreshUi) refresh();
+    }
 
     ov.addEventListener("click", e => {
       if (e.target.closest(".close") || e.target.classList.contains("veil")) return close();
       const th = e.target.closest(".theme");
       if (th) {
         ov.querySelectorAll(".theme").forEach(b => b.classList.toggle("on", b === th));
-        setTheme(th.dataset.v); return set("theme", th.dataset.v);
+        ov.querySelector(".set-panel").dataset.theme = th.dataset.v;
+        pendingTheme = true;
+        return set("theme", th.dataset.v, false);
       }
       const swEl = e.target.closest("[data-sw]");
       if (swEl) { const k = swEl.dataset.sw; swEl.setAttribute("aria-checked", !s[k]); return set(k, !s[k]); }
@@ -222,6 +233,7 @@
       if (!isOpen) return;
       isOpen = false;
       ov.classList.remove("open");
+      applyThemeAfterClose();
       button.animate?.([{ transform: "rotate(90deg)" }, { transform: "rotate(0)" }], { duration: 480, easing: "cubic-bezier(.2,.85,.25,1)" });
       if (!fromPop && pushed) { pushed = false; window.history.back(); }
     }
