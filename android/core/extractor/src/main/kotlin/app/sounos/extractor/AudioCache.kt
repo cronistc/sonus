@@ -43,7 +43,7 @@ class AudioCache(
     fun totalLength(id: String): Long = runCatching { lenFile(id).readText().trim().toLong() }.getOrDefault(-1)
     fun isComplete(id: String): Boolean = totalLength(id).let { it > 0 && length(id) >= it }
     fun isFreshComplete(id: String, now: Long = System.currentTimeMillis()): Boolean =
-        isComplete(id) && maxAgeMs == Long.MAX_VALUE || now - lastUsed(id, file(id)) < maxAgeMs
+        isComplete(id) && (maxAgeMs == Long.MAX_VALUE || now - lastUsed(id, file(id)) < maxAgeMs)
     fun hasHead(id: String): Boolean = length(id) >= minOf(headBytes.toLong(), totalLength(id).takeIf { it > 0 } ?: headBytes.toLong())
 
     /** Atualiza a data de uso quando a pessoa realmente ouve a música. */
