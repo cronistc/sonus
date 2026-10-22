@@ -574,7 +574,7 @@ function render(fromTick) {
   // um só compasso visual (~15×/s): barrinhas, anel e tempo mudam juntos → a tela redesenha poucas vezes
   if (fromTick && now - lastEqDraw < 50) { syncLyrics(); return; }
   lastEqDraw = now;
-  drawEq(now);
+  if (!inLyrics()) drawEq(now);               // no modo letra a fila some: ninguém vê as barrinhas
   drawRingFill(f * 1000);
   const ct = fmt(pos); if (ct !== lastCurText) { lastCurText = ct; $("cur").textContent = ct; }
   renderPlayIcon();
@@ -860,14 +860,15 @@ function tick(now) {
 }
 // Relógio por timer (não rAF): rAF contínuo faz o WebView redesenhar a cada vsync (~120 quadros/s) sem necessidade.
 // O visual só muda ~15×/s; parado, fechado ou coberto, não há timer para acordar a página.
-const VIS_MS = 66;
+const VIS_MS = 66, LYR_MS = 110;            // modo letra: sem barrinhas, só anel/letra → compasso mais lento (imperceptível)
+function inLyrics() { return $("phone").classList.contains("lyr-mode"); }
 let clockTimer = 0;
 function playerCanAnimate() {
   return playerVisible && playerPageActive && !document.hidden && !$("phone").classList.contains("overlay-open");
 }
 function syncPlayerClock() {
   clearTimeout(clockTimer); clockTimer = 0;
-  if (playing && playerCanAnimate()) clockTimer = setTimeout(clockLoop, VIS_MS);
+  if (playing && playerCanAnimate()) clockTimer = setTimeout(clockLoop, inLyrics() ? LYR_MS : VIS_MS);
 }
 function clockLoop() {
   clockTimer = 0;
