@@ -62,7 +62,7 @@ window.SounosUpdate = (() => {
       btn.classList.toggle("primary", has);
       btn.querySelector(".fill").style.transform = `scaleX(${u.status === "downloading" ? u.progress || 0 : 0})`;
       $(".upd-hint").textContent = !u.canInstall ? "Permita \"Atualizar sozinho\" nas configurações para instalar sem pedir nada."
-        : has ? "Se você não tocar em nada, ela instala sozinha quando você sair do app e nada estiver tocando." : "O Sonus procura atualizações sozinho e se atualiza em segundo plano.";
+        : has ? "Só instala quando você tocar em Atualizar agora. O Sonus fecha por alguns segundos e abre de novo sozinho." : "O Sonus procura e baixa as atualizações sozinho, e avisa quando tiver uma nova.";
       $(".upd-foot").classList.toggle("quiet", btn.hidden);
     }
 

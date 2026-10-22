@@ -145,7 +145,7 @@ class MainActivity : Activity() {
         web.onPause()
         super.onPause()
         SounosApp.instance.player.saveSession()
-        SounosApp.instance.updater.run { foreground = false; installIfIdle() }     // atualização pronta: instala agora que o app saiu da frente
+        SounosApp.instance.updater.foreground = false
     }
     override fun onResume() {
         super.onResume()

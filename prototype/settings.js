@@ -148,20 +148,35 @@
     // ---------- Atualizações ----------
     let upd = window.Sounos?.native ? Sounos.call("getUpdate") : null;
     const updUi = SounosUpdate.attach(ov.parentElement, () => upd);
-    // Acabou de atualizar: mostra "Nesta versão" sozinho, depois da abertura e da tela "Antes de começar".
-    // Enquanto espera ou está aberta, as dicas aguardam (__sonusNovidades).
-    if (upd?.justUpdated) {
-      window.__sonusNovidades = true;
-      const fim = () => { if (updUi.isOpen()) return setTimeout(fim, 400); window.__sonusNovidades = false; };
+    // Telas que abrem sozinhas, uma de cada vez, depois da abertura, da tela "Antes de começar" e longe do player:
+    //  · acabou de atualizar → "Nesta versão" (uma vez; continua em Configurações › Atualizações)
+    //  · tem versão nova → "O que há de novo" + "Atualizar agora" (uma vez por abertura do app, no máximo 1x por dia).
+    //    Sem o toque da pessoa, nada é instalado.
+    // Enquanto alguma espera ou está aberta, as dicas aguardam (__sonusNovidades).
+    let aguardando = 0;
+    const livre = () => window.__sonusAberturaFim !== undefined && !document.body.classList.contains("sonus-opening")
+      && !window.__sonusBoasVindas && !window.__playerOpen && !updUi.isOpen() && !isOpen;
+    function automatica(abrir) {
+      aguardando++; window.__sonusNovidades = true;
+      const fim = () => { if (updUi.isOpen()) return setTimeout(fim, 400); if (--aguardando === 0) window.__sonusNovidades = false; };
       const tenta = () => {
-        if (window.__sonusAberturaFim === undefined || document.body.classList.contains("sonus-opening") || window.__sonusBoasVindas) return setTimeout(tenta, 400);
-        setTimeout(() => {
-          if (window.__sonusBoasVindas) return tenta();
-          updUi.open(); setTimeout(fim, 400);
-        }, 700);
+        if (!livre()) return setTimeout(tenta, 400);
+        setTimeout(() => { if (!livre()) return tenta(); abrir(); setTimeout(fim, 400); }, 700);
       };
       tenta();
     }
+    if (upd?.justUpdated) automatica(() => updUi.open());
+    const AVISO = "sounos.updAviso";
+    let avisou = false;
+    function avisaVersaoNova() {
+      const nv = upd?.update; if (avisou || !nv || !["available", "downloading", "ready"].includes(upd.status)) return;
+      let ultimo = {}; try { ultimo = JSON.parse(localStorage.getItem(AVISO) || "{}"); } catch {}
+      if (ultimo.code === nv.versionCode && Date.now() - (ultimo.em || 0) < 864e5) return;
+      avisou = true;
+      automatica(() => { try { localStorage.setItem(AVISO, JSON.stringify({ code: nv.versionCode, em: Date.now() })); } catch {} updUi.open(); });
+    }
+    avisaVersaoNova();
+    if (window.Sounos?.native) Sounos.on("update", () => avisaVersaoNova());
     const supUi = window.SounosSupport?.attach(ov.parentElement);
     const showSup = () => ov.querySelectorAll("[data-sup]").forEach(s => s.hidden = !window.SounosSupport?.available());
     window.SounosSupport?.onChange(showSup);
@@ -178,7 +193,7 @@
         uptodate: [upd.justUpdated ? `Atualizado para a ${upd.justUpdated}.` : "Você está na versão mais recente.", "Buscar"],
         available: [`Nova versão ${nv} disponível.`, "Ver"],
         downloading: [`Baixando a ${nv}… ${pct}%`, `${pct}%`],
-        ready: [`A ${nv} está pronta. Instala sozinha quando você sair do app.`, "Ver"],
+        ready: [`A ${nv} está pronta. Toque para atualizar.`, "Ver"],
         installing: [`Instalando a ${nv}…`, "…"],
         error: [upd.error || "Não deu para procurar agora.", "Tentar"],
       }[upd.status] || ["", "Buscar"];

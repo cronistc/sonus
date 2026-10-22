@@ -121,11 +121,10 @@ class Updater(private val app: SounosApp) {
         }
     }
 
-    /** Tem versão nova: baixa sozinho (no Wi-Fi, ou em qualquer rede se a pessoa não restringiu) e instala quando der. */
+    /** Tem versão nova: baixa sozinho (no Wi-Fi, ou em qualquer rede se a pessoa não restringiu). Instalar, só quando a pessoa tocar em "Atualizar agora". */
     private fun autoContinue() {
         val i = info() ?: return
         if (state().optString("status") == "available" && (!metered() || !app.library.settings().optBoolean("wifiOnlyDownloads"))) download()
-        else installIfIdle()
     }
 
     private fun metered() = (app.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager).isActiveNetworkMetered
@@ -163,7 +162,7 @@ class Updater(private val app: SounosApp) {
             }.onFailure { tmp.delete(); status = "error"; error = "Não deu para baixar a atualização." }
             emit()
             job = null
-            if (status != "error") { if (thenInstall) install() else installIfIdle() }
+            if (status != "error" && thenInstall) install()
         }
     }
 
@@ -182,10 +181,6 @@ class Updater(private val app: SounosApp) {
 
     // ---------------- instalar ----------------
     /** Instala sozinho só quando ninguém vai perceber: app no fundo e nada tocando. */
-    fun installIfIdle() {
-        if (state().optString("status") == "ready" && !foreground && !app.player.isPlaying && canInstallSilently()) install()
-    }
-
     fun install() {
         val i = info() ?: return
         val apk = apkFile(i)
