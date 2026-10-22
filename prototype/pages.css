@@ -44,12 +44,14 @@
 .pg .big:disabled { opacity: .35; }
 
 .pg .list { padding: 6px 12px 140px; }
+.pg.artist .list, .pg.album .list { padding-bottom: 8px; }
+.phone.has-page:has(.mini.has-track) .pg:is(.artist, .album) { padding-bottom: calc(var(--mini-h, 64px) + 32px); }
 .pg .sec { font-size: calc(var(--fs) * (15px)); font-weight: 800; padding: 18px 8px 6px; }
 .pg .tr { display: flex; align-items: center; gap: 12px; padding: 7px 8px; border-radius: 12px; position: relative;
            background: var(--bg); touch-action: pan-y; user-select: none; }
 .pg .tr:active:not(.lift) { background: var(--chip-soft); }
 .pg .tr.now .t { color: var(--brand); }
-.phone[data-theme="gradient"] .pg .tr.now .t { color: #fff; text-decoration: underline; text-underline-offset: 3px; }
+.phone[data-theme="gradient"] .pg .tr.now .t { color: #fff; }
 .pg .tr .cv { width: 50px; height: 50px; border-radius: 8px; flex-shrink: 0; background-size: cover; background-position: center; }
 .pg .tr .tx { flex: 1; min-width: 0; }
 .pg .tr .t { font-size: calc(var(--fs) * (15px)); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
