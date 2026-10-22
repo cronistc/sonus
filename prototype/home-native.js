@@ -2,10 +2,7 @@
 (() => {
   if (!Sounos.native) return;
   const esc = s => String(s ?? "").replace(/[&<>"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
-  const thumbLayer = t => {
-    const thumb = t?.thumb || t?.thumbs?.[0]?.url || "";
-    return thumb ? `url("${String(thumb).replace(/["\\\n\r]/g, ch => encodeURIComponent(ch))}") center/cover no-repeat,` : "";
-  };
+  const thumbLayer = () => "";   // a capa vem só pela rota local (/cover), que já busca e guarda; nada de baixar duas vezes
   const bg = t => `url('${Sounos.coverUrl(t)}') center/cover no-repeat, ${thumbLayer(t)}linear-gradient(135deg,${Sounos.hashColors(t.id).join(",")})`;
   const artistKey = n => String(n || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
   let S = Sounos.call("getState");

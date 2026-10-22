@@ -9,7 +9,7 @@
   const toLocal = t => ({ id: t.id, title: t.title || "—", artist: Sounos.artistLine(t), dur: Math.max(1, t.dur || 1),
                           c: Sounos.hashColors(t.id), lrc: lyricsById[t.id] ? lyricsById[t.id].lrc : undefined, plain: !!(lyricsById[t.id] && lyricsById[t.id].plain),
                           cover: Sounos.coverUrl(t), thumb: t.thumb || t.thumbs?.[0]?.url || "", raw: t });
-  const thumbLayer = t => t.thumb ? `url("${String(t.thumb).replace(/["\\\n\r]/g, ch => encodeURIComponent(ch))}") center/cover no-repeat,` : "";
+  const thumbLayer = () => "";   // a capa vem só pela rota local (/cover), que já busca e guarda; nada de baixar duas vezes
   const coverBg = t => `url('${t.cover}') center/cover no-repeat, ${thumbLayer(t)}linear-gradient(135deg,${t.c[0]},${t.c[1]} 60%,${t.c[2]})`;
 
   const offerPlayerTips = () => {

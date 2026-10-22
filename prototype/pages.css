@@ -51,7 +51,7 @@
            background: var(--bg); touch-action: pan-y; user-select: none; }
 .pg .tr:active:not(.lift) { background: var(--chip-soft); }
 .pg .tr.now .t { color: var(--brand); }
-.phone[data-theme="gradient"] .pg .tr.now .t { color: #fff; }
+.phone[data-theme="gradient"] .pg .tr.now .t { color: #fff; text-decoration: underline; text-underline-offset: 3px; }
 .pg .tr .cv { width: 50px; height: 50px; border-radius: 8px; flex-shrink: 0; background-size: cover; background-position: center; }
 .pg .tr .tx { flex: 1; min-width: 0; }
 .pg .tr .t { font-size: calc(var(--fs) * (15px)); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
