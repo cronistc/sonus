@@ -466,7 +466,7 @@ const LU = {
 };
 // Ícone mostra o estado: tocando = pausa; pausado = play, ou o modo ativo (aleatório / repetir / os dois)
 let miniFlashTimer = 0;
-function renderMiniIcon() {
+function renderMiniIcon(showPlaying = playing, loading = false) {
   const rep = repeat === "one" ? LU.repeat1 : LU.repeat, el = $("miniIcon");
   // sempre play/pausa; ao trocar um modo, o ícone dele aparece por um instante (apagado = desligou)
   const modes = shuffle + "|" + repeat;
@@ -478,11 +478,11 @@ function renderMiniIcon() {
   const fl = renderMiniIcon.flash;
   if (fl) {
     clearTimeout(miniFlashTimer);
-    if (performance.now() < fl.until && homeCanAnimate()) miniFlashTimer = setTimeout(renderMiniIcon, fl.until - performance.now() + 1);
+    if (performance.now() < fl.until && homeCanAnimate()) miniFlashTimer = setTimeout(() => renderMiniIcon(showPlaying, loading), fl.until - performance.now() + 1);
     else renderMiniIcon.flash = null;
   }
-  let html = playing ? LU.pause : LU.play, combo = false;
-  if (fl && performance.now() < fl.until) html = fl.html;
+  let html = showPlaying ? LU.pause : LU.play, combo = false;
+  if (!loading && fl && performance.now() < fl.until) html = fl.html;
   if (el.dataset.src !== html) {
     const first = !el.dataset.src; el.innerHTML = html; el.dataset.src = html;
     if (!first) swapIn(el, { opacity: 0, transform: "scale(.5) rotate(-12deg)" }, 260);

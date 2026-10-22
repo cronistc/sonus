@@ -7,8 +7,10 @@
   const root = document.documentElement.style;
 
   const toLocal = t => ({ id: t.id, title: t.title || "—", artist: Sounos.artistLine(t), dur: Math.max(1, t.dur || 1),
-                          c: Sounos.hashColors(t.id), lrc: lyricsById[t.id] ? lyricsById[t.id].lrc : undefined, plain: !!(lyricsById[t.id] && lyricsById[t.id].plain), cover: Sounos.coverUrl(t), raw: t });
-  const coverBg = t => `url('${t.cover}') center/cover no-repeat, linear-gradient(135deg,${t.c[0]},${t.c[1]} 60%,${t.c[2]})`;
+                          c: Sounos.hashColors(t.id), lrc: lyricsById[t.id] ? lyricsById[t.id].lrc : undefined, plain: !!(lyricsById[t.id] && lyricsById[t.id].plain),
+                          cover: Sounos.coverUrl(t), thumb: t.thumb || t.thumbs?.[0]?.url || "", raw: t });
+  const thumbLayer = () => "";   // a capa vem só pela rota local (/cover), que já busca e guarda; nada de baixar duas vezes
+  const coverBg = t => `url('${t.cover}') center/cover no-repeat, ${thumbLayer(t)}linear-gradient(135deg,${t.c[0]},${t.c[1]} 60%,${t.c[2]})`;
 
   const offerPlayerTips = () => {
     SounosTips?.offer("player");
@@ -29,7 +31,7 @@
     base.cur = Math.max(0, st.index);
     sugg = st.suggestions.map((_, i) => st.queue.length + i);
     nowT = base.cur;
-    repeat = st.repeat; shuffle = st.shuffle; playing = st.playing;
+    repeat = st.repeat; shuffle = st.shuffle; playing = !!st.playing || (!!st.loading && !!st.playWhenReady);
     context = st.context?.type === "radio" ? "radio" : "playlist";
     const cur = tracks[nowT];
     if (cur) {
@@ -44,9 +46,10 @@
                          (queueMode() === "sugg" && ids(prev?.suggestions) !== ids(st.suggestions));
     if (queueChanged && !holdQueue) refreshQueue(!first); else if (!holdQueue) markQueue();
     if (first || prev?.current?.id !== st.current?.id) { const keep = pos; loadCurrent(); pos = keep; }
+    $("phone").classList.toggle("loading", !!st.loading);
     renderDl(); render();
     syncPlayerClock();
-    $("phone").classList.toggle("loading", !!st.loading);
+    renderPlayIcon();
     if (playerVisible) offerPlayerTips();
   }
 
@@ -92,7 +95,7 @@
   };
 
   // ---------- comandos → app ----------
-  setPlaying = function (v) { playing = v; lastTick = performance.now(); Sounos.call(v ? "play" : "pause"); render(); syncPlayerClock(); };
+  setPlaying = function (v) { playing = v; lastTick = performance.now(); Sounos.call(v ? "play" : "pause"); render(); renderPlayIcon(); syncPlayerClock(); };
   next = function () { Sounos.call("next"); };
   prev = function () { Sounos.call("prev"); };
   $("prev").onclick = () => prev();
@@ -183,8 +186,9 @@
     if (p.id && S?.current && p.id !== S.current.id) return;   // progresso de outra música (troca em andamento)
     if (!scrubbing && !ring.classList.contains("drag")) pos = p.pos;
     if (p.dur > 0) track().dur = p.dur;
-    const changed = p.playing !== playing;
-    playing = p.playing; lastTick = performance.now();
+    const nextPlaying = !!p.playing || (!!p.loading && !!p.playWhenReady);
+    const changed = nextPlaying !== playing;
+    playing = nextPlaying; lastTick = performance.now();
     if (changed) { render(); syncPlayerClock(); return; }
     if (!playing && playerCanAnimate()) render();    // parado: uma busca atualiza a tela uma única vez
   });

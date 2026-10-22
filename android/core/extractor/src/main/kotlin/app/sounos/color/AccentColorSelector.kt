@@ -62,8 +62,16 @@ object AccentColorSelector {
             .filter { it.backgroundDelta >= 22.0 && it.contrast >= MIN_BACKGROUND_CONTRAST }
             .toList()
 
-        val chosen = candidates.maxByOrNull { it.score }?.color ?: derivedColor(edgeLab)
+        // Nada colorido que sirva: a cor de contraste vem da PRÓPRIA capa (nunca inventada) — a cor dela que mais
+        // se afasta da borda (ex.: capa preto e branco → branco).
+        val chosen = candidates.maxByOrNull { it.score }?.color ?: ownContrast(center.values + border.values, edgeLab)
         return Result(chosen, borderDominant, deltaE(toOklab(chosen), edgeLab))
+    }
+
+    private fun ownContrast(buckets: Collection<Bucket>, edge: Lab): Int {
+        val colors = buckets.filter { it.count >= 2 }.map { it.color() }.ifEmpty { buckets.map { it.color() } }
+        val noSkin = colors.filterNot(::isSkin).ifEmpty { colors }
+        return noSkin.maxByOrNull { deltaE(toOklab(it), edge) } ?: 0xFFFFFF
     }
 
     fun isSkin(color: Int): Boolean {
@@ -87,41 +95,6 @@ object AccentColorSelector {
 
     fun minimumBackgroundContrast(color: Int): Double =
         min(contrastRatio(color, BACKGROUND_DARK), contrastRatio(color, BACKGROUND_LIGHT))
-
-    private fun derivedColor(edge: Lab): Int {
-        val hue = atan2(edge.b, edge.a)
-        var best: Candidate? = null
-        // Croma e matiz saem da cor da borda; L é ajustado para manter contraste nos dois temas.
-        for (rotationDegrees in doubleArrayOf(150.0, 165.0, 180.0, 195.0)) {
-            val targetHue = hue + rotationDegrees * PI / 180.0
-            for (lightness in doubleArrayOf(.48, .51, .54, .57, .60, .63)) {
-                for (chroma in doubleArrayOf(.24, .22, .20, .18, .16, .14, .12)) {
-                    val color = fromOklab(Lab(lightness, chroma * cos(targetHue), chroma * sin(targetHue))) ?: continue
-                    if (isSkin(color)) continue
-                    val edgeDelta = deltaE(toOklab(color), edge)
-                    val contrast = minimumBackgroundContrast(color)
-                    if (edgeDelta < MIN_BORDER_DELTA_E || contrast < MIN_BACKGROUND_CONTRAST) continue
-                    val lab = toOklab(color)
-                    val candidate = Candidate(color, chroma, edgeDelta, min(
-                        deltaE(lab, toOklab(BACKGROUND_DARK)),
-                        deltaE(lab, toOklab(BACKGROUND_LIGHT)),
-                    ), contrast)
-                    if (best == null || candidate.score > best.score) best = candidate
-                }
-            }
-        }
-        best?.let { return it.color }
-
-        // Reserva cores seguras se a cor de borda estiver fora da gama RGB representável.
-        return intArrayOf(0xE748C8, 0x2385E8, 0x2DBF85, 0xD98D00)
-            .filterNot(::isSkin)
-            .filter { color ->
-                deltaE(toOklab(color), edge) >= MIN_BORDER_DELTA_E &&
-                    minimumBackgroundContrast(color) >= MIN_BACKGROUND_CONTRAST
-            }
-            .maxByOrNull { deltaE(toOklab(it), edge) }
-            ?: 0xE748C8
-    }
 
     private fun fallbackResult(): Result {
         val color = 0xE748C8

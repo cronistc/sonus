@@ -2,7 +2,8 @@
 (() => {
   if (!Sounos.native) return;
   const esc = s => String(s ?? "").replace(/[&<>"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
-  const bg = (t, round) => `url('${Sounos.coverUrl(t)}') center/cover no-repeat, linear-gradient(135deg,${Sounos.hashColors(t.id).join(",")})`;
+  const thumbLayer = () => "";   // a capa vem só pela rota local (/cover), que já busca e guarda; nada de baixar duas vezes
+  const bg = t => `url('${Sounos.coverUrl(t)}') center/cover no-repeat, ${thumbLayer(t)}linear-gradient(135deg,${Sounos.hashColors(t.id).join(",")})`;
   const artistKey = n => String(n || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
   let S = Sounos.call("getState");
   let offline = !!Sounos.call("getOffline").offline;
@@ -157,7 +158,7 @@
     playing = !!st.playing; shuffle = st.shuffle; repeat = st.repeat;
     pos = (st.positionMs || 0) / 1000;
     last = performance.now();
-    renderMiniIcon();
+    renderMiniIcon(!!st.playing || (!!st.loading && !!st.playWhenReady), !!st.loading);
     homeClockChanged();
     fitHome();                             // blocos se reajustam à nova altura disponível
     if (appeared) miniRise();
@@ -186,7 +187,12 @@
   step = d => Sounos.call(d > 0 ? "next" : "prev");
   doShuffle = () => Sounos.call("setShuffle", { on: !shuffle });
   doRepeat = () => Sounos.call("setRepeat", { mode: { off: "all", all: "one", one: "off" }[repeat] });
-  doToggle = () => { playing = !playing; $("phone").classList.toggle("paused", !playing); renderMiniIcon(); homeClockChanged(); Sounos.call(playing ? "play" : "pause"); };
+  doToggle = () => {
+    const nextPlaying = !(!!playing || (!!S?.loading && !!S?.playWhenReady));
+    if (!S?.loading) { playing = nextPlaying; $("phone").classList.toggle("paused", !playing); homeClockChanged(); }
+    renderMiniIcon(nextPlaying, !!S?.loading);
+    Sounos.call(nextPlaying ? "play" : "pause");
+  };
   let seekT = 0;
   scrubBy = dx => { const d = curDur(); pos = Math.max(0, Math.min(d, pos + dx * 0.002 * d)); clearTimeout(seekT); seekT = setTimeout(() => Sounos.call("seek", { sec: pos }), 120); };
   currentForAdd = () => cur();
@@ -197,7 +203,7 @@
     const changed = playing !== p.playing;
     if (!scrubbing) pos = p.pos;
     playing = p.playing; $("phone").classList.toggle("paused", !playing); last = performance.now();
-    if (changed) renderMiniIcon();
+    if (changed) renderMiniIcon(!!p.playing || (!!p.loading && !!p.playWhenReady), !!p.loading);
     if (homeCanAnimate() && !playing) drawMiniProgress();
     if (changed) homeClockChanged();
   });
@@ -206,7 +212,7 @@
     const p = Sounos.call("getProgress");
     if (Number.isFinite(p.pos) && !scrubbing) pos = p.pos;
     playing = !!p.playing; $("phone").classList.toggle("paused", !playing); last = performance.now();
-    renderMiniIcon();
+    renderMiniIcon(!!p.playing || (!!p.loading && !!p.playWhenReady), !!p.loading);
     if (homeCanAnimate() && !playing) drawMiniProgress();
     homeClockChanged();
   });

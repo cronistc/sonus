@@ -44,6 +44,8 @@
 .pg .big:disabled { opacity: .35; }
 
 .pg .list { padding: 6px 12px 140px; }
+.pg.artist .list, .pg.album .list { padding-bottom: 8px; }
+.phone.has-page:has(.mini.has-track) .pg:is(.artist, .album) { padding-bottom: calc(var(--mini-h, 64px) + 32px); }
 .pg .sec { font-size: calc(var(--fs) * (15px)); font-weight: 800; padding: 18px 8px 6px; }
 .pg .tr { display: flex; align-items: center; gap: 12px; padding: 7px 8px; border-radius: 12px; position: relative;
            background: var(--bg); touch-action: pan-y; user-select: none; }

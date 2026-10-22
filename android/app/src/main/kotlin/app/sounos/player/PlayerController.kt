@@ -56,6 +56,7 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
     var current: ResolvedTrack? = null; private set
     var durationMs = 0L; private set
     var loading = false; private set
+    private var playWhenReady = false
     var colors = listOf("#2F6BFF", "#1D4ED8", "#60A5FA", "#60A5FA"); private set
     var lyrics: Lyrics.Result? = null; private set
     private var lyricsFor: String? = null
@@ -106,7 +107,7 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
     fun state(): JSONObject = JSONObject()
         .put("queue", Json.tracks(queue)).put("index", index)
         .put("current", currentTrack?.let { Json.track(it) } ?: JSONObject.NULL)
-        .put("playing", engine.isPlaying).put("loading", loading)
+        .put("playing", engine.isPlaying).put("loading", loading).put("playWhenReady", playWhenReady)
         .put("repeat", repeat.name.lowercase()).put("shuffle", shuffle)
         .put("context", context).put("suggestions", Json.tracks(suggestions))
         .put("colors", JSONArray(colors)).put("durationMs", durationMs).put("positionMs", positionMs())
@@ -137,10 +138,11 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
         startCurrent()
     }
 
-    fun toggle() = if (engine.isPlaying) pause() else play()
+    fun toggle() = if (engine.isPlaying || loading && playWhenReady) pause() else play()
 
     fun play() {
-        if (index < 0 || loading) return
+        if (index < 0) return
+        if (loading) { playWhenReady = true; engine.play(); emitState(); return }
         val t = currentTrack ?: return
         if (!online && !isAvailableOffline(t)) { skipUnavailableOffline(); return }
         if (currentUsesCache && !app.audio.isFreshComplete(t.id)) { startCurrent(resumeAtMs); return }
@@ -150,7 +152,7 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
         engine.play(); emitState(); ticker()
     }
 
-    fun pause() { engine.pause(); emitState(); saveSession() }
+    fun pause() { playWhenReady = false; engine.pause(); emitState(); saveSession() }
 
     fun next(auto: Boolean = false) {
         if (index < 0) return
@@ -245,7 +247,7 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
         if (!online && !isAvailableOffline(t)) { skipUnavailableOffline(); return }
         app.audio.protectedIds = (upcoming().map { it.id } + t.id).toSet()
         val my = ++token
-        loading = true; current = null; currentUsesCache = false; durationMs = t.durationSec * 1000
+        loading = true; playWhenReady = true; current = null; currentUsesCache = false; durationMs = t.durationSec * 1000
         fillJob?.cancel()
         engine.release()
         app.covers.local(t.id)?.let { colors = CoverColors.of(it) }
@@ -297,7 +299,7 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
                     }
                 }
                 requestFocus()
-                engine.load(source, startMs, playWhenReady = true, knownGainDb = app.library.gain(t.id))
+                engine.load(source, startMs, playWhenReady = playWhenReady, knownGainDb = app.library.gain(t.id))
                 app.library.addHistory(track, context)
                 launch(Dispatchers.IO) {                                   // capa (fica guardada) + cores do fundo
                     runCatching {
@@ -328,6 +330,7 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
             } catch (e: Throwable) {
                 if (my != token) return@launch
                 loading = false
+                playWhenReady = false
                 emit("error", JSONObject().put("message", e.message ?: "erro"))
                 emitState()
                 main.postDelayed({ if (my == token && queue.size > 1) next(auto = true) }, 1500)
@@ -351,7 +354,7 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
         errorsInARow = 0
         currentTrack?.takeUnless { app.library.isDownloaded(it.id) }?.let { app.audio.markHeard(it.id) }
         if (durationMs > 0) this.durationMs = durationMs
-        loading = false; emitState(); ticker()
+        loading = false; playWhenReady = engine.isPlaying; emitState(); ticker()
     }
 
     override fun onEnded() {
@@ -362,6 +365,7 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
     private var errorsInARow = 0
     override fun onError(error: Throwable) {
         loading = false
+        playWhenReady = false
         emit("error", JSONObject().put("message", error.message ?: "erro no áudio"))
         val my = token
         // 3 falhas seguidas (sem internet, por exemplo): para em vez de pular música atrás de música
@@ -405,6 +409,7 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
             fillJob?.cancel()
             engine.release()
             loading = false
+            playWhenReady = false
             current = null
             currentUsesCache = false
             resumeAtMs = 0
@@ -530,6 +535,7 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
     }
 
     fun progress(): JSONObject = JSONObject().put("pos", positionMs() / 1000.0).put("dur", durationMs / 1000.0).put("playing", engine.isPlaying)
+        .put("loading", loading).put("playWhenReady", playWhenReady)
         .put("id", currentTrack?.id ?: JSONObject.NULL)   // a tela ignora progresso de outra música
 
     private var ticking = false
@@ -552,7 +558,7 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
         .setOnAudioFocusChangeListener { change ->
             when (change) {
                 AudioManager.AUDIOFOCUS_LOSS -> { resumeOnGain = false; pause() }
-                AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> { resumeOnGain = engine.isPlaying; pause() }
+                AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> { resumeOnGain = engine.isPlaying || loading && playWhenReady; pause() }
                 AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> engine.duckVolume = .25f
                 AudioManager.AUDIOFOCUS_GAIN -> { engine.duckVolume = 1f; if (resumeOnGain) { resumeOnGain = false; play() } }
             }
