@@ -8,7 +8,7 @@
   const MORPH_INI = 300, MORPH_DUR = 1250, ATRASO_LETRA = 0, PAUSA = 220, SUBIDA = 950, ENCAIXE = 0, REVELA = 700;
   const MORPH_FIM = MORPH_INI + MORPH_DUR;
   const SOBE_INI = MORPH_FIM + PAUSA, SOBE_FIM = SOBE_INI + SUBIDA, T = SOBE_FIM + ENCAIXE + REVELA;
-  let desloc = 0, letrasOnus, layer, base, bg, canvas, ctx, off, octx, ratio, cor, fundo, alvo, clavePath, textoPath, D, pares, startAt, done = false;
+  let medido = false, joia, desloc = 0, letrasOnus, layer, base, bg, canvas, ctx, off, octx, ratio, cor, fundo, alvo, clavePath, textoPath, D, pares, startAt, done = false;
   const clamp = v => Math.max(0, Math.min(1, v));
   const fase = (t, a, b) => clamp((t - a) / (b - a));
   const suave = t => t * t * (3 - 2 * t);
@@ -56,6 +56,12 @@
     canvas.width = Math.round(innerWidth * ratio); canvas.height = Math.round(innerHeight * ratio);
     off = document.createElement("canvas"); off.width = canvas.width; off.height = canvas.height;
     octx = off.getContext("2d");
+    // a clave que sobe é uma CÓPIA do próprio ícone do cabeçalho, no mesmo lugar e tamanho: no fim da subida
+    // ela fica idêntica ao original (nenhuma troca visível)
+    joia = logo.cloneNode(true); joia.removeAttribute("id"); joia.classList.add("sonus-opening-joia");
+    Object.assign(joia.style, { position: "fixed", left: r.left + "px", top: r.top + "px", width: r.width + "px", height: r.height + "px",
+      margin: 0, color: cor, opacity: 0, transformOrigin: `${D.ccx / 64 * 100}% ${D.ccy / 64 * 100}%`, pointerEvents: "none" });
+    layer.appendChild(joia);
     layer.addEventListener("pointerdown", e => { e.preventDefault(); e.stopPropagation(); finish(); }, { passive: false });
     return true;
   }
@@ -113,15 +119,19 @@
         ctx.fill(L.path);
         ctx.restore();
       });
-    } else {                                               // 3) a clave sobe sozinha e 4) encaixa no cabeçalho
+    } else {                                               // 3) a clave sobe sozinha e para exatamente no lugar
       const s0 = CLAVE_ALTURA / D.ch;
-      // subida num movimento só: começa macio e chega parada, exatamente onde a clave fica na tela inicial
       const u = fase(ms, SOBE_INI, SOBE_FIM);
-      const w = u * u * u * (u * (u * 6 - 15) + 10);          // para exatamente no lugar, sem passar do ponto
-      const s = s0 + (alvo.escala - s0) * w;
-      const x = cx + (alvo.x - cx) * w, y = cy + (alvo.y - cy) * w;
-      ctx.save(); ctx.translate(x, y); ctx.scale(s, s); ctx.translate(-D.ccx, -D.ccy);
-      ctx.fill(clavePath); ctx.restore();
+      const w = u * u * u * (u * (u * 6 - 15) + 10);          // começa macio e chega parada
+      if (!medido) {                                       // a tela inicial já terminou de se arrumar: mede agora
+        medido = true;
+        const r2 = document.getElementById("brandLetter").getBoundingClientRect(), e2 = (r2.width || 28) / 64;
+        alvo = { x: r2.left + D.ccx * e2, y: r2.top + D.ccy * e2, escala: e2 };
+        Object.assign(joia.style, { left: r2.left + "px", top: r2.top + "px", width: r2.width + "px", height: r2.height + "px" });
+      }
+      const k = (s0 + (alvo.escala - s0) * w) / alvo.escala;
+      joia.style.opacity = 1;
+      joia.style.transform = w >= 1 ? "none" : `translate(${(cx - alvo.x) * (1 - w)}px, ${(cy - alvo.y) * (1 - w)}px) scale(${k})`;
     }
     // fundo: entra o do tema logo no começo. Depois que a clave chegou, a tela inicial aparece num
     // esmaecimento radial que nasce da própria clave e se abre até as bordas
@@ -140,7 +150,7 @@
     document.body.classList.remove("sonus-opening");
     const l = layer;
     l?.remove();                                           // a clave do cabeçalho já está no mesmo lugar: troca invisível
-    layer = base = bg = canvas = ctx = off = octx = null;
+    layer = base = bg = canvas = ctx = off = octx = joia = null;
   }
 
   function frame(now) {

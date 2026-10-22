@@ -253,7 +253,10 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
         scope.launch {
             try {
                 val downloaded = app.library.isDownloaded(t.id)
-                val resolved = if (downloaded || !online) null else try {
+                // já está inteira no celular (baixada ou no cache): toca NA HORA, sem passar pelo extrator;
+                // as sugestões/rádio vêm depois, em segundo plano
+                val local = downloaded || app.audio.isFreshComplete(t.id)
+                val resolved = if (local || !online) null else try {
                     withContext(Dispatchers.IO) { app.resolver.get(t.url, quality(), t) }
                 } catch (e: Throwable) {
                     if (e is kotlinx.coroutines.CancellationException) throw e
@@ -311,7 +314,7 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
                 // rádio que chegou depois do início (ou música baixada, que não passou pela internet)
                 launch {
                     val more = runCatching {
-                        resolved?.relatedLater?.await() ?: if (downloaded && online) track.videoId?.let { id ->
+                        resolved?.relatedLater?.await() ?: if (local && online) track.videoId?.let { id ->
                             MusicPicks.clean(withContext(Dispatchers.IO) { app.source.radio(id) }, exclude = listOf(track)) } else null
                     }.getOrNull()
                     if (my == token && !more.isNullOrEmpty()) {

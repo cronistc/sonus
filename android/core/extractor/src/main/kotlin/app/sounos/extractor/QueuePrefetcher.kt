@@ -34,6 +34,7 @@ class QueuePrefetcher(
         if (!allowPrefetch || next3.isEmpty()) return
         job = scope.launch {
             next3.forEachIndexed { i, track ->
+                if (audio.isFreshComplete(track.id)) return@forEachIndexed       // já está no celular: nada a buscar
                 try {
                     val r = resolver.get(track.url, quality, track)
                     covers.get(r.track, pin = true)                      // está na fila da pessoa: capa fica guardada
