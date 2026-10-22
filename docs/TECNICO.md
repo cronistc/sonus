@@ -275,7 +275,8 @@ montada antes do toque.
 O número de linhas variou de 41 no baseline para 68 na medição final. As duas ações responderam
 abaixo de 100 ms e não produziram quadros acima de 50 ms na medição final.
 
-Após integrar `main`, o conflito em `player.html` foi resolvido preservando o player sem o topo de
-configurações/busca e as otimizações da letra. A execução seguinte de `git merge main` retornou
-`Already up to date.`. A compilação `JAVA_HOME=~/Android/jdk17 ./gradlew -q :app:assembleDebug
--PversionCode=7` passou; o APK foi instalado no Galaxy A54 e abriu normalmente na tela inicial.
+Na primeira integração com `main`, o conflito em `player.html` foi resolvido preservando o player
+sem o topo de configurações/busca e as otimizações da letra. Uma revisão posterior de `main`, com
+cache e auditoria visual, também foi integrada; a execução final de `git merge main` retornou
+`Already up to date.`. A compilação final `JAVA_HOME=~/Android/jdk17 ./gradlew -q :app:assembleDebug -PversionCode=7`
+passou. O APK integrado foi instalado no Galaxy A54 e abriu normalmente na tela inicial.
