@@ -6,6 +6,7 @@ import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import app.sounos.data.Json
 import app.sounos.extractor.MusicPicks
+import app.sounos.extractor.CoverStore
 import app.sounos.extractor.SearchFilter
 import app.sounos.extractor.TitleNormalizer
 import app.sounos.extractor.Track
@@ -26,6 +27,7 @@ import org.schabi.newpipe.extractor.Page
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.ConcurrentHashMap
+import java.util.Locale
 
 /**
  * Ponte entre a interface (JavaScript) e o app (Kotlin).
@@ -73,13 +75,23 @@ class Bridge(private val web: WebView) {
             "getUpdate" -> app.updater.state().toString()
             "getOffline" -> JSONObject().put("offline", !player.isOnline).toString()
             "getMineTracks" -> mineTracks().toString()
-            "saveData" -> JSONObject().put("ok", app.userData.save(a.optString("key"), a.optString("value"))).toString()
+            "saveData" -> {
+                val key = a.optString("key")
+                val value = a.optString("value")
+                val saved = app.userData.save(key, value)
+                if (saved && key == "sounos.playlists") app.io.launch {
+                    val migration = app.reconcilePinnedCovers(value)
+                    val trim = app.cacheBudget.trim()
+                    if (migration.first > 0 || trim.removedFiles > 0) android.util.Log.i("Sonus", "cache migração_pin arquivos=${migration.first} bytes=${migration.second} lru_removidos=${trim.removedFiles}")
+                }
+                JSONObject().put("ok", saved).toString()
+            }
             "loadData" -> JSONObject().put("value", app.userData.load(a.optString("key")) ?: JSONObject.NULL).toString()
             "getDownloads" -> app.library.downloadedMeta().toString()
             "getStorage" -> JSONObject()
                 .put("downloadsBytes", app.library.downloadsBytes())
                 .put("downloadsCount", app.library.downloadedMeta().length())
-                .put("cacheBytes", app.audio.sizeBytes() + app.cacheDir.resolve("covers").walk().sumOf { it.length() })
+                .put("cacheBytes", app.audio.sizeBytes() + app.cacheBudget.sizeBytes())
                 .toString()
             else -> { main.post { runCatching { command(method, a) }.onFailure { android.util.Log.w("Sonus", "comando $method falhou", it) } }; "{}" }
         }
@@ -87,7 +99,7 @@ class Bridge(private val web: WebView) {
 
     private fun command(m: String, a: JSONObject) {
         when (m) {
-            "search" -> async(a) {
+            "search" -> cachedAsync(a, "search", a.getString("q")) {
                 val q = a.getString("q")
                 val page = app.source.search(q, SearchFilter.SONGS)
                 val nextPage = page.nextPage
@@ -109,7 +121,7 @@ class Bridge(private val web: WebView) {
                     }
                 }
             }
-            "searchArtists" -> async(a) {
+            "searchArtists" -> cachedAsync(a, "searchArtists", a.getString("q")) {
                 JSONObject().put("items", JSONArray().apply {
                     app.source.searchArtists(a.getString("q")) { android.util.Log.i("Sonus", it) }.take(8).forEach { r ->
                         put(JSONObject().put("name", r.name).put("url", r.url)
@@ -117,7 +129,7 @@ class Bridge(private val web: WebView) {
                     }
                 })
             }
-            "searchAlbums" -> async(a) {
+            "searchAlbums" -> cachedAsync(a, "searchAlbums", a.getString("q")) {
                 JSONObject().put("items", JSONArray().apply {
                     app.source.searchAlbums(a.getString("q")).take(12).forEach { r ->
                         put(JSONObject().put("name", r.name).put("artist", r.artist).put("url", r.url)
@@ -125,14 +137,14 @@ class Bridge(private val web: WebView) {
                     }
                 })
             }
-            "album" -> async(a) {
+            "album" -> cachedAsync(a, "album", a.getString("url")) {
                 val album = app.source.album(a.getString("url"))
                 JSONObject().put("name", album.name).put("artist", album.artist)
                     .put("thumb", album.thumbs.maxByOrNull { it.width * it.height }?.url ?: JSONObject.NULL)
                     .put("items", Json.tracks(album.items))
             }
             // página do artista: foto do canal oficial + músicas dele (busca de músicas filtrada pelo artista)
-            "artist" -> async(a) {
+            "artist" -> cachedAsync(a, "artist", a.getString("name")) {
                 val name = a.getString("name")
                 val thumb = a.optString("thumb").takeIf { it.isNotBlank() }
                 val norm = { s: String -> TitleNormalizer.key("", s) }
@@ -175,7 +187,7 @@ class Bridge(private val web: WebView) {
                     .put("thumb", artists?.url ?: JSONObject.NULL)
                     .put("items", Json.tracks(MusicPicks.clean(songs)))
             }
-            "suggest" -> async(a) { JSONObject().put("items", JSONArray(app.source.suggestions(a.getString("q")).take(6))) }
+            "suggest" -> cachedAsync(a, "suggest", a.getString("q")) { JSONObject().put("items", JSONArray(app.source.suggestions(a.getString("q")).take(6))) }
             "prefetch" -> app.resolver.prefetch(Json.tracks(a.optJSONArray("tracks")))
             "playQueue" -> player.playQueue(Json.tracks(a.getJSONArray("tracks")), a.optInt("index"), a.optJSONObject("context") ?: JSONObject().put("type", "playlist"))
             "playSingle" -> player.playQueue(listOf(Json.track(a.getJSONObject("track"))), 0, a.optJSONObject("context") ?: JSONObject().put("type", "radio"))
@@ -192,7 +204,8 @@ class Bridge(private val web: WebView) {
             "move" -> player.move(a.getInt("from"), a.getInt("to"))
             "download" -> player.download(Json.track(a.getJSONObject("track")))
             "removeDownload" -> {
-                app.library.removeDownload(a.getString("id")); send("state", player.state()); send("library", JSONObject())
+                app.library.removeDownload(a.getString("id")); app.io.launch { app.reconcilePinnedCovers(); app.cacheBudget.trim() }
+                send("state", player.state()); send("library", JSONObject())
             }
             "setSettings" -> { app.library.saveSettings(a); player.applySettings(a) }
             // atualizações
@@ -205,7 +218,7 @@ class Bridge(private val web: WebView) {
             "seenUpdate" -> app.updater.clearJustUpdated()
             "setUpdateUrl" -> app.updater.setTestUrl(a.optString("url").ifBlank { null })      // só em build de teste
             "clearCache" -> app.io.launch {
-                app.audio.clear(); app.covers.clearBrowse()
+                app.audio.clear(); app.cacheBudget.clear()
                 send("library", JSONObject())
                 send("storage", JSONObject(call("getStorage", "{}")))
             }
@@ -240,6 +253,52 @@ class Bridge(private val web: WebView) {
                 .getOrElse { JSONObject().put("error", it.message ?: "erro") }
             send("reply", out.put("reqId", req))
         }
+    }
+
+    /** Entrega o último valor do disco e atualiza a interface quando a busca nova terminar. */
+    private fun cachedAsync(a: JSONObject, method: String, value: String, work: suspend () -> JSONObject) {
+        val req = a.optString("reqId")
+        val cacheKey = metadataKey(method, value)
+        scope.launch {
+            val readStarted = System.nanoTime()
+            val cached = runCatching {
+                withContext(Dispatchers.IO) { app.metadata.read(cacheKey)?.let(::JSONObject) }
+            }.onFailure { android.util.Log.w("Sonus", "cache metadados leitura falhou metodo=$method", it) }.getOrNull()
+            val readMs = (System.nanoTime() - readStarted) / 1_000_000
+            android.util.Log.i("Sonus", "metadados metodo=$method etapa=disco_ms=$readMs cache=${cached != null}")
+            if (cached != null) {
+                val first = JSONObject(cached.toString())
+                if (method == "search") first.put("hasMore", false) // o cursor do NewPipe não sobrevive à sessão
+                send("reply", first.put("reqId", req))
+            }
+
+            val networkStarted = System.nanoTime()
+            val fresh = runCatching { withContext(Dispatchers.IO) { work() } }
+            val networkMs = (System.nanoTime() - networkStarted) / 1_000_000
+            if (fresh.isFailure) {
+                android.util.Log.i("Sonus", "metadados metodo=$method etapa=rede_ms=$networkMs resultado=falha cache=${cached != null}")
+                if (cached == null) send("reply", JSONObject().put("error", fresh.exceptionOrNull()?.message ?: "erro").put("reqId", req))
+                return@launch
+            }
+
+            val result = fresh.getOrThrow()
+            val writeStarted = System.nanoTime()
+            val trim = runCatching { withContext(Dispatchers.IO) { app.metadata.write(cacheKey, result.toString()) } }
+                .onFailure { android.util.Log.w("Sonus", "cache metadados gravação falhou metodo=$method", it) }.getOrNull()
+            val writeMs = (System.nanoTime() - writeStarted) / 1_000_000
+            android.util.Log.i("Sonus", "metadados metodo=$method etapa=gravar_ms=$writeMs rede_ms=$networkMs bytes=${result.toString().toByteArray().size} lru_removidos=${trim?.removedBytes ?: 0}")
+            if (cached == null) {
+                send("reply", JSONObject(result.toString()).put("reqId", req))
+            } else if (method == "search" || cached.toString() != result.toString()) {
+                send("metadataUpdated", JSONObject().put("method", method).put("cacheKey", cacheKey).put("payload", result))
+            }
+        }
+    }
+
+    private fun metadataKey(method: String, value: String): String {
+        val stable = if (method == "artist") CoverStore.artistKey(value)
+        else value.trim().lowercase(Locale.ROOT)
+        return "$method:$stable"
     }
 
     private fun onMain(block: () -> String): String {
