@@ -155,7 +155,7 @@
     const t = track(); if (!t) return;
     const b = $("dlBtn"), done = !!S?.downloaded || dls[t.id] === 1, p = dls[t.id], loading = p != null && p < 1 && !done;
     b.classList.toggle("done", done); b.classList.toggle("loading", loading);
-    b.querySelector(".dl-prog").style.strokeDasharray = `${loading ? Math.round(p * 100) : 0} 100`;
+    b.querySelector(".dl-prog").style.strokeDasharray = `${loading ? Math.max(18, Math.round(p * 100)) : 0} 100`;
     b.setAttribute("aria-label", done ? "Baixada" : loading ? "Baixando" : "Baixar música");
   };
   $("dlBtn").onclick = () => {
