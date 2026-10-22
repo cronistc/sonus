@@ -420,6 +420,7 @@
     });
     // ---------------- dentro do app: busca de verdade (NewPipe) + gosto da pessoa ----------------
     let resultTracks = [], resultArtists = [], resultAlbums = [], sugT = 0, lastServer = [], shownMine = new Set(), searchRun = 0;
+    let cacheRefreshOff = [], suggestionCacheOff = null;
     const realCover = t => `<div class="ic" style="background:url('${Sounos.coverUrl(t)}') center/cover no-repeat, ${grad(Sounos.hashColors(t.id))}"></div>`;
     // foto de artista também passa pelo app (fica guardada; antes vinha da internet a cada busca)
     const artistKey = n => String(n || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -475,6 +476,7 @@
       } else location.href = "player.html";
     }
     function nativeSuggestions(q) {
+      suggestionCacheOff?.();
       const T = taste();
       const pastQ = history.filter(h => h.type === "q" && norm(h.text).startsWith(norm(q)) && norm(h.text) !== norm(q)).slice(0, 2);
       // músicas que você já ouviu e batem com o que está digitando (com tolerância a erro), as que você mais ouve primeiro
@@ -493,10 +495,16 @@
           <div class="tx"><div class="t">${emphasize(t, q)}</div></div><span class="fill" data-fill="${esc(t)}">${ICON.fill}</span></button>`).join("")
         || `<button class="s-row sug" data-q="${esc(q)}">${cover("q")}<div class="tx"><div class="t"><b>${esc(q)}</b></div></div></button>`, "sug");
       draw(view === "sug" ? lastServer : []);       // mantém as sugestões anteriores até as novas chegarem (sem piscar)
+      suggestionCacheOff = Sounos.on("metadataUpdated", ev => {
+        if (ev.method !== "suggest" || ev.cacheKey !== Sounos.cacheKey("suggest", q) || input.value !== q || view !== "sug" || window.__playerOpen) return;
+        lastServer = ev.payload?.items || [];
+        draw(lastServer);
+      });
       clearTimeout(sugT);
       sugT = setTimeout(() => Sounos.ask("suggest", { q }).then(r => { if (input.value === q && view === "sug" && !window.__playerOpen) { lastServer = r.items || []; draw(lastServer); } }), 160);
     }
     function nativeResults(q) {
+      cacheRefreshOff.forEach(off => off()); cacheRefreshOff = [];
       const run = ++searchRun;
       setPanel(`<div class="s-empty">Buscando “${esc(q)}”…</div>`, "loading");
       const stale = () => run !== searchRun || !isOpen || window.__playerOpen || norm(input.value.replace(/^@/, "")) !== norm(q) && norm(input.value) !== norm(toHandle(q));
@@ -516,6 +524,18 @@
         const score = (t, i) => (1 - i / 25) + .5 * textScore(q, t.title + " " + t.artist) + .35 * taste().artist(t.artist) + .15 * taste().song(t.id);
         resultSongs.push(...fresh.map((t, i) => ({ t, s: score(t, start + i) })).sort((a, b) => b.s - a.s).map(x => x.t));
       };
+      cacheRefreshOff.push(Sounos.on("metadataUpdated", ev => {
+        if (stale()) return;
+        if (ev.method === "search" && ev.cacheKey === Sounos.cacheKey("search", q)) {
+          songsR = ev.payload || {};
+          resultSongs = []; seenSongs.clear(); appendSongs(songsR.items, 0);
+          moreHas = !!songsR.hasMore; morePaused = false; draw();
+        } else if (ev.method === "searchArtists" && ev.cacheKey === Sounos.cacheKey("searchArtists", q)) {
+          arts = ev.payload || {}; if (songsR) draw();
+        } else if (ev.method === "searchAlbums" && ev.cacheKey === Sounos.cacheKey("searchAlbums", q)) {
+          albums = ev.payload || {}; if (songsR) draw();
+        }
+      }));
       const more = () => {
         if (moreLoading || morePaused || !moreHas || stale() || view !== "res") return;
         if (body.scrollTop + body.clientHeight < body.scrollHeight - 420) return;

@@ -57,7 +57,7 @@
 window.Sounos = (() => {
   const N = window.SounosNative;
   if (N) document.documentElement.classList.add("native");
-  const listeners = {}, pending = {};
+  const listeners = {}, pending = {}, coverRevision = {};
   let seq = 0;
   const doc = Math.random().toString(36).slice(2, 7);    // pedidos de cada página com nome próprio
   window.__sounos = {
@@ -71,6 +71,28 @@ window.Sounos = (() => {
       (listeners[name] || []).forEach(f => { try { f(p); } catch (e) { console.error(e); } });
     },
   };
+  const refreshCoverUrls = (id, revision) => {
+    const rewrite = css => String(css || "").replace(/url\(([^)]+)\)/g, (full, raw) => {
+      const value = raw.trim().replace(/^['"]|['"]$/g, "");
+      try {
+        const url = new URL(value, location.href);
+        if (decodeURIComponent(url.pathname.slice("/cover/".length)) !== id || !url.pathname.startsWith("/cover/")) return full;
+        url.searchParams.set("v", revision);
+        return `url("${url.pathname}${url.search}")`;
+      } catch { return full; }
+    });
+    document.querySelectorAll("*").forEach(el => {
+      if (el.style.backgroundImage) el.style.backgroundImage = rewrite(el.style.backgroundImage);
+      if (el.style.background) el.style.background = rewrite(el.style.background);
+      if (el instanceof HTMLImageElement && el.src.includes("/cover/")) el.src = rewrite(`url("${el.src}")`).slice(5, -2);
+    });
+  };
+  (listeners.coverReady ||= []).push(ev => {
+    if (!ev?.id) return;
+    const revision = String(Date.now());
+    coverRevision[ev.id] = revision;
+    refreshCoverUrls(ev.id, revision);
+  });
   // A tela pode ficar invisível mesmo que a WebView continue com os temporizadores ativos.
   function setPageActive(active) {
     const visible = !!active && !document.hidden;
@@ -94,12 +116,22 @@ window.Sounos = (() => {
       if (!N) return Promise.resolve({ error: "fora do app" });
       return new Promise(res => { const reqId = "r" + doc + (++seq); pending[reqId] = res; N.call(m, JSON.stringify({ ...a, reqId })); });
     },
-    on(name, f) { (listeners[name] ||= []).push(f); },
+    on(name, f) {
+      (listeners[name] ||= []).push(f);
+      return () => { const list = listeners[name]; if (!list) return; const i = list.indexOf(f); if (i >= 0) list.splice(i, 1); };
+    },
+    /** Chave igual à usada pela ponte nativa para o cache de metadados. */
+    cacheKey(method, value) {
+      const raw = String(value || "").trim();
+      const key = method === "artist" ? raw.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "") : raw.toLowerCase();
+      return `${method}:${key}`;
+    },
     /** capa servida pelo app (do disco quando já guardada) */
-    coverUrl(t, pin = false) {
+    coverUrl(t, pin = false, large = false) {
       if (!t) return "";
       const artist = String(t.id).startsWith("artist:") ? (t.name || t.artist || "") : "";
-      return `/cover/${encodeURIComponent(t.id)}?u=${encodeURIComponent(t.thumb || "")}${artist ? `&n=${encodeURIComponent(artist)}` : ""}${pin ? "&pin=1" : ""}`;
+      const revision = coverRevision[t.id];
+      return `/cover/${encodeURIComponent(t.id)}?u=${encodeURIComponent(t.thumb || "")}${artist ? `&n=${encodeURIComponent(artist)}` : ""}${pin ? "&pin=1" : ""}${large ? "&large=1" : ""}${revision ? `&v=${revision}` : ""}`;
     },
     /** cores provisórias (até a capa chegar): derivadas do id, sempre as mesmas para a mesma música */
     hashColors(id) { const h = hash(id || "x") % 360; return [`hsl(${h} 65% 42%)`, `hsl(${(h + 40) % 360} 70% 50%)`, `hsl(${(h + 80) % 360} 80% 58%)`]; },

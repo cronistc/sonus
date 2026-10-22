@@ -8,7 +8,7 @@
   const trackAt = t => typeof t === "object" ? t : D.tracks[t];
   const look = t => {
     const x = trackAt(t);
-    if (x?.id && Sounos.native) return `url('${Sounos.coverUrl(x, true)}') center/cover no-repeat, ${D.grad(Sounos.hashColors(x.id))}`;
+    if (x?.id && Sounos.native) return `url('${Sounos.coverUrl(x)}') center/cover no-repeat, ${D.grad(Sounos.hashColors(x.id))}`;
     return D.grad(x?.c || D.tracks[x?.i]?.c || ["#2f6bff", "#1d4ed8", "#60a5fa"]);
   };
   const mosaic = p => {
