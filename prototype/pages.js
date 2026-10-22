@@ -45,6 +45,7 @@ window.SounosPages = (() => {
     // música atual vem no próprio evento (antes: cada página aberta pedia o estado inteiro ao app de novo)
     Sounos.on("state", st => { latestState = st || {}; stack.forEach(p => p.markNow(latestState)); });
     Sounos.on("download", ev => stack.forEach(p => p.onDownload(ev)));
+    Sounos.on("library", () => stack.forEach(p => p.onLibrary()));
     return api;
   }
 
@@ -53,7 +54,7 @@ window.SounosPages = (() => {
     const el = document.createElement("div");
     el.className = "pg " + kind;
     phone.appendChild(el);
-    const page = { el, kind, closing: false, refresh() {}, markNow() {}, onDownload() {} };
+    const page = { el, kind, closing: false, refresh() {}, markNow() {}, onDownload() {}, onLibrary() {} };
     stack.push(page);
     phone.classList.add("has-page");
     page.d = (history.state?.d || 0) + 1;
@@ -133,19 +134,32 @@ window.SounosPages = (() => {
 
   // ---------- playlist ----------
   function openPlaylist(id, o = {}) {
+    const downloads = !!o.downloads;
     const page = mount("playlist");
     const el = page.el;
-    const get = () => D.getPlaylists().find(p => p.id === id);
+    const downloadTracks = () => {
+      try {
+        const mine = Sounos.call("getMineTracks");
+        return Array.isArray(mine.downloaded) ? mine.downloaded : [];
+      } catch { return []; }
+    };
+    const get = () => downloads
+      ? { id: "__downloads__", name: "Músicas baixadas", desc: "", tracks: downloadTracks() }
+      : D.getPlaylists().find(p => p.id === id);
     const opened = get();
-    if (opened) remember({ type: "p", id: opened.id, name: opened.name, cover: opened.cover || "" });
-    const save = mutate => { const all = D.getPlaylists(); const p = all.find(x => x.id === id); if (!p) return; mutate(p); D.savePlaylists(all); opts.onChange?.(); };
+    if (opened && !downloads) remember({ type: "p", id: opened.id, name: opened.name, cover: opened.cover || "" });
+    const save = mutate => {
+      if (downloads) return;
+      const all = D.getPlaylists(); const p = all.find(x => x.id === id); if (!p) return;
+      mutate(p); D.savePlaylists(all); opts.onChange?.();
+    };
     const dls = {};                              // id → progresso do download desta página
     let dlQueue = [], dlBusy = null;
 
     el.innerHTML = `<div class="hero"></div>
       <div class="ph">
-        <div class="name" contenteditable="plaintext-only" spellcheck="false" data-ph="Nome da playlist"></div>
-        <div class="desc" contenteditable="plaintext-only" data-ph="Adicione uma descrição"></div>
+        <div class="name" ${downloads ? "" : 'contenteditable="plaintext-only" spellcheck="false" data-ph="Nome da playlist"'}></div>
+        ${downloads ? "" : '<div class="desc" contenteditable="plaintext-only" spellcheck="false" data-ph="Adicione uma descrição"></div>'}
         <div class="sub"></div>
       </div>
       <div class="acts">
@@ -153,11 +167,11 @@ window.SounosPages = (() => {
         <button class="ab" data-a="shuffle" aria-label="Aleatório">${I.shuffle}</button>
         <button class="ab" data-a="dl" aria-label="Baixar playlist">${I.dl}<svg class="ring" viewBox="0 0 36 36"><circle cx="18" cy="18" r="15.9" pathLength="100"/></svg></button>
         <span class="sp"></span>
-        <button class="ab" data-a="img" aria-label="Trocar capa">${I.img}</button>
-        <button class="ab" data-a="edit" aria-label="Editar">${I.edit}</button>
+        ${downloads ? `<button class="ab" data-a="edit" aria-label="Editar músicas">${I.edit}</button>` : `<button class="ab" data-a="img" aria-label="Trocar capa">${I.img}</button>
+        <button class="ab" data-a="edit" aria-label="Editar playlist">${I.edit}</button>`}
       </div>
       <div class="list"></div>
-      <input type="file" accept="image/*" hidden>`;
+      ${downloads ? "" : '<input type="file" accept="image/*" hidden>'}`;
     const $ = s => el.querySelector(s);
     const nameEl = $(".name"), descEl = $(".desc"), list = $(".list"), file = $("input[type=file]");
 
@@ -173,14 +187,17 @@ window.SounosPages = (() => {
       const p = get(); if (!p) return close(page);
       hero(p);
       if (document.activeElement !== nameEl) nameEl.textContent = p.name || "";
-      if (document.activeElement !== descEl) descEl.textContent = p.desc || "";
+      if (descEl && document.activeElement !== descEl) descEl.textContent = p.desc || "";
       $(".sub").textContent = p.tracks.length ? `${count(p.tracks.length)} · ${fmtTotal(p.tracks.reduce((a, t) => a + (t.dur || 0), 0))}` : "";
       $("[data-a=play]").disabled = !p.tracks.length;
       const done = downloaded();
+      const edits = p.tracks.length ? p.tracks.map((t, i) => rowHtml(t, i,
+        `${done[t.id] ? '<span class="dl"></span>' : ""}<button class="rm" aria-label="${downloads ? "Remover música baixada" : "Tirar da playlist"}">${I.rm}</button>${downloads ? "" : `<button class="grip" aria-label="Arrastar para ordenar">${I.grip}</button>`}`, true)).join("") : "";
+      const del = downloads ? "" : '<button class="del">Apagar playlist</button>';
       list.innerHTML = p.tracks.length
-        ? p.tracks.map((t, i) => rowHtml(t, i, `${done[t.id] ? '<span class="dl"></span>' : ""}<button class="rm" aria-label="Tirar da playlist">${I.rm}</button><button class="grip" aria-label="Arrastar para ordenar">${I.grip}</button>`, true)).join("")
-          + `<button class="del">Apagar playlist</button>`
-        : `<div class="note">Playlist vazia.<br>No player, toque no + para adicionar a música que está tocando.</div><button class="del">Apagar playlist</button>`;
+        ? edits + del
+        : downloads ? '<div class="note">Baixe músicas para adicioná-las aqui.</div>'
+          : `<div class="note">Playlist vazia.<br>No player, toque no + para adicionar a música que está tocando.</div>${del}`;
       markNow(); renderDl();
     }
     const downloaded = () => { try { return Sounos.call("getDownloads") || {}; } catch { return {}; } };
@@ -197,10 +214,12 @@ window.SounosPages = (() => {
     }
     page.refresh = render; page.markNow = markNow;
     page.onDownload = ev => {
+      if (downloads) { if (ev.done || ev.error) render(); return; }
       if (!(ev.id in dls)) return;
       if (ev.error) { delete dls[ev.id]; } else dls[ev.id] = ev.done ? 1 : ev.p;
       if (ev.done || ev.error) { dlBusy = null; nextDl(); render(); } else renderDl();
     };
+    page.onLibrary = () => { if (downloads) render(); };
     function nextDl() {                          // uma por vez, para não brigar com a música tocando
       const t = dlQueue.shift(); if (!t) { dlBusy = null; renderDl(); return; }
       dlBusy = t.id; dls[t.id] = 0; Sounos.call("download", { track: t });
@@ -209,7 +228,7 @@ window.SounosPages = (() => {
     // nome e descrição: editáveis direto na página
     const saveText = () => save(p => { p.name = nameEl.textContent.trim() || "Nova playlist"; p.desc = descEl.textContent.trim(); });
     let textT = 0;
-    [nameEl, descEl].forEach(x => {
+    if (!downloads) [nameEl, descEl].forEach(x => {
       x.addEventListener("blur", saveText);
       x.addEventListener("input", () => { clearTimeout(textT); textT = setTimeout(saveText, 400); });
       x.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); x.blur(); } });
@@ -218,14 +237,15 @@ window.SounosPages = (() => {
     el.addEventListener("click", e => {
       const a = e.target.closest("[data-a]")?.dataset.a;
       const p = get(); if (!p) return;
-      if (a === "play") return playFrom(p.tracks, 0, { type: "playlist", id, name: p.name });
-      if (a === "shuffle") return playFrom(p.tracks, 0, { type: "playlist", id, name: p.name }, true);
+      const context = { type: "playlist", id: downloads ? "__downloads__" : id, name: p.name };
+      if (a === "play") return playFrom(p.tracks, 0, context);
+      if (a === "shuffle") return playFrom(p.tracks, 0, context, true);
       if (a === "dl") {
         const done = downloaded();
         dlQueue = p.tracks.filter(t => !done[t.id] && dls[t.id] !== 1 && t.id !== dlBusy);
         if (!dlBusy) nextDl(); renderDl(); return;
       }
-      if (a === "img") return file.click();
+      if (a === "img") return file?.click();
       if (a === "edit") { el.classList.toggle("editing"); $("[data-a=edit]").classList.toggle("on", el.classList.contains("editing")); disarm(); return; }
       const del = e.target.closest(".del");
       if (del) {                                 // dois toques: o primeiro arma, o segundo apaga
@@ -233,15 +253,22 @@ window.SounosPages = (() => {
         D.savePlaylists(D.getPlaylists().filter(x => x.id !== id)); opts.onChange?.(); return close(page);
       }
       const rm = e.target.closest(".rm");
-      if (rm) { const i = +rm.closest(".tr").dataset.i; save(p => p.tracks.splice(i, 1)); return render(); }
+      if (rm) {
+        const i = +rm.closest(".tr").dataset.i;
+        if (downloads) {
+          const t = p.tracks[i]; if (t) Sounos.call("removeDownload", { id: t.id });
+          return;
+        }
+        save(p => p.tracks.splice(i, 1)); return render();
+      }
       if (e.target.closest(".grip")) return;
       const row = e.target.closest(".tr");
-      if (row && !el.classList.contains("editing")) playFrom(p.tracks, +row.dataset.i, { type: "playlist", id, name: p.name });
+      if (row && !el.classList.contains("editing")) playFrom(p.tracks, +row.dataset.i, context);
     });
     const disarm = () => { const d = $(".del"); if (d) { d.classList.remove("armed"); d.textContent = "Apagar playlist"; } };
 
     // capa escolhida pela pessoa: reduzida para 900 px e guardada com a playlist
-    file.addEventListener("change", () => {
+    file?.addEventListener("change", () => {
       const f = file.files?.[0]; if (!f) return;
       const img = new Image();
       img.onload = () => {
@@ -285,6 +312,8 @@ window.SounosPages = (() => {
     }, 420);
     return page;
   }
+
+  function openDownloads() { return openPlaylist("__downloads__", { downloads: true }); }
 
   // ---------- álbum ----------
   function openAlbum(url, name, artist, thumb) {
@@ -457,6 +486,6 @@ window.SounosPages = (() => {
     return page;
   }
 
-  const api = { attach, openPlaylist, openMine, openArtist, openAlbum, isOpen: () => stack.length > 0, closeTop: () => close(stack[stack.length - 1]) };
+  const api = { attach, openPlaylist, openDownloads, openMine, openArtist, openAlbum, isOpen: () => stack.length > 0, closeTop: () => close(stack[stack.length - 1]) };
   return api;
 })();

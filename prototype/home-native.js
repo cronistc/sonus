@@ -8,6 +8,7 @@
   let S = Sounos.call("getState");
   let offline = !!Sounos.call("getOffline").offline;
   let items = [];                          // o que está na tela (para os toques)
+  let downloadedTracks = [];
 
   // ---------- seções ----------
   const artistsSec = $("artists").closest("section");
@@ -25,6 +26,7 @@
     const list = (Array.isArray(hist) ? hist : []).filter(e => Sounos.isSong(e.track));      // vídeos ouvidos antes não aparecem
     const mineData = Sounos.call("getMineTracks");
     const downloaded = Array.isArray(mineData.downloaded) ? mineData.downloaded : [];
+    downloadedTracks = downloaded;
     const cached = offline && Array.isArray(mineData.cached) ? mineData.cached : [];
     const mine = [...new Map([...downloaded, ...cached].map(t => [t.id, t])).values()];
     items = [];
@@ -80,7 +82,10 @@
   };
   renderPlaylists = function () {
     playlists = SounosData.getPlaylists();
-    $("playlists").innerHTML = playlists.map(p => { const k = items.push({ kind: "playlist", p }) - 1;
+    const shown = downloadedTracks.length
+      ? [...playlists, { id: "__downloads__", name: "Músicas baixadas", tracks: downloadedTracks, downloads: true }]
+      : playlists;
+    $("playlists").innerHTML = shown.map(p => { const k = items.push({ kind: p.downloads ? "downloads" : "playlist", p }) - 1;
       return `<button class="blk tap" data-k="${k}">${mosaicOf(p)}${meta(esc(p.name), count(p))}</button>`; }).join("")
       + `<button class="blk new tap" aria-label="Nova playlist"><span class="in">
         <svg class="lu" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Nova playlist</span></button>`;
@@ -94,6 +99,7 @@
     if (it.kind === "track") { Sounos.call("playSingle", { track: it.t, context: { type: "radio" } }); openPlayer(); }
     else if (it.kind === "mineTrack") { Sounos.call("playQueue", { tracks: it.tracks, index: it.index, context: { type: "mine" } }); openPlayer(); }
     else if (it.kind === "playlist") pages.openPlaylist(it.p.id);
+    else if (it.kind === "downloads") pages.openDownloads();
     else if (it.kind === "artist") pages.openArtist(it.name);
   }, true);
   // "Nova playlist": abre o fluxo sem guardar nada até a confirmação.

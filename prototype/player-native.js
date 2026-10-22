@@ -159,7 +159,17 @@
     b.setAttribute("aria-label", done ? "Baixada" : loading ? "Baixando" : "Baixar música");
   };
   $("dlBtn").onclick = () => {
-    const t = track(); if (!t || S?.downloaded || dls[t.id] != null) return;
+    const t = track(); if (!t) return;
+    const done = !!S?.downloaded || dls[t.id] === 1;
+    const loading = dls[t.id] != null && dls[t.id] < 1 && !done;
+    if (loading) return;
+    if (done) {
+      delete dls[t.id];
+      Sounos.call("removeDownload", { id: t.id });
+      renderDl();
+      return;
+    }
+    if (dls[t.id] != null) return;
     dls[t.id] = 0; renderDl();
     Sounos.call("download", { track: t.raw });
   };
