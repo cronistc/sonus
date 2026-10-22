@@ -103,6 +103,10 @@ html { font-size: calc(16px * var(--fs)); }
 /* No topo do app aparece só a letra (o ícone azul é o da tela inicial do celular) */
 .brand-letter { width: 28px; height: 28px; color: var(--text); display: block; }
 .brand-letter path { fill: currentColor; stroke: none; }      /* clave de sol (desenho cheio) */
+body.sonus-opening { overflow: hidden; }
+body.sonus-opening #brandLetter { opacity: 0; }
+.sonus-opening-layer { position: fixed; inset: 0; z-index: 99999; overflow: hidden; touch-action: manipulation; }
+.sonus-opening-layer canvas { display: block; width: 100%; height: 100%; }
 
 /* No celular a tela do app ocupa a altura toda (a moldura de 860px é só para ver no computador) */
 @media (max-width: 499px) { .phone { max-height: none !important; } }

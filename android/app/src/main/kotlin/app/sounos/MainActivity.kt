@@ -6,6 +6,11 @@ import android.content.pm.PackageManager
 import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
+import android.view.Gravity
+import android.widget.TextView
+import android.widget.FrameLayout
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
@@ -28,6 +33,7 @@ class MainActivity : Activity() {
     private lateinit var web: WebView
     private lateinit var bridge: Bridge
     private var fileCallback: android.webkit.ValueCallback<Array<android.net.Uri>>? = null
+    private var coldOpening = false
 
     @Deprecated("Deprecated in Java")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {
@@ -39,8 +45,21 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // onCreate só ocorre numa criação nova; voltar do segundo plano usa onResume e não repete a abertura.
+        coldOpening = true
+        val theme = SounosApp.instance.library.settings().optString("theme", "gradient")
+        val windowColor = if (theme == "light") Color.rgb(244, 244, 246) else Color.rgb(14, 14, 16)
+        window.statusBarColor = windowColor
+        window.navigationBarColor = windowColor
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            @Suppress("DEPRECATION")
+            window.decorView.systemUiVisibility = if (theme == "light") {
+                android.view.View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or android.view.View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+            } else 0
+        }
         web = WebView(this).apply {
-            setBackgroundColor(Color.parseColor("#0E0E10"))
+            setBackgroundColor(windowColor)
+            alpha = 0f
             overScrollMode = WebView.OVER_SCROLL_NEVER
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
@@ -58,8 +77,28 @@ class MainActivity : Activity() {
         }
         bridge = Bridge(web).also { it.attach() }
         web.addJavascriptInterface(bridge, "SounosNative")
-        setContentView(web)
-        if (savedInstanceState == null) web.loadUrl("https://$HOST/home.html") else web.restoreState(savedInstanceState)
+        val shell = FrameLayout(this).apply {
+            background = if (theme == "gradient") GradientDrawable(
+                GradientDrawable.Orientation.TOP_BOTTOM,
+                intArrayOf(Color.rgb(32, 67, 152), Color.rgb(17, 38, 79), Color.rgb(14, 14, 16)),
+            ) else android.graphics.drawable.ColorDrawable(windowColor)
+            addView(web, FrameLayout.LayoutParams(-1, -1))
+            if (coldOpening) {
+                // Mantém a primeira palavra visível enquanto a interface e o desenho vetorial preparam o primeiro quadro.
+                val font = runCatching { Typeface.createFromAsset(assets, "fonts/Inter.ttf") }.getOrNull()
+                addView(TextView(this@MainActivity).apply {
+                    tag = "sonus-opening-word"
+                    text = "Sonus"
+                    textSize = 64f
+                    setTextColor(if (theme == "light") Color.rgb(17, 17, 20) else Color.rgb(245, 245, 247))
+                    typeface = font?.let { Typeface.create(it, Typeface.BOLD) } ?: Typeface.DEFAULT_BOLD
+                    gravity = Gravity.CENTER
+                    includeFontPadding = false
+                }, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
+            }
+        }
+        setContentView(shell)
+        if (coldOpening || savedInstanceState == null) web.loadUrl("https://$HOST/home.html") else web.restoreState(savedInstanceState)
 
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)   // controles da música na notificação
@@ -102,6 +141,22 @@ class MainActivity : Activity() {
     }
 
     private inner class AssetClient : WebViewClient() {
+        override fun onPageFinished(view: WebView, url: String) {
+            super.onPageFinished(view, url)
+            if (android.net.Uri.parse(url).host != HOST) return
+            val path = android.net.Uri.parse(url).path.orEmpty()
+            if (path != "/home.html") {
+                web.alpha = 1f
+                return
+            }
+            if (!coldOpening) {
+                web.alpha = 1f
+                return
+            }
+            coldOpening = false
+            web.evaluateJavascript("window.__sonusOpeningLaunch&&window.__sonusOpeningLaunch(true)", null)
+        }
+
         override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
             val url = request.url
             if (url.host != HOST) return null

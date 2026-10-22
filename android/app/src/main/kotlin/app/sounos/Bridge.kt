@@ -69,6 +69,13 @@ class Bridge(private val web: WebView) {
     private fun sync(method: String, a: JSONObject): String {
         return when (method) {
             "getState" -> onMain { player.state().toString() }
+            "openingReady" -> {
+                main.post {
+                    (web.parent as? android.view.ViewGroup)?.findViewWithTag<android.view.View>("sonus-opening-word")?.visibility = android.view.View.GONE
+                    web.alpha = 1f
+                }
+                "{}"
+            }
             "getLyrics" -> onMain { player.lyricsJson().toString() }
             "getProgress" -> onMain { player.progress().toString() }
             "getHistory" -> app.library.history().toString()

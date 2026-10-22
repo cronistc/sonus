@@ -312,3 +312,11 @@ Capturas da instalação final:
 
 - Início, `0:00`: [letra-inicio.png](capturas/letra-inicio.png)
 - Meio, `1:43`: [letra-meio.png](capturas/letra-meio.png)
+
+## Abertura animada: Sonus vira clave de sol (21/10/2026)
+
+- Android 12+ usa o fundo escuro do app (`#0e0e10`) no splash do sistema e um drawable totalmente transparente no lugar do ícone. A Activity mantém a WebView oculta enquanto prepara o primeiro quadro; uma palavra Sonus na fonte Inter do app fica visível durante esse preparo.
+- Na abertura fria, `prototype/opening.js` renderiza a palavra e interpola o contorno do `S` até o mesmo path SVG da clave no cabeçalho. “onus” recua e desaparece. A animação usa `requestAnimationFrame` por 1,9 s e termina na posição e tamanho reais do ícone do cabeçalho; tocar na tela pula para a clave. Voltar do segundo plano não inicia outra abertura.
+- Tema claro usa fundo e texto claros/escuros correspondentes; Escuro usa `#0e0e10`; Gradiente começa no azul profundo da marca e acompanha o fundo da tela inicial. O splash estático de Android mantém `#0e0e10`.
+- A gravação e os quadros do Galaxy A54 ficam em `docs/abertura/abertura.mp4` e `docs/abertura/01-palavra.png` a `05-home.png`.
+- A primeira compilação limpa `JAVA_HOME=~/Android/jdk17 ./gradlew -q clean :app:assembleDebug -PversionCode=7` passou. O aparelho já tinha um APK com `versionCode=8`; a instalação de validação do código 7 foi feita com `adb install -r -d -i app.sounos`, sem limpar dados.
