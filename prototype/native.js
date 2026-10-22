@@ -87,11 +87,17 @@ window.Sounos = (() => {
       if (el instanceof HTMLImageElement && el.src.includes("/cover/")) el.src = rewrite(`url("${el.src}")`).slice(5, -2);
     });
   };
+  // capa nova chegou: troca só depois de carregada (nunca mostra o fundo de reserva no meio) e no máximo
+  // uma vez por minuto por capa (evita laço que fazia a capa piscar)
   (listeners.coverReady ||= []).push(ev => {
     if (!ev?.id) return;
-    const revision = String(Date.now());
+    const now = Date.now();
+    if (now - (+coverRevision[ev.id] || 0) < 60000) return;
+    const revision = String(now);
     coverRevision[ev.id] = revision;
-    refreshCoverUrls(ev.id, revision);
+    const probe = new Image();
+    probe.onload = () => refreshCoverUrls(ev.id, revision);
+    probe.src = Sounos.coverUrl({ id: ev.id });
   });
   // A tela pode ficar invisível mesmo que a WebView continue com os temporizadores ativos.
   function setPageActive(active) {
