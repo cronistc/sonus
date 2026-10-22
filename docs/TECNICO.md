@@ -214,3 +214,10 @@ concluiu com sucesso.
 - Offline, o primeiro carrossel passa a mostrar as músicas baixadas e em cache como cartões do mesmo tamanho dos recentes. Tocar em um cartão inicia a fila com contexto `mine`.
 - A indicação Offline substitui a clave de sol no cabeçalho e volta à clave quando a conexão retorna. A mudança atualiza a seção sem remontar a tela, e o `fitHome` continua usando os três carrosséis visíveis.
 - Após o commit inicial, `git pull origin main` informou `Already up to date.`; não houve conflitos. A validação final passou com `node --check prototype/home-native.js`, `git diff --check` e `JAVA_HOME=~/Android/jdk17 ./gradlew -q :app:assembleDebug -PversionCode=5`.
+
+## Resumo da tarefa: letreiro e fonte (21/10/2026)
+
+- Títulos e artistas truncados agora percorrem o texto com animação CSS `transform`, fazem uma pausa de cerca de 2 s em cada ponta e repetem enquanto estão visíveis. A animação pausa quando a página fica inativa, o quadro do player se oculta ou o texto sai da área visível; a distância só é recalculada quando o conteúdo ou o tamanho muda.
+- O letreiro cobre player, mini-player, fila, cartões da tela inicial, busca, páginas e lista de adicionar à playlist.
+- Os tamanhos tipográficos do app usam o fator único `--fs: .94`, aplicado proporcionalmente em home, player, busca, páginas, configurações, adição e atualização. Ícones, capas, botões e espaçamentos mantêm suas dimensões.
+- Após integrar `main` sem conflitos, `git pull origin main` informou `Already up to date.`. Verificado novamente com `node --check` em todos os arquivos `prototype/*.js`, `git diff --check` e `cd android && JAVA_HOME=~/Android/jdk17 ./gradlew -q :app:assembleDebug -PversionCode=5`. Não houve instalação no celular.

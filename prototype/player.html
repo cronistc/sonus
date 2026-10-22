@@ -91,7 +91,7 @@
     transition: background .6s;
     user-select: none;
   }
-  .times { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-dim);
+  .times { display: flex; justify-content: space-between; font-size: calc(var(--fs) * (12px)); color: var(--text-dim);
            margin-top: 10px; font-variant-numeric: tabular-nums; }
 
   /* Área abaixo da capa */
@@ -102,8 +102,8 @@
   /* Info da faixa */
   .info { position: relative; display: flex; align-items: center; gap: 12px; margin-top: 12px; height: 52px; }
   .info .txt { flex: 1; min-width: 0; }
-  .info h1 { font-size: 22px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .info p { font-size: 15px; color: var(--text-dim); margin-top: 4px; }
+  .info h1 { font-size: calc(var(--fs) * (22px)); font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .info p { font-size: calc(var(--fs) * (15px)); color: var(--text-dim); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .actions { display: flex; align-items: center; gap: 6px; }
   .act[hidden] { display: none; }               /* "A" só aparece com letra sincronizada */
   .act { width: 40px; height: 40px; border-radius: 12px; color: var(--text-dim); transition: background .3s, color .3s; }
@@ -146,8 +146,8 @@
              font-size: calc(var(--tile) * .33); font-weight: 800; color: rgba(255,255,255,.5); }
   .qi .meta { color: #fff; position: absolute; left: 0; right: 0; bottom: 0; padding: 20px 8px 7px;
               background: linear-gradient(transparent, rgba(0,0,0,.65)); }
-  .qi .qt { font-size: calc(10px + var(--tile) * .02); font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .qi .qa { font-size: calc(9px + var(--tile) * .015); color: rgba(255,255,255,.72); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .qi .qt { font-size: calc(var(--fs) * (calc(10px + var(--tile) * .02))); font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .qi .qa { font-size: calc(var(--fs) * (calc(9px + var(--tile) * .015))); color: rgba(255,255,255,.72); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .qi.played { opacity: .45; }
   .qi.now { outline-color: var(--text); }
   .qi.lift { z-index: 5; opacity: 1; transform: scale(1.08); box-shadow: 0 12px 28px rgba(0,0,0,.6); }
@@ -206,7 +206,7 @@
             background: var(--c2); border-radius: 2px; z-index: 3; }
   /* tempo do scrub: flutua acima da barra, sem ocupar espaço */
   .scrub-time { position: absolute; left: 50%; top: -6px; transform: translate(-50%, -100%);
-                font-weight: 900; font-size: 18px; font-variant-numeric: tabular-nums;
+                font-weight: 900; font-size: calc(var(--fs) * (18px)); font-variant-numeric: tabular-nums;
                 background: color-mix(in srgb, var(--bg) 85%, transparent); padding: 2px 10px; border-radius: 8px;
                 opacity: 0; transition: opacity .5s; pointer-events: none; }
   .scrub-time.show { opacity: 1; }
@@ -228,11 +228,11 @@
             padding: 22px 8px 6px; background: linear-gradient(transparent, var(--bg) 45%);
             opacity: 0; transform: translateY(10px); pointer-events: none; transition: opacity .25s, transform .25s; }
   .lyr.selecting .selbar { opacity: 1; transform: none; pointer-events: auto; }
-  .selbar .link { font-size: 14px; font-weight: 600; color: var(--text-dim); padding: 8px 4px; }
-  .selbar .count { font-size: 13px; color: var(--text-dim); font-variant-numeric: tabular-nums; transition: color .2s; }
+  .selbar .link { font-size: calc(var(--fs) * (14px)); font-weight: 600; color: var(--text-dim); padding: 8px 4px; }
+  .selbar .count { font-size: calc(var(--fs) * (13px)); color: var(--text-dim); font-variant-numeric: tabular-nums; transition: color .2s; }
   .selbar .count.full { color: var(--text); font-weight: 700; }
   .selbar .go { height: 38px; padding: 0 18px; border-radius: 19px; background: var(--text); color: var(--bg);
-                font-size: 14px; font-weight: 700; transition: opacity .2s; }
+                font-size: calc(var(--fs) * (14px)); font-weight: 700; transition: opacity .2s; }
   .selbar .go:disabled { opacity: .35; cursor: default; }
   @keyframes nudge { 0%,100% { transform: none } 25% { transform: translateX(-4px) } 75% { transform: translateX(4px) } }
   .count.nudge { animation: nudge .25s; }
@@ -249,12 +249,12 @@
                transform: scale(.94); transition: transform .3s cubic-bezier(.2,.9,.3,1); }
   .sheet.open img { transform: none; }
   .sheet .row { display: flex; gap: 10px; }
-  .sheet .row button { height: 42px; padding: 0 18px; border-radius: 21px; font-size: 14px; font-weight: 700;
+  .sheet .row button { height: 42px; padding: 0 18px; border-radius: 21px; font-size: calc(var(--fs) * (14px)); font-weight: 700;
                        background: rgba(255,255,255,.14); color: var(--text); }
   .sheet .row button.primary { background: var(--text); color: var(--bg); }
   .styles { display: flex; gap: 8px; }
   .styles button { height: 36px; padding: 0 14px 0 6px; border-radius: 18px; display: flex; align-items: center; gap: 8px;
-                   font-size: 13px; font-weight: 600; color: var(--text-dim); background: rgba(255,255,255,.08);
+                   font-size: calc(var(--fs) * (13px)); font-weight: 600; color: var(--text-dim); background: rgba(255,255,255,.08);
                    outline: 2px solid transparent; transition: outline-color .2s, color .2s; }
   .styles button.on { color: var(--text); outline-color: rgba(255,255,255,.85); }
   .styles .sw { width: 24px; height: 24px; border-radius: 50%; }
@@ -272,7 +272,7 @@
                 -webkit-mask-image: linear-gradient(transparent, #000 18%, #000 78%, transparent);
                         mask-image: linear-gradient(transparent, #000 18%, #000 78%, transparent); }
   .lyr .lines::-webkit-scrollbar { display: none; }
-  .lyr .line { font-size: 25px; font-weight: 600; line-height: 1.38; margin-bottom: 16px; cursor: pointer;
+  .lyr .line { font-size: calc(var(--fs) * (25px)); font-weight: 600; line-height: 1.38; margin-bottom: 16px; cursor: pointer;
                padding: 2px 8px; margin-left: -8px; border-radius: 8px;
                color: var(--t-faint); transition: color .4s ease; }
   .lyr .line.past { color: var(--t-mid); }
@@ -298,7 +298,7 @@
                         to   { background-position: 0 0;    filter: drop-shadow(0 0 9px color-mix(in srgb, var(--text) 28%, transparent)); } }
   @keyframes lyrfillB { from { background-position: 100% 0; filter: drop-shadow(0 0 0 transparent); }
                         to   { background-position: 0 0;    filter: drop-shadow(0 0 9px color-mix(in srgb, var(--text) 28%, transparent)); } }
-  .lyr .empty { color: var(--text-dim); font-size: 16px; padding-top: 20px; }
+  .lyr .empty { color: var(--text-dim); font-size: calc(var(--fs) * (16px)); padding-top: 20px; }
 </style>
 <script>
 // promessa resolvida quando a transição de abertura terminar (ou na hora, se não houver transição)
@@ -314,6 +314,8 @@ window.__afterReveal = new Promise(res => addEventListener("pagereveal", e => {
 <script src="add.js"></script>
 <link rel="stylesheet" href="settings.css">
 <link rel="stylesheet" href="theme.css">
+<link rel="stylesheet" href="marquee.css">
+<script src="marquee.js" defer></script>
 <script src="update.js"></script>
 <script src="support.js"></script>
 <script src="settings.js"></script>
