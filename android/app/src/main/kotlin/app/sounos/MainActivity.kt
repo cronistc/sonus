@@ -13,9 +13,10 @@ import android.webkit.WebViewClient
 import app.sounos.extractor.CoverStore
 import app.sounos.extractor.Thumb
 import app.sounos.extractor.Track
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.launch
 import java.io.File
 import java.io.IOException
+import org.json.JSONObject
 
 /**
  * Sonus — a interface (HTML/CSS/JS feitos do zero) roda dentro do app num endereço próprio
@@ -107,7 +108,7 @@ class MainActivity : Activity() {
             val path = url.path.orEmpty().trimStart('/').ifEmpty { "home.html" }
             if (path.startsWith("cover/")) return cover(
                 path.removePrefix("cover/"), url.getQueryParameter("u"),
-                url.getQueryParameter("pin") == "1", url.getQueryParameter("n"),
+                url.getQueryParameter("pin") == "1", url.getQueryParameter("large") == "1", url.getQueryParameter("n"),
             )
             return try {
                 WebResourceResponse(mimeOf(path), "utf-8", assets.open(path))
@@ -116,20 +117,46 @@ class MainActivity : Activity() {
         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest) = request.url.host != HOST
     }
 
-    /** Capa: do disco se já guardada; senão baixa na maior qualidade (e guarda). */
-    private fun cover(id: String, hint: String?, pin: Boolean, artistName: String?): WebResourceResponse {
+    /** A resposta da rota nunca espera rede: usa disco ou agenda o preenchimento em segundo plano. */
+    private fun cover(id: String, hint: String?, pin: Boolean, large: Boolean, artistName: String?): WebResourceResponse {
         val app = SounosApp.instance
         if (!CoverStore.validId(id)) return notFound()
+        val started = System.nanoTime()
         if (id.startsWith("artist:")) return artistCover(id, hint, artistName)
-        // já guardada: serve na hora (fixada e pequena → passa pelo get, que troca pela grande e fixa)
-        val file: File? = app.covers.local(id)?.takeUnless { pin && (app.covers.isSmall(it) || app.covers.pinnedFile(id).length() == 0L) } ?: run {
-            val videoId = id.removePrefix("yt:").takeIf { id.startsWith("yt:") }
-            val track = Track(id, videoId?.let { "https://www.youtube.com/watch?v=$it" } ?: "", "", "", null, 0,
-                listOfNotNull(hint?.let { Thumb(it, 0, 0) }))
-            runCatching { runBlocking { app.covers.get(track, pin) } }.getOrNull() ?: app.covers.local(id)
+        val diskStarted = System.nanoTime()
+        val file = app.covers.local(id, hint, large)
+        android.util.Log.i("Sonus", "cover rota etapa=disco_ms=${(System.nanoTime() - diskStarted) / 1_000_000} imagem=${file != null} pin=$pin grande=$large")
+        val videoId = id.removePrefix("yt:").takeIf { id.startsWith("yt:") }
+        val track = Track(id, videoId?.let { "https://www.youtube.com/watch?v=$it" } ?: "", "", "", null, 0,
+            listOfNotNull(hint?.let { Thumb(it, 0, 0) }))
+        if (file == null) {
+            app.io.launch {
+                val fetchStarted = System.nanoTime()
+                val result = runCatching {
+                    app.covers.get(track, pin, large) { android.util.Log.i("Sonus", "cover $it") }
+                }.onFailure { android.util.Log.w("Sonus", "cover falhou id=$id", it) }.getOrNull()
+                android.util.Log.i("Sonus", "cover rota etapa=preload_ms=${(System.nanoTime() - fetchStarted) / 1_000_000} id=$id cache=${result != null}")
+                if (result != null) notifyCoverReady(id)
+            }
+            android.util.Log.i("Sonus", "cover rota etapa=total_ms=${(System.nanoTime() - started) / 1_000_000} origem=ausente_agendada")
+            return notFound()
         }
-        if (file == null || file.length() == 0L) return notFound()
-        return imageResponse(file)
+        if (pin || large || !app.covers.isSmall(file)) app.io.launch {
+            val beforeLength = file.length()
+            val beforeModified = file.lastModified()
+            val beforeSmall = app.covers.isSmall(file)
+            val fillStarted = System.nanoTime()
+            val result = runCatching {
+                app.covers.get(track, pin, large) { android.util.Log.i("Sonus", "cover $it") }
+            }.onFailure { android.util.Log.w("Sonus", "cover atualizacao falhou id=$id", it) }.getOrNull()
+            android.util.Log.i("Sonus", "cover rota etapa=upgrade_ms=${(System.nanoTime() - fillStarted) / 1_000_000} id=$id cache=${result != null}")
+            val replaced = result != null && (result.absolutePath != file.absolutePath || result.length() != beforeLength || result.lastModified() != beforeModified)
+            if (replaced && (large || (!beforeSmall && result?.let(app.covers::isSmall) == true))) notifyCoverReady(id)
+        }
+        val responseStarted = System.nanoTime()
+        val response = imageResponse(file)
+        android.util.Log.i("Sonus", "cover rota etapa=resposta_ms=${(System.nanoTime() - responseStarted) / 1_000_000} bytes=${file.length()} total_ms=${(System.nanoTime() - started) / 1_000_000} origem=disco")
+        return response
     }
 
     private fun artistCover(id: String, hint: String?, suppliedName: String?): WebResourceResponse {
@@ -137,20 +164,33 @@ class MainActivity : Activity() {
         val key = id.removePrefix("artist:")
         val name = suppliedName?.takeIf { CoverStore.artistKey(it) == key } ?: key
         val app = SounosApp.instance
-        val photo = runCatching {
-            runBlocking {
+        val lookupStarted = System.nanoTime()
+        val local = app.covers.local(id, hint, large = false)
+        android.util.Log.i("Sonus", "cover artista etapa=disco_ms=${(System.nanoTime() - lookupStarted) / 1_000_000} imagem=${local != null}")
+        if (local == null) {
+            app.io.launch {
+                val fetchStarted = System.nanoTime()
+                val photo = runCatching {
                 app.covers.getArtistPhoto(
                     name,
                     hint?.takeIf { it.isNotBlank() },
                     lookup = { query -> app.source.searchArtist(query) { android.util.Log.i("Sonus", it) } },
                     trace = { android.util.Log.i("Sonus", "foto artista $it") },
                 )
+                }.onFailure { android.util.Log.w("Sonus", "foto artista falhou nome=$key", it) }.getOrNull()
+                android.util.Log.i("Sonus", "cover artista etapa=preload_ms=${(System.nanoTime() - fetchStarted) / 1_000_000} cache=${photo?.file != null}")
+                if (photo?.file != null) notifyCoverReady(id)
             }
-        }.onFailure { android.util.Log.w("Sonus", "foto artista falhou nome=$key", it) }.getOrNull()
-        val file = photo?.file
-        android.util.Log.i("Sonus", "rota cover/artist etapa=total_ms=${(System.nanoTime() - started) / 1_000_000} cache=${file != null}")
-        if (file == null || file.length() == 0L) return notFound()
-        return imageResponse(file)
+            android.util.Log.i("Sonus", "cover artista etapa=total_ms=${(System.nanoTime() - started) / 1_000_000} origem=ausente_agendada")
+            return notFound()
+        }
+        android.util.Log.i("Sonus", "cover artista etapa=resposta_ms=${(System.nanoTime() - started) / 1_000_000} bytes=${local.length()} origem=disco")
+        return imageResponse(local)
+    }
+
+    private fun notifyCoverReady(id: String) {
+        if (!::web.isInitialized || isFinishing) return
+        web.post { web.evaluateJavascript("window.__sounos&&window.__sounos.emit('coverReady',{id:${JSONObject.quote(id)}})", null) }
     }
 
     private fun imageResponse(file: File): WebResourceResponse {

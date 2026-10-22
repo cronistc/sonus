@@ -227,3 +227,19 @@ concluiu com sucesso.
 - O player deixou de exibir os botões de configurações e busca e a clave de sol no topo. A ligação e os estilos da busca, e a ligação e os estilos do modal de configurações, saíram do player; a tela inicial conserva os dois recursos. O módulo de preferências continua carregado no player porque fornece o tema e o ajuste de sincronização da letra.
 - O cálculo da capa principal preserva o tamanho anterior. As capas da fila passam a ter 10% a mais que o tamanho calculado anteriormente para cada tela; o espaço restante continua livre entre a fila e os controles.
 - Após integrar `main`, `node --check prototype/player-native.js` e `JAVA_HOME=~/Android/jdk17 ./gradlew -q :app:assembleDebug -PversionCode=7` passaram. Não houve instalação no celular.
+
+## Cache rápido de capas e metadados (21/10/2026)
+
+- `/cover/<id>` procura primeiro no disco e responde sem `runBlocking`; buscas, promoções de `pin` e atualização de qualidade ficam em segundo plano. Ao terminar um download, a interface renova a URL da capa sem remontar a tela.
+- Um índice por URL normalizada reutiliza a mesma imagem entre IDs diferentes e URLs do YouTube que pedem tamanhos distintos. Listas, busca, páginas e fila usam miniaturas de até cerca de 400–480 px; só a capa principal do player pede a versão grande. A versão pequena e a grande têm arquivos separados no cache descartável.
+- Capas de downloads e playlists são fixadas em `files/covers`; ao salvar uma playlist, capas que já estão no cache são promovidas sem fazer download. Ao remover uma música da última playlist e dos downloads, ela volta ao LRU. Na atualização, capas antigas de músicas apenas ouvidas e fotos de artista são migradas para o LRU.
+- Resultados de busca, sugestões, páginas de artista e álbum e rádio do player são salvos como JSON em `cache/metadata`. A próxima abertura mostra o arquivo salvo e atualiza em segundo plano; falha de rede mantém o valor salvo. Ao ler ou gravar, o arquivo atualiza sua posição no LRU.
+- O cache descartável de imagens e metadados compartilha limite de 2 GiB, sem prazo de validade; a limpeza remove o uso mais antigo. Capas fixadas ficam fora dessa limpeza. O cache de áudio passa a 3 GiB e conserva a regra de três dias desde a última reprodução, com LRU.
+
+### Medições e logs
+
+- Antes: o ramo `pin` podia chamar `get` e fazer upgrade síncrono quando a capa local era pequena; o arquivo não tinha tempos por etapa nessa rota, então não existe baseline numérico comparável do aparelho. Não medi nem instalei no celular, conforme pedido para deixá-lo com os outros testes.
+- Depois, nos testes unitários JDK 17 em diretório temporário: consulta de uma capa já no disco `1 ms`; gravação de metadados `6 ms`; leitura `1 ms`. São amostras locais do host, não tempos da WebView nem do celular.
+- O app registra `cover rota etapa=disco_ms`, `resposta_ms`, `preload_ms` e `upgrade_ms`; o `CoverStore` registra espera de trava, disco, download e LRU; metadados registram disco, rede e gravação. Esses tempos permitirão comparar no aparelho sem bloquear a rota de capa.
+- Testes unitários cobrem LRU entre imagens/metadados, cache JSON, reaproveitamento de URL, miniaturas de lista, limite de 3 GiB do áudio e resposta local sem rede. `node --check` passou para todos os `prototype/*.js`.
+- Validação local: `:core:extractor:test`, `node --check` em todos os scripts e `JAVA_HOME=~/Android/jdk17 ./gradlew -q :app:assembleDebug -PversionCode=7` passaram. Nenhum APK foi instalado.

@@ -221,9 +221,10 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
                     if (total > 0 && now - last > 150) { last = now; main.post { emit("download", JSONObject().put("id", t.id).put("p", have.toDouble() / total)) } }
                 }
                 check(ok && app.audio.exportTo(r.track.id, app.library.downloadFile(t.id))) { "download falhou" }
-                app.covers.get(r.track, pin = true)                       // capa guardada
+                app.covers.get(r.track, pin = true, large = false) { android.util.Log.i("Sonus", "cover $it") } // miniatura guardada junto ao download
                 runCatching { app.lyrics.get(r.track) }                   // letra guardada
                 app.library.markDownloaded(r.track.copy(id = t.id))
+                app.covers.pinLocal(t.id, r.track.thumbs.maxByOrNull { it.width * it.height }?.url)
                 main.post {
                     emit("download", JSONObject().put("id", t.id).put("p", 1).put("done", true))
                     emit("library", JSONObject())
@@ -261,6 +262,7 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
                 if (my != token) return@launch
                 val track = resolved?.track?.copy(id = t.id) ?: t
                 current = resolved ?: ResolvedTrack(track, OFFLINE_AUDIO, emptyList(), System.currentTimeMillis())
+                if (!resolved?.related.isNullOrEmpty()) saveRadio(track, resolved!!.related) else restoreRadio(track, my)
                 val source = when {
                     downloaded -> AudioEngine.Source.LocalFile(app.library.downloadFile(t.id).path)
                     app.audio.isFreshComplete(t.id) -> {
@@ -295,7 +297,9 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
                 engine.load(source, startMs, playWhenReady = true, knownGainDb = app.library.gain(t.id))
                 app.library.addHistory(track, context)
                 launch(Dispatchers.IO) {                                   // capa (fica guardada) + cores do fundo
-                    runCatching { app.covers.get(track, pin = true) }.getOrNull()?.let { f ->
+                    runCatching {
+                        app.covers.get(track, pin = app.library.isDownloaded(track.id), large = true) { android.util.Log.i("Sonus", "cover $it") }
+                    }.getOrNull()?.let { f ->
                         val c = CoverColors.of(f); main.post { if (my == token) { colors = c; emitState() } }
                     }
                 }
@@ -312,6 +316,7 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
                     }.getOrNull()
                     if (my == token && !more.isNullOrEmpty()) {
                         current = current?.copy(related = more)
+                        saveRadio(track, more)
                         computeSuggestions()
                         if (isRadio() && index >= queue.size - 2) topUpRadio()
                         updatePrefetch(); emitState()
@@ -432,7 +437,9 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
                     scope.launch {
                         val more = runCatching { withContext(Dispatchers.IO) { app.source.radio(id) } }.getOrDefault(emptyList())
                         if (online && currentTrack?.id == t.id && more.isNotEmpty()) {
-                            current = current?.copy(related = MusicPicks.clean(more, exclude = listOf(t)))
+                            val clean = MusicPicks.clean(more, exclude = listOf(t))
+                            current = current?.copy(related = clean)
+                            saveRadio(t, clean)
                             computeSuggestions()
                             if (isRadio() && index >= queue.size - 2) topUpRadio()
                             updatePrefetch(); emitState()
@@ -447,7 +454,7 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
 
     /** Música solta: quando a fila está acabando, emenda músicas relacionadas (lista que nunca acaba). */
     private fun topUpRadio(): Boolean {
-        val source = if (online) current?.related.orEmpty() else offlineTracks()
+        val source = current?.related?.takeIf { it.isNotEmpty() } ?: if (online) emptyList() else offlineTracks()
         val related = MusicPicks.clean(source, exclude = queue).take(10)
         if (related.isEmpty()) return false
         queue.addAll(related); original = original + related
@@ -455,8 +462,37 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
     }
 
     private fun computeSuggestions() {
-        val source = if (online) current?.related.orEmpty() else offlineTracks()
+        val source = current?.related?.takeIf { it.isNotEmpty() } ?: if (online) emptyList() else offlineTracks()
         suggestions = albumPicks() ?: MusicPicks.clean(source, exclude = listOfNotNull(currentTrack)).take(12)
+    }
+
+    private fun radioCacheKey(track: Track) = "radio:${track.videoId ?: track.id.removePrefix("yt:")}"
+
+    private fun saveRadio(track: Track, related: List<Track>) {
+        if (related.isEmpty()) return
+        val key = radioCacheKey(track)
+        app.io.launch {
+            val started = System.nanoTime()
+            val trim = runCatching { app.metadata.write(key, JSONObject().put("items", Json.tracks(related)).toString()) }.getOrNull()
+            android.util.Log.i("Sonus", "metadados metodo=radio etapa=gravar_ms=${(System.nanoTime() - started) / 1_000_000} itens=${related.size} lru_removidos=${trim?.removedBytes ?: 0}")
+        }
+    }
+
+    private fun restoreRadio(track: Track, my: Int) {
+        val key = radioCacheKey(track)
+        app.io.launch {
+            val started = System.nanoTime()
+            val related = runCatching { app.metadata.read(key)?.let { Json.tracks(JSONObject(it).optJSONArray("items")) } }.getOrNull().orEmpty()
+            android.util.Log.i("Sonus", "metadados metodo=radio etapa=disco_ms=${(System.nanoTime() - started) / 1_000_000} cache=${related.isNotEmpty()} itens=${related.size}")
+            if (related.isEmpty()) return@launch
+            main.post {
+                if (my != token || currentTrack?.id != track.id || !current?.related.isNullOrEmpty()) return@post
+                current = current?.copy(related = related)
+                computeSuggestions()
+                if (isRadio() && index >= queue.size - 2) topUpRadio()
+                updatePrefetch(); emitState()
+            }
+        }
     }
 
     // álbum em "repetir uma": as sugestões embaixo são as outras músicas do próprio álbum
