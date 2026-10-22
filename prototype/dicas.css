@@ -70,3 +70,6 @@
 @media (prefers-reduced-motion: reduce) {
   .sonus-dica.visivel, .sonus-dica.saindo { animation-duration: 1ms; }
 }
+/* alvo à direita: × do lado esquerdo */
+.sonus-dica.x-esquerda { flex-direction: row-reverse; padding: 8px 12px 8px 8px; }
+.sonus-dica.x-esquerda .sonus-dica-fechar { margin: -2px 0 0 -2px; }

@@ -22,8 +22,8 @@
 
   const top = (() => { try { return window.top; } catch { return window; } })();
   const hub = top.__sounosTipsHub ||= { active: null, pending: [], queued: new Set(), nextAt: 0, lastTouch: 0, pointers: new Set(), timer: 0 };
-  const TIP_DURATION = 7000;
-  const TIP_GAP = 520;
+  const TIP_DURATION = 30000;                     // some sozinha em 30 s (ou no ×, ou usando o próprio botão)
+  const TIP_GAP = 1400;                          // respiro entre uma dica e a próxima
   const EXIT_DURATION = 240;
   const parse = key => { try { return JSON.parse(localStorage.getItem(key)); } catch { return null; } };
   const readVersion = () => {
@@ -144,13 +144,15 @@
     const left = Math.max(pad, Math.min(innerWidth - br.width - pad, tr.left + tr.width / 2 - br.width / 2));
     const topY = below ? Math.min(innerHeight - br.height - pad, tr.bottom + gap) : Math.max(pad, tr.top - br.height - gap);
     bubble.dataset.lado = below ? "baixo" : "cima";
+    // alvo do lado direito da tela: o × vai para a esquerda (o balão "vira" e nada vaza)
+    bubble.classList.toggle("x-esquerda", tr.left + tr.width / 2 > innerWidth * .55);
     bubble.style.left = `${left}px`;
     bubble.style.top = `${topY}px`;
     bubble.style.setProperty("--dica-seta", `${Math.max(12, Math.min(br.width - 12, tr.left + tr.width / 2 - left))}px`);
     bubble.style.setProperty("--dica-origem-y", below ? "top" : "bottom");
     bubble.style.setProperty("--dica-salto", below ? "-9px" : "9px");
     state.seen[entry.tip.id] = true;
-    const active = { tip: entry.tip, bubble, remaining: TIP_DURATION, timeout: 0, paused: false, startedAt: 0,
+    const active = { tip: entry.tip, bubble, target, remaining: TIP_DURATION, timeout: 0, paused: false, startedAt: 0,
       close: () => finishTip(entry.tip, bubble) };
     hub.active = active;
     bubble.querySelector(".sonus-dica-fechar").addEventListener("click", e => {
@@ -198,7 +200,8 @@
   document.addEventListener("pointerdown", e => {
     hub.pointers.add(`${window === top ? "top" : "frame"}:${e.pointerId}`);
     hub.lastTouch = Date.now();
-    if (hub.active && !hub.active.bubble.contains(e.target)) hub.active.close();
+    // fecha só quando a pessoa usa o que a dica mostra (tocar fora não some com ela)
+    if (hub.active && hub.active.target?.contains?.(e.target)) hub.active.close();
   }, true);
   const releasePointer = e => {
     hub.pointers.delete(`${window === top ? "top" : "frame"}:${e.pointerId}`);
