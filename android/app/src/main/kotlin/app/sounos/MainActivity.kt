@@ -34,6 +34,7 @@ class MainActivity : Activity() {
     private lateinit var bridge: Bridge
     private var fileCallback: android.webkit.ValueCallback<Array<android.net.Uri>>? = null
     private var coldOpening = false
+    private var openingDy = 0f                   // deslocamento vertical da palavra (alinha com o splash do sistema)
 
     @Deprecated("Deprecated in Java")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {
@@ -89,6 +90,17 @@ class MainActivity : Activity() {
                 addView(android.widget.ImageView(this@MainActivity).apply {
                     tag = "sonus-opening-word"
                     setImageResource(R.drawable.splash_sonus)
+                    // o splash do sistema centra na TELA; esta área começa abaixo da barra de status: corrige a
+                    // diferença para a palavra não "descer" na troca
+                    addOnLayoutChangeListener { v, _, _, _, _, _, _, _, _ ->
+                        val loc = IntArray(2); (v.parent as android.view.View).getLocationOnScreen(loc)
+                        val parentH = (v.parent as android.view.View).height
+                        openingDy = resources.displayMetrics.heightPixels.let { h ->
+                            val real = runCatching { windowManager.currentWindowMetrics.bounds.height() }.getOrDefault(h)
+                            real / 2f - (loc[1] + parentH / 2f)
+                        }
+                        v.translationY = openingDy
+                    }
                     if (theme == "light") setColorFilter(Color.rgb(17, 17, 20))
                 }, FrameLayout.LayoutParams((288 * resources.displayMetrics.density).toInt(), (288 * resources.displayMetrics.density).toInt(), Gravity.CENTER))
             }
@@ -150,7 +162,7 @@ class MainActivity : Activity() {
                 return
             }
             coldOpening = false
-            web.evaluateJavascript("window.__sonusOpeningLaunch&&window.__sonusOpeningLaunch(true)", null)
+            web.evaluateJavascript("window.__sonusOpeningLaunch&&window.__sonusOpeningLaunch(true,${openingDy / resources.displayMetrics.density})", null)
         }
 
         override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {

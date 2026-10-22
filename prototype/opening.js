@@ -5,10 +5,10 @@
 (() => {
   const CLAVE_ALTURA = 156;                         // altura da clave no meio da tela (px)
   // linha do tempo (ms)
-  const MORPH_INI = 300, MORPH_DUR = 1250, ATRASO_LETRA = 0, PAUSA = 260, SUBIDA = 720, ENCAIXE = 260, REVELA = 320;
+  const MORPH_INI = 300, MORPH_DUR = 1250, ATRASO_LETRA = 0, PAUSA = 220, SUBIDA = 1000, ENCAIXE = 0, REVELA = 450;
   const MORPH_FIM = MORPH_INI + MORPH_DUR;
   const SOBE_INI = MORPH_FIM + PAUSA, SOBE_FIM = SOBE_INI + SUBIDA, T = SOBE_FIM + ENCAIXE + REVELA;
-  let letrasOnus, layer, base, bg, canvas, ctx, off, octx, ratio, cor, fundo, alvo, clavePath, textoPath, D, pares, startAt, done = false;
+  let desloc = 0, letrasOnus, layer, base, bg, canvas, ctx, off, octx, ratio, cor, fundo, alvo, clavePath, textoPath, D, pares, startAt, done = false;
   const clamp = v => Math.max(0, Math.min(1, v));
   const fase = (t, a, b) => clamp((t - a) / (b - a));
   const suave = t => t * t * (3 - 2 * t);
@@ -76,7 +76,8 @@
   }
 
   function paint(ms) {
-    const cx = innerWidth / 2, cy = innerHeight / 2;
+    // centro alinhado com o splash do Android (que centra na tela inteira); vai se ajustando durante a morfose
+    const cx = innerWidth / 2, cy = innerHeight / 2 + desloc * (1 - inOut(fase(ms, MORPH_INI, MORPH_FIM)));
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
@@ -114,18 +115,19 @@
       });
     } else {                                               // 3) a clave sobe sozinha e 4) encaixa no cabeçalho
       const s0 = CLAVE_ALTURA / D.ch;
-      const v = inOut(fase(ms, SOBE_INI, SOBE_FIM));
-      // encaixe: chega um pouco maior e assenta (como uma joia na garra), com um brilho curto
-      const e = fase(ms, SOBE_FIM, SOBE_FIM + ENCAIXE);
-      const assenta = 1 + .14 * Math.sin(Math.PI * e) * (1 - e);
-      const s = (s0 + (alvo.escala - s0) * v) * assenta;
-      const x = cx + (alvo.x - cx) * v, y = cy + (alvo.y - cy) * v;
+      // subida num movimento só: começa macio, desacelera e passa um fio do ponto antes de assentar,
+      // chegando com velocidade zero (sem tranco): smootherstep + uma pequena "folga" que some no fim
+      const u = fase(ms, SOBE_INI, SOBE_FIM);
+      const w = u * u * u * (u * (u * 6 - 15) + 10) + 4 * u * u * u * (1 - u) * (1 - u);
+      const s = s0 + (alvo.escala - s0) * w;
+      const x = cx + (alvo.x - cx) * w, y = cy + (alvo.y - cy) * w;
       ctx.save(); ctx.translate(x, y); ctx.scale(s, s); ctx.translate(-D.ccx, -D.ccy);
-      if (e > 0 && e < 1) { ctx.shadowColor = cor; ctx.shadowBlur = 16 * Math.sin(Math.PI * e); }
+      const brilho = fase(ms, SOBE_FIM - 250, SOBE_FIM + 350);          // um brilho que acende e apaga devagar
+      if (brilho > 0 && brilho < 1) { ctx.shadowColor = cor; ctx.shadowBlur = 14 * Math.sin(Math.PI * brilho); }
       ctx.fill(clavePath); ctx.restore();
     }
     // fundo: entra o do tema logo no começo; some só DEPOIS que a clave encaixou (aí aparece tudo)
-    const some = 1 - suave(fase(ms, SOBE_FIM + ENCAIXE * .6, T));
+    const some = 1 - suave(fase(ms, SOBE_FIM - 120, T));
     base.style.opacity = String(some);
     bg.style.opacity = String(suave(fase(ms, 0, 420)) * some);
   }
@@ -147,7 +149,8 @@
     else requestAnimationFrame(frame);
   }
 
-  window.__sonusOpeningLaunch = async cold => {
+  window.__sonusOpeningLaunch = async (cold, dy = 0) => {
+    desloc = +dy || 0;
     if (!cold || !window.Sounos?.native || done) {
       if (window.SounosNative) SounosNative.call("openingReady", "{}");
       return;
