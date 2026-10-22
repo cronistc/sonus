@@ -7,6 +7,15 @@ window.SounosUpdate = (() => {
   const mb = b => b > 0 ? (b / 1048576).toFixed(1).replace(".", ",") + " MB" : "";
   const day = s => { if (!s) return ""; const d = new Date(s + "T12:00:00"); return isNaN(d) ? "" : d.toLocaleDateString("pt-BR", { day: "numeric", month: "long", year: "numeric" }); };
 
+  // novidades: linhas "## Grupo" viram títulos (Novidades / Ajustes / Correções); o resto, itens da lista
+  const notesHtml = notes => {
+    let html = "", open = false;
+    for (const n of notes) {
+      if (/^##\s*/.test(n)) { if (open) html += "</ul>"; html += `<h4>${esc(n.replace(/^##\s*/, ""))}</h4><ul>`; open = true; }
+      else { if (!open) { html += "<ul>"; open = true; } html += `<li>${esc(n)}</li>`; }
+    }
+    return open ? html + "</ul>" : html;
+  };
   let changelog = {};
   fetch("changelog.json").then(r => r.json()).then(j => { changelog = j || {}; }).catch(() => {});
 
@@ -50,7 +59,7 @@ window.SounosUpdate = (() => {
       const meta = has ? [mb(nv.size), day(nv.date)].filter(Boolean).join(" · ") : "";
       const notes = (has ? nv.notes : (changelog[cur] || u.current.notes)) || [];
       $(".upd-notes").innerHTML = notes.length
-        ? `<h3>${has ? "O que há de novo" : "Nesta versão"}</h3>${meta ? `<div class="meta">${esc(meta)}</div>` : ""}<ul>${notes.map(n => `<li>${esc(n)}</li>`).join("")}</ul>`
+        ? `<h3>${has ? "O que há de novo" : "Nesta versão"}</h3>${meta ? `<div class="meta">${esc(meta)}</div>` : ""}${notesHtml(notes)}`
         : (meta ? `<div class="meta">${esc(meta)}</div>` : "");
       const btn = $(".upd-btn");
       btn.hidden = !has && u.status !== "error";          // na versão mais recente: só a mensagem e as novidades

@@ -112,6 +112,8 @@ span.pill { display: inline-grid; place-items: center; }   /* "Buscar"/"Ver" den
 .upd-notes h3 { font-size: calc(var(--fs) * (12px)); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-dim); }
 .upd-notes .meta { font-size: calc(var(--fs) * (12.5px)); color: var(--text-dim); margin-top: 4px; }
 .upd-notes ul { margin: 10px 0 0; padding-left: 18px; }
+.upd-notes h4 { margin: 16px 0 0; font-size: calc(var(--fs) * (14px)); font-weight: 700; color: var(--text); }
+.upd-notes h4 + ul { margin-top: 4px; }
 .upd-notes li { font-size: calc(var(--fs) * (14.5px)); line-height: 1.45; margin: 6px 0; }
 .upd-foot { padding: 12px 24px 28px; flex-shrink: 0; }
 .upd-btn { position: relative; overflow: hidden; width: 100%; height: 54px; display: grid; place-items: center; border-radius: 27px; border: 0; background: var(--chip); color: var(--text);

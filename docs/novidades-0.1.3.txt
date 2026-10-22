@@ -1,18 +1,24 @@
+## Novidades
 Nova abertura: o nome Sonus se transforma na clave de sol
-Tela "Antes de começar" para liberar notificações, tocar sem interrupções e atualizar
-Álbuns: busque álbuns completos e veja os álbuns na página do artista
-Músicas com mais de um artista aparecem juntos (ex.: Menos É Mais, Camisa 10)
-Modo offline: sem internet, o Sonus toca o que já está no celular
-Minhas músicas na tela inicial: suas baixadas (e, offline, o que está guardado)
-Músicas já ouvidas ficam guardadas e começam na hora, sem prazo para vencer
-Capas, fotos de artistas e páginas já vistas abrem na hora, mesmo sem internet
-Busca com lista que continua carregando ao rolar, e o player abre por cima dela
-Mini-player com botão de adicionar à playlist, visível também sobre a busca
-Nova playlist só é criada quando você confirma, com pelo menos uma música
-Letra linha por linha, com desfoque suave nas bordas
-Cor da barra tirada da própria capa, sempre com contraste
-Nova fonte, nomes de artistas sem @ e textos longos que andam para mostrar o nome
+Álbuns: busque álbuns completos e veja os álbuns de cada artista
+Busca melhor: histórico sempre salvo, lista que continua carregando ao rolar e artistas e álbuns no meio dos resultados
+Modo offline: sem internet, o Sonus toca o que já está no celular e mostra Minhas músicas na tela inicial
+Músicas que você já ouviu ficam guardadas por mais tempo e começam na hora
+Espaço inteligente: se o celular ficar sem espaço, o Sonus libera sozinho (as baixadas nunca são apagadas)
+Cor da barra calculada a partir da própria capa, sempre com contraste
+Nova fonte, e textos longos andam para mostrar o nome inteiro
 Dicas rápidas na primeira vez que você usa cada parte do app
-Atualizações: o Sonus baixa sozinho e avisa; só instala quando você tocar em Atualizar agora
-Mais leve: bem menos bateria e processador
-Correções: app fechando em segundo plano, botão voltar, fotos de artista e capas que não carregavam
+Aviso de atualização com o botão Atualizar agora
+Muito mais leve: bem menos processador e bateria
+## Ajustes
+Player mais limpo e capas da fila maiores
+Botão de adicionar à playlist no mini-player
+Letra linha por linha, com desfoque suave nas bordas
+O player abre por cima da busca, sem fechar o que você buscou
+Vários artistas separados por vírgula, sem @
+O botão voltar sempre volta uma tela
+A música não para mais com o app em segundo plano
+## Correções
+Página do artista e do álbum: foto certa, álbuns sem repetição e botão de tocar/pausar
+Capas e fotos que não carregavam ou piscavam
+Música que às vezes não tocava, e app que fechava quando a internet caía

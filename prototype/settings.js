@@ -150,7 +150,7 @@
     const updUi = SounosUpdate.attach(ov.parentElement, () => upd);
     // Telas que abrem sozinhas, uma de cada vez, depois da abertura, da tela "Antes de começar" e longe do player:
     //  · acabou de atualizar → "Nesta versão" (uma vez; continua em Configurações › Atualizações)
-    //  · tem versão nova → "O que há de novo" + "Atualizar agora" (uma vez por abertura do app, no máximo 1x por dia).
+    //  · tem versão nova → "O que há de novo" + "Atualizar agora" (toda vez que o app abre, enquanto houver versão nova).
     //    Sem o toque da pessoa, nada é instalado.
     // Enquanto alguma espera ou está aberta, as dicas aguardam (__sonusNovidades).
     let aguardando = 0;
@@ -176,7 +176,6 @@
     function avisaVersaoNova() {
       const nv = upd?.update; if (avisou || !nv || !["available", "downloading", "ready"].includes(upd.status)) return;
       let ultimo = {}; try { ultimo = JSON.parse(localStorage.getItem(AVISO) || "{}"); } catch {}
-      if (ultimo.code === nv.versionCode && Date.now() - (ultimo.em || 0) < 864e5) return;
       avisou = true;
       automatica(() => { try { localStorage.setItem(AVISO, JSON.stringify({ code: nv.versionCode, em: Date.now() })); } catch {} updUi.open(); });
     }
