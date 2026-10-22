@@ -55,8 +55,8 @@
   border-right: 8px solid transparent;
   transform: translateX(-50%);
 }
-.sonus-dica[data-lado="baixo"]::after { top: -8px; border-bottom: 8px solid var(--surface-2, var(--surface, #1a1a1e)); }
-.sonus-dica[data-lado="cima"]::after { bottom: -8px; border-top: 8px solid var(--surface-2, var(--surface, #1a1a1e)); }
+.sonus-dica[data-lado="baixo"]::after { top: -8px; border-bottom: 8px solid var(--sheet, #1a1a1e); }
+.sonus-dica[data-lado="cima"]::after { bottom: -8px; border-top: 8px solid var(--sheet, #1a1a1e); }
 @keyframes sonus-dica-entrada {
   0% { opacity: 0; filter: blur(10px); transform: translateY(var(--dica-salto)) scale(.68); }
   62% { opacity: 1; filter: blur(0); transform: translateY(1px) scale(1.045); }
