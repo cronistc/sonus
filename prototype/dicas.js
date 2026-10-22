@@ -175,6 +175,10 @@
   }
   function pump() {
     if (hub.active || !hub.pending.length) return;
+    // durante a abertura animada nenhuma dica aparece; elas começam um pouco depois dela terminar
+    if (top.Sounos?.native && top.__sonusAberturaFim === undefined) { schedulePump(600); return; }   // abertura ainda não decidiu
+    if (top.document.body.classList.contains("sonus-opening")) { schedulePump(600); return; }
+    if (Date.now() < (top.__sonusAberturaFim || 0) + 1200) { schedulePump(top.__sonusAberturaFim + 1200 - Date.now()); return; }
     const wait = Math.max(hub.nextAt - Date.now(), hub.lastTouch + 650 - Date.now(), hub.pointers.size ? 250 : 0);
     if (wait > 0) return schedulePump(wait);
     const entry = hub.pending.shift();

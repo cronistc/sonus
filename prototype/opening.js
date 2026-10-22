@@ -147,6 +147,7 @@
   function finish() {
     if (done) return;
     done = true;
+    window.__sonusAberturaFim = Date.now();             // as dicas esperam a abertura terminar
     document.body.classList.remove("sonus-opening");
     const l = layer;
     l?.remove();                                           // a clave do cabeçalho já está no mesmo lugar: troca invisível
@@ -164,6 +165,7 @@
   window.__sonusOpeningLaunch = async (cold, dy = 0) => {
     desloc = +dy || 0;
     if (!cold || !window.Sounos?.native || done) {
+      if (window.__sonusAberturaFim === undefined) window.__sonusAberturaFim = Date.now() - 1200;   // sem abertura: dicas liberadas
       if (window.SounosNative) SounosNative.call("openingReady", "{}");
       return;
     }
@@ -178,6 +180,7 @@
       requestAnimationFrame(frame);
     } catch (e) {
       console.warn("Abertura animada indisponível", e);
+      window.__sonusAberturaFim = Date.now();
       document.body.classList.remove("sonus-opening");
       layer?.remove();
       SounosNative.call("openingReady", "{}");
