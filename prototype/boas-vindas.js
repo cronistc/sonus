@@ -36,14 +36,18 @@
   function atualizar() {
     if (!tela?.isConnected) return;
     const estados = permissao();
+    const nomes = {
+      notificacoes: "Notificações",
+      bateria: "Tocar sem interrupções",
+      instalar: "Atualizar sozinho",
+    };
     for (const [id, concedida] of Object.entries(estados)) {
-      const botao = tela.querySelector(`[data-permissao="${id}"]`);
-      if (!botao) continue;
-      botao.classList.toggle("concedida", concedida);
-      botao.disabled = concedida || (botao.dataset.ocupado === "true");
-      botao.innerHTML = concedida
-        ? '<span class="bv-marca" aria-hidden="true">✓</span><span>Ativo</span>'
-        : '<span>Permitir</span><span class="bv-seta" aria-hidden="true">›</span>';
+      const linha = tela.querySelector(`[data-permissao="${id}"]`);
+      const chave = linha?.querySelector(".sw");
+      if (!linha || !chave) continue;
+      chave.setAttribute("aria-checked", String(concedida));
+      linha.setAttribute("aria-label", `${nomes[id]}: ${concedida ? "ativa" : "permitir"}`);
+      linha.disabled = concedida || (linha.dataset.ocupado === "true");
     }
   }
 
@@ -57,7 +61,7 @@
       window.__sonusBoasVindas = false;
     };
     tela.addEventListener("transitionend", remover, { once: true });
-    setTimeout(remover, 380);
+    setTimeout(remover, 440);
   }
 
   function mostrar() {
@@ -67,32 +71,28 @@
     tela.setAttribute("aria-modal", "true");
     tela.setAttribute("aria-labelledby", "bv-titulo");
     tela.innerHTML = `
-      <div class="bv-brilho" aria-hidden="true"></div>
-      <div class="bv-miolo">
-        <div class="bv-simbolo" aria-hidden="true"><span>♪</span></div>
-        <p class="bv-chamada">SONUS <span>·</span> CONFIGURAÇÃO RÁPIDA</p>
-        <h1 id="bv-titulo">Seu som, sem pausas.</h1>
-        <p class="bv-intro">Ative o que ajuda o Sonus a cuidar da sua música. Você pode pular e mudar isso depois.</p>
-        <div class="bv-lista">
-          <article class="bv-item">
-            <span class="bv-icone bv-roxo" aria-hidden="true">↻</span>
-            <span class="bv-textos"><strong>Atualizar sozinho</strong><small>Permite instalar atualizações do Sonus.</small></span>
-            <button class="bv-permissao" type="button" data-permissao="instalar" aria-label="Permitir atualização automática"></button>
-          </article>
-          <article class="bv-item">
-            <span class="bv-icone bv-rosa" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg></span>
-            <span class="bv-textos"><strong>Notificações</strong><small>Mostra os controles da música na notificação.</small></span>
-            <button class="bv-permissao" type="button" data-permissao="notificacoes" aria-label="Permitir notificações"></button>
-          </article>
-          <article class="bv-item">
-            <span class="bv-icone bv-ambar" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3v2m0 14v2m9-9h-2M5 12H3m15.36-6.36-1.42 1.42M7.06 16.94l-1.42 1.42m12.72 0-1.42-1.42M7.06 7.06 5.64 5.64"/><circle cx="12" cy="12" r="4"/></svg></span>
-            <span class="bv-textos"><strong>Tocar sem interrupções</strong><small>Ajuda a música a continuar em segundo plano.</small></span>
-            <button class="bv-permissao" type="button" data-permissao="bateria" aria-label="Permitir reprodução sem interrupções"></button>
-          </article>
-        </div>
-        <button class="bv-comecar" type="button">Começar <span aria-hidden="true">→</span></button>
-        <p class="bv-rodape">As permissões ficam disponíveis em Configurações.</p>
-      </div>`;
+      <header class="bv-head"><h1 id="bv-titulo">Antes de começar</h1></header>
+      <main class="bv-body">
+        <p class="bv-intro">Você pode mudar essas permissões depois em Configurações.</p>
+        <section class="set-sec" aria-label="Permissões">
+          <h3>Permissões</h3>
+          <div class="set-card">
+            <button class="set-row bv-row" type="button" data-permissao="notificacoes">
+              <span class="tx"><span class="t">Notificações</span><span class="d">Mostra os controles da música na notificação.</span></span>
+              <span class="sw" aria-hidden="true"></span>
+            </button>
+            <button class="set-row bv-row" type="button" data-permissao="bateria">
+              <span class="tx"><span class="t">Tocar sem interrupções</span><span class="d">Ajuda a música a continuar em segundo plano.</span></span>
+              <span class="sw" aria-hidden="true"></span>
+            </button>
+            <button class="set-row bv-row" type="button" data-permissao="instalar">
+              <span class="tx"><span class="t">Atualizar sozinho</span><span class="d">Permite instalar atualizações do Sonus.</span></span>
+              <span class="sw" aria-hidden="true"></span>
+            </button>
+          </div>
+        </section>
+      </main>
+      <footer class="bv-foot"><button class="upd-btn primary bv-comecar" type="button"><span>Começar</span></button></footer>`;
     phone.appendChild(tela);
     atualizar();
     requestAnimationFrame(() => tela?.classList.add("visivel"));
