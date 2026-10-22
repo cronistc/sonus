@@ -14,7 +14,21 @@ import kotlin.math.min
 object CoverColors {
     private val cache = java.util.concurrent.ConcurrentHashMap<String, List<String>>()
 
-    fun of(file: File): List<String> = cache.getOrPut(file.path) { compute(file) }
+    fun of(file: File): List<String> = cache.getOrPut(file.path) { fromDisk(file) ?: compute(file).also { toDisk(file, it) } }
+
+    // guardadas em disco (files/cores): a mesma capa nunca é analisada duas vezes, nem depois de reabrir o app.
+    // Se a capa for trocada (arquivo mais novo), recalcula.
+    private fun diskFile(file: File) = File(file.parentFile?.parentFile ?: file.parentFile, "cores/" + Integer.toHexString(file.path.hashCode()) + ".txt")
+
+    private fun fromDisk(file: File): List<String>? = runCatching {
+        val d = diskFile(file)
+        if (!d.exists() || d.lastModified() < file.lastModified()) return null
+        d.readText().split(",").takeIf { it.size == 4 && it.all { c -> c.startsWith("#") } }
+    }.getOrNull()
+
+    private fun toDisk(file: File, colors: List<String>) {
+        runCatching { diskFile(file).apply { parentFile?.mkdirs() }.writeText(colors.joinToString(",")) }
+    }
 
     private fun compute(file: File): List<String> {
         val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
