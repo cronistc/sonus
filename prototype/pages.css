@@ -56,7 +56,8 @@
 .pg .tr .tx { flex: 1; min-width: 0; }
 .pg .tr .t { font-size: calc(var(--fs) * (15px)); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pg .tr .a { font-size: calc(var(--fs) * (13px)); color: var(--text-dim); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pg .tr .dl { width: 8px; height: 8px; border-radius: 50%; background: var(--brand); flex-shrink: 0; }
+.pg .tr .dl { width: 20px; height: 20px; flex-shrink: 0; color: var(--t-mid, var(--text)); opacity: .85; display: grid; place-items: center; }
+.pg .tr .dl svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .pg .tr .grip, .pg .tr .rm { width: 40px; height: 40px; display: grid; place-items: center; color: var(--text-dim); background: none; border: 0; flex-shrink: 0; }
 .pg .tr .grip { touch-action: none; cursor: grab; }
 .pg .tr .grip svg, .pg .tr .rm svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }

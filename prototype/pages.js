@@ -27,6 +27,7 @@ window.SounosPages = (() => {
     shuffle: '<svg viewBox="0 0 24 24"><path d="M2 18h1.4c1.3 0 2.5-.6 3.3-1.7l6.1-8.6c.7-1.1 2-1.7 3.3-1.7H22"/><path d="m18 2 4 4-4 4"/><path d="M2 6h1.9c1.5 0 2.9.9 3.6 2.2"/><path d="M22 18h-5.9c-1.3 0-2.6-.7-3.3-1.8l-.5-.8"/><path d="m18 14 4 4-4 4"/></svg>',
     dl: '<svg viewBox="0 0 24 24"><path d="M12 4v11"/><path d="m7 11 5 5 5-5"/><path d="M5 20h14"/></svg>',
     done: '<svg viewBox="0 0 24 24"><path d="m5 12 5 5 9-10"/></svg>',
+    baixada: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5"/><path d="m8 12.3 2.7 2.7L16.2 9.5"/></svg>',   // ícone de baixar com ✓: já está no celular
     img: '<svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/></svg>',
     edit: '<svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>',
     grip: '<svg viewBox="0 0 24 24"><path d="M5 9h14M5 15h14"/></svg>',
@@ -192,7 +193,7 @@ window.SounosPages = (() => {
       $("[data-a=play]").disabled = !p.tracks.length;
       const done = downloaded();
       const edits = p.tracks.length ? p.tracks.map((t, i) => rowHtml(t, i,
-        `${done[t.id] ? '<span class="dl"></span>' : ""}<button class="rm" aria-label="${downloads ? "Remover música baixada" : "Tirar da playlist"}">${I.rm}</button>${downloads ? "" : `<button class="grip" aria-label="Arrastar para ordenar">${I.grip}</button>`}`, true)).join("") : "";
+        `${done[t.id] ? `<span class="dl" aria-label="Baixada">${I.baixada}</span>` : ""}<button class="rm" aria-label="${downloads ? "Remover música baixada" : "Tirar da playlist"}">${I.rm}</button>${downloads ? "" : `<button class="grip" aria-label="Arrastar para ordenar">${I.grip}</button>`}`, true)).join("") : "";
       const del = downloads ? "" : '<button class="del">Apagar playlist</button>';
       list.innerHTML = p.tracks.length
         ? edits + del
