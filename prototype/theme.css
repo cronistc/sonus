@@ -113,3 +113,5 @@ body.sonus-opening #brandLetter { opacity: 0; }
 /* letreiro (marquee.js) */
 .mq { display: inline-block; white-space: nowrap; will-change: auto; }
 .mq-on { text-overflow: clip !important; }
+.sonus-opening-layer .sonus-opening-bg { position: absolute; inset: 0; }
+.sonus-opening-layer canvas { position: absolute; inset: 0; }

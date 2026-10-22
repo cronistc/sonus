@@ -78,23 +78,19 @@ class MainActivity : Activity() {
         bridge = Bridge(web).also { it.attach() }
         web.addJavascriptInterface(bridge, "SounosNative")
         val shell = FrameLayout(this).apply {
-            background = if (theme == "gradient") GradientDrawable(
+            background = if (theme == "gradient" && !coldOpening) GradientDrawable(
                 GradientDrawable.Orientation.TOP_BOTTOM,
                 intArrayOf(Color.rgb(32, 67, 152), Color.rgb(17, 38, 79), Color.rgb(14, 14, 16)),
             ) else android.graphics.drawable.ColorDrawable(windowColor)
             addView(web, FrameLayout.LayoutParams(-1, -1))
             if (coldOpening) {
                 // Mantém a primeira palavra visível enquanto a interface e o desenho vetorial preparam o primeiro quadro.
-                val font = runCatching { Typeface.createFromAsset(assets, "fonts/Inter.ttf") }.getOrNull()
-                addView(TextView(this@MainActivity).apply {
+                // mesmo desenho e mesma posição do splash do sistema: a palavra não pula de um para o outro
+                addView(android.widget.ImageView(this@MainActivity).apply {
                     tag = "sonus-opening-word"
-                    text = "Sonus"
-                    textSize = 64f
-                    setTextColor(if (theme == "light") Color.rgb(17, 17, 20) else Color.rgb(245, 245, 247))
-                    typeface = font?.let { Typeface.create(it, Typeface.BOLD) } ?: Typeface.DEFAULT_BOLD
-                    gravity = Gravity.CENTER
-                    includeFontPadding = false
-                }, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
+                    setImageResource(R.drawable.splash_sonus)
+                    if (theme == "light") setColorFilter(Color.rgb(17, 17, 20))
+                }, FrameLayout.LayoutParams((288 * resources.displayMetrics.density).toInt(), (288 * resources.displayMetrics.density).toInt(), Gravity.CENTER))
             }
         }
         setContentView(shell)

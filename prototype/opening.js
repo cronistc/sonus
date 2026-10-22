@@ -1,195 +1,149 @@
-// A abertura só começa quando a Activity confirma que esta página é a inicialização fria.
+// Abertura (só na inicialização fria):
+// 1) "Sonus" caligráfico (o mesmo desenho do splash do Android) 2) as letras SE TRANSFORMAM, contorno a contorno,
+// na clave de sol 3) a clave sobe sozinha até o cabeçalho 4) encaixa como uma joia e só então a tela inicial aparece.
+// Desenho quadro a quadro em canvas; os contornos casados vêm de opening-pontos.js (tools/abertura/gera.py).
 (() => {
-  const W = 512, H = 176, LOGO_SIZE = 150, DURATION = 1900;
-  let layer, canvas, context, shapeCanvas, shapeContext, sceneCanvas, sceneContext;
-  let sourceCanvas, onusCanvas, onusCenter, sOffset, from, to, color, target, targetPath, startAt, done = false;
+  const CLAVE_ALTURA = 156;                         // altura da clave no meio da tela (px)
+  // linha do tempo (ms)
+  const MORPH_INI = 300, MORPH_DUR = 1250, ATRASO_LETRA = 0, PAUSA = 260, SUBIDA = 720, ENCAIXE = 260, REVELA = 320;
+  const MORPH_FIM = MORPH_INI + MORPH_DUR;
+  const SOBE_INI = MORPH_FIM + PAUSA, SOBE_FIM = SOBE_INI + SUBIDA, T = SOBE_FIM + ENCAIXE + REVELA;
+  let letrasOnus, layer, base, bg, canvas, ctx, off, octx, ratio, cor, fundo, alvo, clavePath, textoPath, D, pares, startAt, done = false;
   const clamp = v => Math.max(0, Math.min(1, v));
-  const ease = t => 1 - Math.pow(1 - clamp(t), 3);
-
-  // Distância aproximada em oito direções; duas passagens mantêm o preparo leve no celular.
-  function distance(mask, inside) {
-    const d = new Float32Array(mask.length), far = 1e5, diagonal = Math.SQRT2;
-    for (let i = 0; i < mask.length; i++) d[i] = (mask[i] !== 0) === inside ? 0 : far;
-    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-      const i = y * W + x;
-      if (x) d[i] = Math.min(d[i], d[i - 1] + 1);
-      if (y) {
-        d[i] = Math.min(d[i], d[i - W] + 1);
-        if (x) d[i] = Math.min(d[i], d[i - W - 1] + diagonal);
-        if (x + 1 < W) d[i] = Math.min(d[i], d[i - W + 1] + diagonal);
-      }
-    }
-    for (let y = H - 1; y >= 0; y--) for (let x = W - 1; x >= 0; x--) {
-      const i = y * W + x;
-      if (x + 1 < W) d[i] = Math.min(d[i], d[i + 1] + 1);
-      if (y + 1 < H) {
-        d[i] = Math.min(d[i], d[i + W] + 1);
-        if (x + 1 < W) d[i] = Math.min(d[i], d[i + W + 1] + diagonal);
-        if (x) d[i] = Math.min(d[i], d[i + W - 1] + diagonal);
-      }
-    }
-    return d;
-  }
-
-  function signedField(mask) {
-    const toInside = distance(mask, true), toOutside = distance(mask, false);
-    for (let i = 0; i < mask.length; i++) {
-      toInside[i] = mask[i] ? -toOutside[i] : toInside[i];
-    }
-    return toInside;
-  }
-
-  function alphaMask(ctx) {
-    const pixels = ctx.getImageData(0, 0, W, H).data, mask = new Uint8Array(W * H);
-    for (let i = 0; i < mask.length; i++) mask[i] = pixels[i * 4 + 3] > 24 ? 1 : 0;
-    return mask;
-  }
+  const fase = (t, a, b) => clamp((t - a) / (b - a));
+  const suave = t => t * t * (3 - 2 * t);
+  const inOut = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  const inOutQuint = t => t < .5 ? 16 * t ** 5 : 1 - Math.pow(-2 * t + 2, 5) / 2;
 
   function prepare() {
+    D = window.__SONUS_ABERTURA;
     const logo = document.getElementById("brandLetter"), phone = document.getElementById("phone");
-    if (!logo || !phone) return false;
-    const wasHidden = logo.hidden;
-    logo.hidden = false;
-    const rect = logo.getBoundingClientRect();
-    logo.hidden = wasHidden;
-    target = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2, size: rect.width || 28 };
-    color = getComputedStyle(logo).color;
-
-    const source = document.createElement("canvas"); source.width = W; source.height = H;
-    sourceCanvas = source;
-    const sourceContext = source.getContext("2d", { willReadFrequently: true });
-    sourceContext.clearRect(0, 0, W, H);
-    sourceContext.fillStyle = color;
-    sourceContext.font = '700 112px "SonusFont", sans-serif';
-    sourceContext.textAlign = "center"; sourceContext.textBaseline = "middle";
-    sourceContext.fillText("Sonus", W / 2, H / 2 + 3);
-    const sCanvas = document.createElement("canvas"); sCanvas.width = W; sCanvas.height = H;
-    const sContext = sCanvas.getContext("2d");
-    sContext.fillStyle = color; sContext.font = sourceContext.font;
-    sContext.textAlign = "center"; sContext.textBaseline = "middle";
-    sContext.fillText("S", W / 2, H / 2 + 3);
-    from = signedField(alphaMask(sContext));
-    const wordWidth = sourceContext.measureText("Sonus").width;
-    const sWidth = sourceContext.measureText("S").width;
-    const onusX = (W - wordWidth) / 2 + sWidth;
-    const onusWidth = sourceContext.measureText("onus").width;
-    onusCenter = onusX + onusWidth / 2;
-    sOffset = (W - wordWidth) / 2 + sWidth / 2 - W / 2;
-    onusCanvas = document.createElement("canvas"); onusCanvas.width = W; onusCanvas.height = H;
-    const onusContext = onusCanvas.getContext("2d");
-    onusContext.fillStyle = color; onusContext.font = sourceContext.font;
-    onusContext.textAlign = "left"; onusContext.textBaseline = "middle";
-    onusContext.fillText("onus", onusX, H / 2 + 3);
-
-    const logoCanvas = document.createElement("canvas"); logoCanvas.width = W; logoCanvas.height = H;
-    const logoContext = logoCanvas.getContext("2d");
-    logoContext.fillStyle = color;
-    logoContext.translate(W / 2, H / 2);
-    logoContext.scale(LOGO_SIZE / 64, LOGO_SIZE / 64);
-    logoContext.translate(-32, -32);
-    targetPath = new Path2D(logo.querySelector("path").getAttribute("d"));
-    logoContext.fill(targetPath);
-    to = signedField(alphaMask(logoContext));
-
-    shapeCanvas = document.createElement("canvas"); shapeCanvas.width = W; shapeCanvas.height = H;
-    shapeContext = shapeCanvas.getContext("2d");
-    sceneCanvas = document.createElement("canvas"); sceneCanvas.width = W; sceneCanvas.height = H;
-    sceneContext = sceneCanvas.getContext("2d");
+    if (!D || !logo || !phone) return false;
+    const r = logo.getBoundingClientRect(), esc = (r.width || 28) / 64;
+    // ponto de chegada = centro da clave desenhada no cabeçalho (não o centro da caixa do ícone)
+    alvo = { x: r.left + D.ccx * esc, y: r.top + D.ccy * esc, escala: esc };
+    cor = getComputedStyle(logo).color;
+    fundo = getComputedStyle(phone).background;
+    clavePath = new Path2D(logo.querySelector("path").getAttribute("d"));
+    textoPath = new Path2D(D.texto);
+    // "onus": cada letra como um desenho só (contorno + furo), para deslizar para dentro do S/clave e sumir
+    letrasOnus = [1, 2, 3, 4].map(l => {
+      const cs = D.pares.filter(p => p.l === l), path = new Path2D(); let sx = 0, sy = 0, n = 0;
+      for (const c of cs) {
+        path.moveTo(c.a[0], c.a[1]);
+        for (let i = 2; i < c.a.length; i += 2) { path.lineTo(c.a[i], c.a[i + 1]); if (!c.f) { sx += c.a[i]; sy += c.a[i + 1]; n++; } }
+        path.closePath();
+      }
+      return { path, cx: sx / n, cy: sy / n };
+    });
+    const s = CLAVE_ALTURA / D.ch;
+    pares = D.pares.map(p => ({
+      l: p.l, furo: !!p.f, cresce: !!p.g,
+      a: p.a.length ? Float32Array.from(p.a) : null,
+      b: Float32Array.from(p.b, v => v * s),
+      o: p.o ? [p.o[0] * s, p.o[1] * s] : null,
+    }));
     layer = document.createElement("div"); layer.className = "sonus-opening-layer";
-    layer.style.background = getComputedStyle(phone).background;
-    canvas = document.createElement("canvas"); layer.appendChild(canvas);
-    context = canvas.getContext("2d");
+    // começa na cor lisa do splash do Android e passa para o fundo do tema sem salto
+    base = document.createElement("div"); base.className = "sonus-opening-bg";
+    base.style.background = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim() || "#0e0e10";
+    bg = document.createElement("div"); bg.className = "sonus-opening-bg"; bg.style.background = fundo; bg.style.opacity = 0;
+    canvas = document.createElement("canvas"); layer.append(base, bg, canvas);
+    ctx = canvas.getContext("2d");
     document.body.classList.add("sonus-opening");
     document.body.appendChild(layer);
-    resize();
-    layer.addEventListener("pointerdown", e => {
-      e.preventDefault(); e.stopPropagation();
-      finish(true);
-    }, { passive: false });
+    ratio = Math.min(window.devicePixelRatio || 1, 3);
+    canvas.width = Math.round(innerWidth * ratio); canvas.height = Math.round(innerHeight * ratio);
+    off = document.createElement("canvas"); off.width = canvas.width; off.height = canvas.height;
+    octx = off.getContext("2d");
+    layer.addEventListener("pointerdown", e => { e.preventDefault(); e.stopPropagation(); finish(); }, { passive: false });
     return true;
   }
 
-  function resize() {
-    if (!canvas) return;
-    const ratio = Math.min(window.devicePixelRatio || 1, 2);
-    canvas.width = Math.round(window.innerWidth * ratio);
-    canvas.height = Math.round(window.innerHeight * ratio);
-    context.setTransform(ratio, 0, 0, ratio, 0, 0);
+  // um contorno no meio da transformação (texto → clave), em coordenadas da tela
+  function contorno(c, p, t, cx, cy) {
+    const b = p.b, n = b.length / 2;
+    if (p.cresce) {                                        // parte da clave que nasce de um ponto e cresce
+      const k = suave(t), ox = p.o[0], oy = p.o[1];
+      c.moveTo(cx + ox + (b[0] - ox) * k, cy + oy + (b[1] - oy) * k);
+      for (let i = 1; i < n; i++) c.lineTo(cx + ox + (b[i * 2] - ox) * k, cy + oy + (b[i * 2 + 1] - oy) * k);
+    } else {
+      const a = p.a;
+      c.moveTo(cx + a[0] + (b[0] - a[0]) * t, cy + a[1] + (b[1] - a[1]) * t);
+      for (let i = 1; i < n; i++) c.lineTo(cx + a[i * 2] + (b[i * 2] - a[i * 2]) * t, cy + a[i * 2 + 1] + (b[i * 2 + 1] - a[i * 2 + 1]) * t);
+    }
+    c.closePath();
   }
 
-  function drawShape(morph) {
-    if (morph >= 1) {
-      shapeContext.clearRect(0, 0, W, H);
-      shapeContext.fillStyle = color;
-      shapeContext.save();
-      shapeContext.translate(W / 2, H / 2);
-      shapeContext.scale(LOGO_SIZE / 64, LOGO_SIZE / 64);
-      shapeContext.translate(-32, -32);
-      shapeContext.fill(targetPath);
-      shapeContext.restore();
-      return;
+  function paint(ms) {
+    const cx = innerWidth / 2, cy = innerHeight / 2;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    ctx.fillStyle = cor;
+
+    if (ms < MORPH_INI) {                                  // 1) a palavra, parada
+      ctx.save(); ctx.translate(cx, cy); ctx.fill(textoPath); ctx.restore();
+    } else if (ms < MORPH_FIM) {                           // 2) o S vira a clave; "onus" desliza para dentro dela
+      const t = inOut(fase(ms, MORPH_INI, MORPH_FIM));
+      octx.setTransform(1, 0, 0, 1, 0, 0);
+      octx.clearRect(0, 0, off.width, off.height);
+      octx.setTransform(ratio, 0, 0, ratio, 0, 0);
+      octx.fillStyle = cor;
+      octx.beginPath();
+      for (const p of pares) if (!p.furo && (p.l === 0 || p.cresce)) contorno(octx, p, p.cresce ? fase(ms, MORPH_INI + MORPH_DUR * .45, MORPH_FIM) : t, cx, cy);
+      octx.fill("nonzero");
+      octx.globalCompositeOperation = "destination-out";
+      octx.beginPath();
+      for (const p of pares) if (p.furo && (p.l === 0 || p.cresce)) contorno(octx, p, fase(ms, MORPH_INI + MORPH_DUR * .4, MORPH_FIM), cx, cy);
+      octx.fill("nonzero");
+      octx.globalCompositeOperation = "source-over";
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.drawImage(off, 0, 0);
+      ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+      const k = inOut(fase(ms, MORPH_INI, MORPH_INI + MORPH_DUR * .78));
+      letrasOnus.forEach((L, i) => {
+        const kk = clamp(k * (1 + i * .06));               // as mais distantes andam um pouco mais rápido
+        ctx.save();
+        ctx.globalAlpha = 1 - kk * kk;
+        ctx.translate(cx + L.cx * (1 - kk), cy + L.cy * (1 - kk));
+        ctx.scale(1 - .7 * kk, 1 - .7 * kk);
+        ctx.translate(-L.cx, -L.cy);
+        ctx.fill(L.path);
+        ctx.restore();
+      });
+    } else {                                               // 3) a clave sobe sozinha e 4) encaixa no cabeçalho
+      const s0 = CLAVE_ALTURA / D.ch;
+      const v = inOut(fase(ms, SOBE_INI, SOBE_FIM));
+      // encaixe: chega um pouco maior e assenta (como uma joia na garra), com um brilho curto
+      const e = fase(ms, SOBE_FIM, SOBE_FIM + ENCAIXE);
+      const assenta = 1 + .14 * Math.sin(Math.PI * e) * (1 - e);
+      const s = (s0 + (alvo.escala - s0) * v) * assenta;
+      const x = cx + (alvo.x - cx) * v, y = cy + (alvo.y - cy) * v;
+      ctx.save(); ctx.translate(x, y); ctx.scale(s, s); ctx.translate(-D.ccx, -D.ccy);
+      if (e > 0 && e < 1) { ctx.shadowColor = cor; ctx.shadowBlur = 16 * Math.sin(Math.PI * e); }
+      ctx.fill(clavePath); ctx.restore();
     }
-    const image = shapeContext.createImageData(W, H), pixels = image.data;
-    const c = color.match(/[\d.]+/g)?.map(Number) || [245, 245, 247];
-    for (let i = 0, p = 0; i < from.length; i++, p += 4) {
-      const d = from[i] * (1 - morph) + to[i] * morph;
-      const edge = clamp((1.15 - d) / 2.3);
-      pixels[p] = c[0]; pixels[p + 1] = c[1]; pixels[p + 2] = c[2]; pixels[p + 3] = Math.round(edge * 255);
-    }
-    shapeContext.putImageData(image, 0, 0);
+    // fundo: entra o do tema logo no começo; some só DEPOIS que a clave encaixou (aí aparece tudo)
+    const some = 1 - suave(fase(ms, SOBE_FIM + ENCAIXE * .6, T));
+    base.style.opacity = String(some);
+    bg.style.opacity = String(suave(fase(ms, 0, 420)) * some);
   }
 
-  function paint(progress) {
-    const morphTime = clamp((progress - .05) / .95);
-    const morph = morphTime * morphTime * (3 - 2 * morphTime);
-    const travel = ease(clamp((progress - .68) / .32));
-    const scale = .66 + ((target.size / LOGO_SIZE) - .66) * travel;
-    const cx = innerWidth / 2 + (target.x - innerWidth / 2) * travel;
-    const cy = innerHeight / 2 + (target.y - innerHeight / 2) * travel;
-    drawShape(morph);
-    sceneContext.clearRect(0, 0, W, H);
-    sceneContext.globalAlpha = 1 - progress;
-    sceneContext.drawImage(sourceCanvas, 0, 0);
-    const onusFade = .38 * 4 * progress * (1 - progress);
-    if (onusFade > 0) {
-      const onusScale = 1 - .72 * progress;
-      const onusX = onusCenter + (W / 2 - onusCenter) * progress;
-      sceneContext.save();
-      sceneContext.globalAlpha = onusFade;
-      sceneContext.translate(onusX, H / 2);
-      sceneContext.scale(onusScale, onusScale);
-      sceneContext.translate(-onusCenter, -H / 2);
-      sceneContext.drawImage(onusCanvas, 0, 0);
-      sceneContext.restore();
-    }
-    const sCenter = W / 2 + sOffset * (1 - morph);
-    sceneContext.globalAlpha = 1;
-    sceneContext.drawImage(shapeCanvas, sCenter - W / 2, 0);
-    context.setTransform(1, 0, 0, 1, 0, 0);
-    context.clearRect(0, 0, canvas.width, canvas.height);
-    const ratio = Math.min(window.devicePixelRatio || 1, 2);
-    context.setTransform(ratio * scale, 0, 0, ratio * scale, ratio * (cx - W * scale / 2), ratio * (cy - H * scale / 2));
-    context.imageSmoothingEnabled = true;
-    context.drawImage(sceneCanvas, 0, 0);
-    context.setTransform(ratio, 0, 0, ratio, 0, 0);
-  }
-
-  function finish(skip) {
+  function finish() {
     if (done) return;
-    if (skip) paint(1);
     done = true;
-    requestAnimationFrame(() => {
-      document.body.classList.remove("sonus-opening");
-      layer?.remove();
-      layer = canvas = context = null;
-    });
+    document.body.classList.remove("sonus-opening");
+    const l = layer;
+    if (l) { l.style.transition = "opacity .18s ease"; l.style.opacity = "0"; setTimeout(() => l.remove(), 200); }
+    layer = base = bg = canvas = ctx = off = octx = null;
   }
 
   function frame(now) {
     if (done) return;
-    const progress = clamp((now - startAt) / DURATION);
-    paint(progress);
-    if (progress >= 1) finish(false);
+    const ms = now - startAt;
+    paint(Math.min(ms, T));
+    if (ms >= T) finish();
     else requestAnimationFrame(frame);
   }
 
@@ -199,11 +153,12 @@
       return;
     }
     try {
-      await document.fonts.load('700 112px "SonusFont"');
       if (!prepare()) throw new Error("faltam elementos da abertura");
       paint(0);
-      // O primeiro quadro já está pronto antes de a Activity revelar a WebView.
+      // só troca a palavra nativa pela WebView depois que o 1º quadro foi DE FATO para a tela (sem piscar)
+      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
       SounosNative.call("openingReady", "{}");
+      await new Promise(r => setTimeout(r, 60));
       startAt = performance.now();
       requestAnimationFrame(frame);
     } catch (e) {
