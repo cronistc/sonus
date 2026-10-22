@@ -839,7 +839,9 @@ function syncLyrics() {
   }
   if (ln !== lastLine && ln >= 0 && lyricsMode && !selecting) {
     const box = $("lines");
-    box.scrollTo({ top: els[ln].offsetTop - box.clientHeight * .35, behavior: "smooth" });
+    // Mantém o começo da letra no topo; as linhas seguintes sobem suavemente.
+    const top = ln === 0 ? 0 : els[ln].offsetTop - box.clientHeight * .35;
+    box.scrollTo({ top, behavior: "smooth" });
   }
   lastLine = ln;
 }
