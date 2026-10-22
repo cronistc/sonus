@@ -82,3 +82,6 @@ html { font-size: calc(16px * var(--fs)); }
 
 /* No celular a tela do app ocupa a altura toda (a moldura de 860px é só para ver no computador) */
 @media (max-width: 499px) { .phone { max-height: none !important; } }
+/* letreiro (marquee.js) */
+.mq { display: inline-block; white-space: nowrap; will-change: auto; }
+.mq-on { text-overflow: clip !important; }

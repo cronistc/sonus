@@ -67,7 +67,7 @@ class CoverStore(
             var found: ArtistResult? = null
             var searched = false
             val hint = hintUrl?.takeIf { allowedUrl(it) }?.let(::artistImageUrl)
-            val url = indexed?.takeIf { allowedUrl(it) } ?: hint ?: run {
+            val url = indexed?.takeIf { allowedUrl(it) }?.let(::artistImageUrl) ?: hint ?: run {
                 val missUntil = artistLookupMisses[key] ?: 0L
                 if (missUntil > System.currentTimeMillis()) {
                     trace("chave=$key etapa=searchArtists_ms=0 resultado=negativo_em_cache")
@@ -265,8 +265,9 @@ class CoverStore(
             val queryAt = raw.indexOf('?').takeIf { it >= 0 } ?: raw.length
             val path = raw.substring(0, queryAt)
             val query = raw.substring(queryAt)
-            val sized = Regex("=(?:s\\d+|w\\d+-h\\d+)[^/?&#]*$").replace(path, "=s400-c")
-            return (if (sized == path) "$path=s400-c" else sized) + query
+            // tira TODOS os sufixos de tamanho do fim (havia URLs salvas com "=s400-c=s400-c", que não baixam)
+            val base = path.replace(Regex("(=[^/?&#=]*)+$"), "")
+            return "$base=s400-c$query"
         }
 
         /** Largura × altura lidas do cabeçalho (JPEG/PNG), sem decodificar a imagem. */
