@@ -13,7 +13,7 @@ set -euo pipefail
 
 NAME="${1:?nome da versão (ex.: 0.1.2)}"
 CODE="${2:?código numérico, sempre maior que o anterior (ex.: 2)}"
-NOTES="${3:?arquivo .txt com as novidades, uma por linha}"
+NOTES="$(realpath "${3:?arquivo .txt com as novidades, uma por linha}")"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 REPO_RAW="https://raw.githubusercontent.com/cronistc/sonus/updates"
 
