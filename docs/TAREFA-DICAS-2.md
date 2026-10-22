@@ -8,7 +8,7 @@ Pedidos do dono depois da tarefa original:
 Instale e confira no celular (regras: só dentro do app). Commit; `git merge main`, compile limpo, commit.
 
 ## Validação
-- `./gradlew clean assembleDebug` passou com JDK 17.
+- `./gradlew clean assembleDebug --no-build-cache` passou com JDK 17.
 - Instalei no Galaxy A54 e conferi a tela inicial, perfil de artista e resultados de busca dentro do app.
 - Removi do histórico a busca `Adele` usada na verificação; a instalação preservou os demais dados.
 - `git merge main` ficou atualizado; o ramo já continha o merge `f6719b7` com as alterações de cache.
