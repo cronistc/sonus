@@ -18,7 +18,7 @@ object CoverColors {
 
     // guardadas em disco (files/cores): a mesma capa nunca é analisada duas vezes, nem depois de reabrir o app.
     // Se a capa for trocada (arquivo mais novo), recalcula.
-    private fun diskFile(file: File) = File(file.parentFile?.parentFile ?: file.parentFile, "cores/" + Integer.toHexString(file.path.hashCode()) + ".txt")
+    private fun diskFile(file: File) = File(file.parentFile?.parentFile ?: file.parentFile, "cores2/" + Integer.toHexString(file.path.hashCode()) + ".txt")
 
     private fun fromDisk(file: File): List<String>? = runCatching {
         val d = diskFile(file)
@@ -26,7 +26,10 @@ object CoverColors {
         d.readText().split(",").takeIf { it.size == 4 && it.all { c -> c.startsWith("#") } }
     }.getOrNull()
 
+    @Volatile private var oldDirGone = false
     private fun toDisk(file: File, colors: List<String>) {
+        // "cores/" era da regra antiga (que podia inventar uma cor): apaga uma vez
+        if (!oldDirGone) { oldDirGone = true; runCatching { File(diskFile(file).parentFile?.parentFile, "cores").deleteRecursively() } }
         runCatching { diskFile(file).apply { parentFile?.mkdirs() }.writeText(colors.joinToString(",")) }
     }
 
