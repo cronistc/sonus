@@ -2,18 +2,33 @@ package app.sounos.data
 
 import android.graphics.BitmapFactory
 import android.graphics.Color
+import app.sounos.color.AccentColorSelector
 import java.io.File
 import kotlin.math.abs
 import kotlin.math.min
 
 /**
- * Cores da capa: [0..2] = as 3 predominantes (fundo Gradiente); [3] = a mais CHAMATIVA (barra em volta da capa).
- * Lê a capa reduzida, agrupa cores parecidas, dá mais peso às vivas e evita quase-preto/quase-branco.
+ * Cores da capa: [0..2] = as 3 predominantes (fundo Gradiente); [3] = cor de destaque para a barra e o anel.
+ * A última cor é selecionada pelo AccentColorSelector a partir das bordas e do centro da capa.
  */
 object CoverColors {
     private val cache = java.util.concurrent.ConcurrentHashMap<String, List<String>>()
 
-    fun of(file: File): List<String> = cache.getOrPut(file.path) { compute(file) }
+    fun of(file: File): List<String> = cache.getOrPut(file.path) { fromDisk(file) ?: compute(file).also { toDisk(file, it) } }
+
+    // guardadas em disco (files/cores): a mesma capa nunca é analisada duas vezes, nem depois de reabrir o app.
+    // Se a capa for trocada (arquivo mais novo), recalcula.
+    private fun diskFile(file: File) = File(file.parentFile?.parentFile ?: file.parentFile, "cores/" + Integer.toHexString(file.path.hashCode()) + ".txt")
+
+    private fun fromDisk(file: File): List<String>? = runCatching {
+        val d = diskFile(file)
+        if (!d.exists() || d.lastModified() < file.lastModified()) return null
+        d.readText().split(",").takeIf { it.size == 4 && it.all { c -> c.startsWith("#") } }
+    }.getOrNull()
+
+    private fun toDisk(file: File, colors: List<String>) {
+        runCatching { diskFile(file).apply { parentFile?.mkdirs() }.writeText(colors.joinToString(",")) }
+    }
 
     private fun compute(file: File): List<String> {
         val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -31,8 +46,11 @@ object CoverColors {
             val b = buckets.getOrPut(key) { FloatArray(5) }
             b[0] += .25f + hsv[1] * hsv[2]; b[1] += Color.red(c).toFloat(); b[2] += Color.green(c).toFloat(); b[3] += Color.blue(c).toFloat(); b[4]++
         }
-        bmp.recycle()
-        val accent = accent(buckets.values.toList())
+        val accent = try {
+            AccentColorSelector.select(bmp.width, bmp.height) { x, y -> bmp.getPixel(x, y) and 0xFFFFFF }.color
+        } finally {
+            bmp.recycle()
+        }
         val ranked = buckets.values.sortedByDescending { it[0] }
             .map { Color.rgb((it[1] / it[4]).toInt(), (it[2] / it[4]).toInt(), (it[3] / it[4]).toInt()) }
         val picked = mutableListOf<Int>()
@@ -44,33 +62,7 @@ object CoverColors {
         return (picked + accent).map { String.format("#%06X", 0xFFFFFF and it) }
     }
 
-    /**
-     * A cor que mais chama atenção: bem saturada, clara o bastante e diferente da cor que domina a capa.
-     * Precisa ocupar um pedaço visível da capa (não um pixel solto). Capa sem cor (preto e branco) → branco.
-     */
-    private fun accent(all: List<FloatArray>): Int {
-        val total = all.sumOf { it[4].toDouble() }.toFloat().coerceAtLeast(1f)
-        val avg = { b: FloatArray -> Color.rgb((b[1] / b[4]).toInt(), (b[2] / b[4]).toInt(), (b[3] / b[4]).toInt()) }
-        val dominant = all.maxByOrNull { it[4] }?.let(avg) ?: return Color.WHITE
-        val hsv = FloatArray(3)
-        var best = Color.WHITE; var bestScore = 0f
-        for (b in all) {
-            val share = b[4] / total
-            if (share < .004f) continue
-            val c = avg(b); Color.colorToHSV(c, hsv)
-            val chroma = hsv[1] * hsv[2]
-            if (chroma < .18f) continue
-            val stands = .45f + distance(c, dominant) / 765f                 // destaca do fundo da capa
-            val score = chroma * chroma * (.55f + .45f * hsv[2]) * stands * kotlin.math.sqrt(minOf(1f, share / .03f))
-            if (score > bestScore) { bestScore = score; best = c }
-        }
-        if (bestScore == 0f) return Color.WHITE
-        // garante que apareça bem no fundo escuro do app: clareia um pouco se estiver apagada
-        Color.colorToHSV(best, hsv); hsv[2] = maxOf(hsv[2], .78f); hsv[1] = minOf(1f, maxOf(hsv[1], .55f))
-        return Color.HSVToColor(hsv)
-    }
-
     private fun distance(a: Int, b: Int) = abs(Color.red(a) - Color.red(b)) + abs(Color.green(a) - Color.green(b)) + abs(Color.blue(a) - Color.blue(b))
     private fun shade(c: Int): Int { val h = FloatArray(3); Color.colorToHSV(c, h); h[0] = (h[0] + 35) % 360; h[2] = minOf(1f, h[2] * 1.15f); return Color.HSVToColor(h) }
-    private val FALLBACK = listOf("#2F6BFF", "#1D4ED8", "#60A5FA", "#60A5FA")
+    private val FALLBACK = listOf("#2F6BFF", "#1D4ED8", "#60A5FA", "#E748C8")
 }
