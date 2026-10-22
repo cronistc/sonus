@@ -45,7 +45,13 @@ data class SearchPage(
 )
 
 /** Artista encontrado na busca (canal do YouTube Music). */
-data class ArtistResult(val name: String, val url: String, val thumbs: List<Thumb>)
+data class ArtistResult(
+    val name: String,
+    val url: String,
+    val thumbs: List<Thumb>,
+    val subscriberCount: Long = 0,
+    val verified: Boolean = false,
+)
 
 /** Álbum encontrado no YouTube Music. */
 data class AlbumResult(val name: String, val artist: String, val url: String, val thumbs: List<Thumb>)

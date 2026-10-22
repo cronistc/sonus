@@ -75,6 +75,7 @@ class Bridge(private val web: WebView) {
             "getUpdate" -> app.updater.state().toString()
             "getOffline" -> JSONObject().put("offline", !player.isOnline).toString()
             "getMineTracks" -> mineTracks().toString()
+            "getCoverArtistKeys" -> JSONObject().put("keys", JSONArray(if (BuildConfig.DEBUG) app.covers.knownArtistKeys() else emptyList<String>())).toString()
             "saveData" -> {
                 val key = a.optString("key")
                 val value = a.optString("value")

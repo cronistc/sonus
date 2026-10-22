@@ -37,6 +37,11 @@ class CoverStore(
     private var aliasesLoaded = false
     private val artistLookupMisses = java.util.concurrent.ConcurrentHashMap<String, Long>()
 
+    private fun needsArtistRecheck(key: String): Boolean = synchronized(artistIndexLock) {
+        loadArtistIndexLocked()
+        artistUrls.getProperty("_recheck.$key") == "true"
+    }
+
     private fun name(trackId: String) = trackId.replace(':', '_') + ".img"
     fun pinnedFile(trackId: String) = File(pinnedDir, name(trackId))
     fun browseFile(trackId: String) = File(browseDir, name(trackId))
@@ -180,6 +185,12 @@ class CoverStore(
         }.onFailure { tmp.delete() }
     }
 
+    /** Chaves persistidas para a auditoria percorrer também fotos antigas fora de “Seus artistas”. */
+    fun knownArtistKeys(): List<String> = synchronized(artistIndexLock) {
+        loadArtistIndexLocked()
+        artistUrls.stringPropertyNames().filterNot { it.startsWith("_recheck.") }.sorted()
+    }
+
     /** Resolve e persiste a URL pelo nome; o perfil e a rota de imagem compartilham esta busca. */
     suspend fun resolveArtistPhoto(
         name: String,
@@ -195,15 +206,20 @@ class CoverStore(
         lockFor(id).withLock {
             trace("chave=$key etapa=lock_ms=${elapsedMs(waitStarted)}")
             val indexStarted = System.nanoTime()
+            val recheck = needsArtistRecheck(key)
             val indexed = readArtistUrl(key)
-            val cached = browseFile(id).takeIf { it.length() > 0 }?.also(::touch)
+            val cached = if (recheck) null else {
+                browseFile(id).takeIf { it.length() > 0 }?.also(::touch)
+                    ?: pinnedFile(id).takeIf { it.length() > 0 }
+            }
             trace("chave=$key etapa=disco_indice_ms=${elapsedMs(indexStarted)} imagem=${cached != null} url=${indexed != null}")
 
             var matchedName = name
             var channelUrl: String? = null
             var found: ArtistResult? = null
             var searched = false
-            val hint = hintUrl?.takeIf { allowedUrl(it) }?.let(::artistImageUrl)
+            // Uma entrada marcada para revisão não pode ser validada por uma pista antiga da UI.
+            val hint = hintUrl?.takeIf { !recheck && allowedUrl(it) }?.let(::artistImageUrl)
             val url = indexed?.takeIf { allowedUrl(it) }?.let(::artistImageUrl) ?: hint ?: run {
                 val missUntil = artistLookupMisses[key] ?: 0L
                 if (missUntil > System.currentTimeMillis()) {
@@ -213,6 +229,7 @@ class CoverStore(
                     searched = true
                     val searchStarted = System.nanoTime()
                     found = runCatching { lookup(name) }.getOrNull()
+                        ?.takeIf { artistKey(it.name) == key && it.thumbs.any { thumb -> thumb.url.isNotBlank() } }
                     trace("chave=$key etapa=searchArtists_ms=${elapsedMs(searchStarted)} encontrado=${found != null}")
                     matchedName = found?.name?.ifBlank { name } ?: name
                     channelUrl = found?.url
@@ -236,7 +253,7 @@ class CoverStore(
         }
     }
 
-    /** Baixa a foto resolvida para a área permanente, em tamanho de avatar (~400 px). */
+    /** Baixa a foto resolvida para o LRU, em tamanho de avatar (~400 px). */
     suspend fun getArtistPhoto(
         name: String,
         hintUrl: String? = null,
@@ -258,22 +275,34 @@ class CoverStore(
         lockFor(id).withLock {
             trace("chave=$key etapa=download_lock_ms=${elapsedMs(lockStarted)}")
             val target = browseFile(id)
-            if (target.length() > 0) {
+            val recheck = needsArtistRecheck(key)
+            if (target.length() > 0 && !recheck) {
                 touch(target)
                 sharedCache = true
                 return@withLock photo.copy(file = target)
             }
             val downloadStarted = System.nanoTime()
-            val ok = download(photo.url, target)
-            if (ok) {
+            val staged = File(browseDir, target.name + ".refresh")
+            staged.delete()
+            val ok = download(photo.url, staged)
+            val oldPhoto = listOf(target, pinnedFile(id)).firstOrNull { it.isFile && it.length() > 0 }
+            val preserved = if (ok && recheck && oldPhoto != null) {
+                val backup = File(pinnedDir, target.name + ".unverified")
+                backup.isFile || runCatching { oldPhoto.copyTo(backup, overwrite = false) }.isSuccess
+            } else true
+            val installed = ok && preserved && (staged.renameTo(target) || runCatching {
+                staged.copyTo(target, overwrite = true); staged.delete(); true
+            }.getOrDefault(false))
+            if (installed) {
                 rememberAlias(photo.url, target, large = false)
                 hintUrl?.let { rememberAlias(it, target, large = false) }
+                if (recheck) clearArtistRecheck(key)
                 val trimStarted = System.nanoTime()
                 val trim = budget.trim()
                 trace("chave=$key etapa=lru_ms=${elapsedMs(trimStarted)} removidos_bytes=${trim.removedBytes}")
-            }
-            trace("chave=$key etapa=download_ms=${elapsedMs(downloadStarted)} bytes=${if (ok) target.length() else 0} ok=$ok")
-            photo.copy(file = target.takeIf { ok })
+            } else staged.delete()
+            trace("chave=$key etapa=download_ms=${elapsedMs(downloadStarted)} bytes=${if (installed) target.length() else 0} ok=$installed")
+            photo.copy(file = target.takeIf { installed })
         }.also {
             val origin = when { it.file == null -> "falha"; sharedCache -> "disco_compartilhado"; else -> "rede" }
             trace("chave=$key etapa=total_ms=${elapsedMs(totalStarted)} origem=$origin")
@@ -283,28 +312,58 @@ class CoverStore(
     private fun readArtistUrl(key: String): String? = synchronized(artistIndexLock) {
         loadArtistIndexLocked()
         if (artistIndexFile.isFile) artistIndexFile.setLastModified(System.currentTimeMillis())
-        artistUrls.getProperty(key)
+        artistUrls.getProperty(key)?.takeUnless { artistUrls.getProperty("_recheck.$key") == "true" }
     }
 
     private fun saveArtistUrl(key: String, url: String) = synchronized(artistIndexLock) {
         loadArtistIndexLocked()
-        if (artistUrls.getProperty(key) == url) return@synchronized
-        artistUrls.setProperty(key, url)
+        val canonical = artistImageUrl(url)
+        if (artistUrls.getProperty(key) == canonical) return@synchronized
+        artistUrls.setProperty(key, canonical)
+        persistArtistIndexLocked()
+        Unit
+    }
+
+    private fun clearArtistRecheck(key: String) = synchronized(artistIndexLock) {
+        loadArtistIndexLocked()
+        if (artistUrls.remove("_recheck.$key") != null) persistArtistIndexLocked()
+    }
+
+    private fun persistArtistIndexLocked() {
         val tmp = File(browseDir, artistIndexFile.name + ".tmp")
         runCatching {
             FileOutputStream(tmp).use { artistUrls.store(it, null) }
             if (!tmp.renameTo(artistIndexFile)) {
-                artistIndexFile.delete()
-                tmp.renameTo(artistIndexFile)
+                // renameTo não substitui em todas as implementações; preserva o arquivo íntegro.
+                val backup = File(browseDir, artistIndexFile.name + ".old")
+                if (artistIndexFile.exists() && !artistIndexFile.renameTo(backup)) return
+                if (!tmp.renameTo(artistIndexFile) && backup.exists()) backup.renameTo(artistIndexFile)
+                else backup.delete()
             }
+            if (artistIndexFile.isFile) artistIndexFile.setLastModified(System.currentTimeMillis())
         }.onFailure { tmp.delete() }
-        Unit
     }
 
     private fun loadArtistIndexLocked() {
         if (artistIndexLoaded) return
-        if (artistIndexFile.isFile) runCatching { artistIndexFile.inputStream().use(artistUrls::load) }
+        val source = artistIndexFile.takeIf { it.isFile } ?: File(pinnedDir, artistIndexFile.name)
+        if (source.isFile) runCatching { source.inputStream().use(artistUrls::load) }
+        var changed = false
+        artistUrls.stringPropertyNames().filterNot { it.startsWith("_recheck.") }.forEach { key ->
+            val old = artistUrls.getProperty(key) ?: return@forEach
+            val normalized = artistImageUrl(old)
+            val path = runCatching { java.net.URI(old).rawPath.orEmpty() }.getOrDefault("")
+            val repeatedSize = Regex("(?:=[^/?&#=]*){2,}$").containsMatchIn(path)
+            if (normalized != old) { artistUrls.setProperty(key, normalized); changed = true }
+            // Migra somente os registros sabidamente suspeitos; guarda a foto velha até a nova
+            // passar pelo mesmo download validado que as demais capas.
+            if (repeatedSize || key == "tribalistas") {
+                val marker = "_recheck.$key"
+                if (artistUrls.getProperty(marker) != "true") { artistUrls.setProperty(marker, "true"); changed = true }
+            }
+        }
         artistIndexLoaded = true
+        if (changed) persistArtistIndexLocked()
     }
 
     private fun elapsedMs(started: Long) = (System.nanoTime() - started) / 1_000_000
