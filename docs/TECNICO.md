@@ -280,3 +280,35 @@ sem o topo de configurações/busca e as otimizações da letra. Uma revisão po
 cache e auditoria visual, também foi integrada; a execução final de `git merge main` retornou
 `Already up to date.`. A compilação final `JAVA_HOME=~/Android/jdk17 ./gradlew -q :app:assembleDebug -PversionCode=7`
 passou. O APK integrado foi instalado no Galaxy A54 e abriu normalmente na tela inicial.
+
+## Letra linha por linha e máscara nas bordas (21/10/2026)
+
+- A linha atual fica inteira acesa e as demais esmaecidas por opacidade. As marcas de tempo por
+  palavra são removidas do texto, sem animação de preenchimento ou spans por palavra.
+- Ao chegar à primeira linha, a rolagem fica em `scrollTop=0`; isso mantém o topo sem máscara no
+  começo da música. As linhas seguintes continuam com rolagem suave. A máscara inferior fica
+  sempre ativa e a superior surge com transição curta quando a área realmente sai do início.
+- `lyricsMode` continua ativo ao carregar outra faixa: `loadCurrent()` reconstrói a letra sem
+  redefinir o modo.
+
+### Validação no Galaxy A54
+
+- O APK foi recompilado com `JAVA_HOME=~/Android/jdk17 ./gradlew clean :app:assembleDebug
+  -PversionCode=7`, instalado por cima e aberto normalmente.
+- A letra de “Genius”, de LSD, Sia, Diplo & Labrinth, mostrou 67 linhas e nenhum `span` por
+  palavra. Na captura de `0:00`, `scrollTop=0` e a classe `scrolled` estava ausente; em `1:43`,
+  a linha atual estava inteira acesa e a máscara superior já aparecia. O esmaecimento inferior
+  aparece nas duas capturas.
+- A persistência foi conferida no código: `loadCurrent()` não limpa `lyricsMode` nem a classe
+  `lyr-mode`. No aparelho, o comando Avançar manteve a faixa atual no contexto local, então a
+  persistência entre duas faixas distintas foi verificada no fluxo de código, não nessa fila.
+- Um toque usado para pausar a faixa abriu por engano a tela `InstalledAppDetails`; voltei ao
+  Sonus com `am start` imediatamente e não alterei configurações do sistema.
+- `git merge main` integrou sem conflitos pela estratégia `ort`. Depois da integração, o build
+  limpo com `-PversionCode=7` passou; o APK integrado foi instalado e abriu com a `MainActivity`
+  em primeiro plano.
+
+Capturas da instalação final:
+
+- Início, `0:00`: [letra-inicio.png](capturas/letra-inicio.png)
+- Meio, `1:43`: [letra-meio.png](capturas/letra-meio.png)

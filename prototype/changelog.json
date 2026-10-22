@@ -1,4 +1,21 @@
 {
+  "0.1.3": [
+    "Álbuns: busque álbuns completos e veja os álbuns na página do artista",
+    "Músicas com mais de um artista aparecem juntos (ex.: Menos É Mais, Camisa 10)",
+    "Modo offline: sem internet, o Sonus toca o que já está no celular",
+    "Minhas músicas: suas baixadas (e, offline, o que está guardado) na tela inicial",
+    "Músicas ouvidas ficam guardadas por 3 dias para tocar sem recarregar",
+    "Capas e páginas já vistas abrem na hora, mesmo sem internet",
+    "Nova playlist só é criada quando você confirma, com pelo menos uma música",
+    "Busca com lista que continua carregando ao rolar",
+    "Mini-player com botão de adicionar à playlist e visível sobre a busca",
+    "Letra linha por linha, com desfoque suave nas bordas",
+    "Cor da barra escolhida para ter contraste com a capa",
+    "Nova fonte e nomes de artistas sem @",
+    "Textos longos andam para mostrar o nome inteiro",
+    "Mais leve: muito menos bateria e processador",
+    "Correções: app fechando em segundo plano, botão voltar, fotos de artista e capas que não carregavam"
+  ],
   "0.1.2": [
     "Novo ícone: clave de sol",
     "Atualizações automáticas: o Sonus se atualiza sozinho, sem tela de instalação",
