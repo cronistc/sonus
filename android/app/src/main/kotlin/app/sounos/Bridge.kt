@@ -71,8 +71,12 @@ class Bridge(private val web: WebView) {
             "getState" -> onMain { player.state().toString() }
             "openingReady" -> {
                 main.post {
-                    (web.parent as? android.view.ViewGroup)?.findViewWithTag<android.view.View>("sonus-opening-word")?.visibility = android.view.View.GONE
                     web.alpha = 1f
+                    // a palavra nativa fica por cima mais um instante (está no mesmo lugar do 1º quadro da animação):
+                    // assim nunca aparece um quadro vazio na troca
+                    main.postDelayed({
+                        (web.parent as? android.view.ViewGroup)?.findViewWithTag<android.view.View>("sonus-opening-word")?.visibility = android.view.View.GONE
+                    }, 220)
                 }
                 "{}"
             }

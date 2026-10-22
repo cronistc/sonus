@@ -5,7 +5,7 @@
 (() => {
   const CLAVE_ALTURA = 156;                         // altura da clave no meio da tela (px)
   // linha do tempo (ms)
-  const MORPH_INI = 300, MORPH_DUR = 1250, ATRASO_LETRA = 0, PAUSA = 220, SUBIDA = 1000, ENCAIXE = 0, REVELA = 450;
+  const MORPH_INI = 300, MORPH_DUR = 1250, ATRASO_LETRA = 0, PAUSA = 220, SUBIDA = 950, ENCAIXE = 0, REVELA = 700;
   const MORPH_FIM = MORPH_INI + MORPH_DUR;
   const SOBE_INI = MORPH_FIM + PAUSA, SOBE_FIM = SOBE_INI + SUBIDA, T = SOBE_FIM + ENCAIXE + REVELA;
   let desloc = 0, letrasOnus, layer, base, bg, canvas, ctx, off, octx, ratio, cor, fundo, alvo, clavePath, textoPath, D, pares, startAt, done = false;
@@ -115,21 +115,23 @@
       });
     } else {                                               // 3) a clave sobe sozinha e 4) encaixa no cabeçalho
       const s0 = CLAVE_ALTURA / D.ch;
-      // subida num movimento só: começa macio, desacelera e passa um fio do ponto antes de assentar,
-      // chegando com velocidade zero (sem tranco): smootherstep + uma pequena "folga" que some no fim
+      // subida num movimento só: começa macio e chega parada, exatamente onde a clave fica na tela inicial
       const u = fase(ms, SOBE_INI, SOBE_FIM);
-      const w = u * u * u * (u * (u * 6 - 15) + 10) + 4 * u * u * u * (1 - u) * (1 - u);
+      const w = u * u * u * (u * (u * 6 - 15) + 10);          // para exatamente no lugar, sem passar do ponto
       const s = s0 + (alvo.escala - s0) * w;
       const x = cx + (alvo.x - cx) * w, y = cy + (alvo.y - cy) * w;
       ctx.save(); ctx.translate(x, y); ctx.scale(s, s); ctx.translate(-D.ccx, -D.ccy);
-      const brilho = fase(ms, SOBE_FIM - 250, SOBE_FIM + 350);          // um brilho que acende e apaga devagar
-      if (brilho > 0 && brilho < 1) { ctx.shadowColor = cor; ctx.shadowBlur = 14 * Math.sin(Math.PI * brilho); }
       ctx.fill(clavePath); ctx.restore();
     }
-    // fundo: entra o do tema logo no começo; some só DEPOIS que a clave encaixou (aí aparece tudo)
-    const some = 1 - suave(fase(ms, SOBE_FIM - 120, T));
-    base.style.opacity = String(some);
-    bg.style.opacity = String(suave(fase(ms, 0, 420)) * some);
+    // fundo: entra o do tema logo no começo. Depois que a clave chegou, a tela inicial aparece num
+    // esmaecimento radial que nasce da própria clave e se abre até as bordas
+    bg.style.opacity = String(suave(fase(ms, 0, 420)));
+    const r = fase(ms, SOBE_FIM, T);
+    if (r > 0) {
+      const raio = Math.hypot(innerWidth, innerHeight) * suave(r) * 1.1, borda = 140;
+      const m = `radial-gradient(circle at ${alvo.x}px ${alvo.y}px, transparent ${Math.max(0, raio - borda)}px, #000 ${raio}px)`;
+      base.style.maskImage = bg.style.maskImage = base.style.webkitMaskImage = bg.style.webkitMaskImage = m;
+    }
   }
 
   function finish() {
@@ -137,7 +139,7 @@
     done = true;
     document.body.classList.remove("sonus-opening");
     const l = layer;
-    if (l) { l.style.transition = "opacity .18s ease"; l.style.opacity = "0"; setTimeout(() => l.remove(), 200); }
+    l?.remove();                                           // a clave do cabeçalho já está no mesmo lugar: troca invisível
     layer = base = bg = canvas = ctx = off = octx = null;
   }
 
@@ -161,7 +163,7 @@
       // só troca a palavra nativa pela WebView depois que o 1º quadro foi DE FATO para a tela (sem piscar)
       await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
       SounosNative.call("openingReady", "{}");
-      await new Promise(r => setTimeout(r, 60));
+      await new Promise(r => setTimeout(r, 240));     // começa depois que a palavra nativa saiu
       startAt = performance.now();
       requestAnimationFrame(frame);
     } catch (e) {
