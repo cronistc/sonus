@@ -206,8 +206,8 @@
   .phone:not(.lyr-mode) .share-btn, .share-btn.hidden { opacity: 0; transform: scale(.9); pointer-events: none; }
   .phone.lyr-mode .share-btn:not(.hidden) { transition-delay: var(--fade); }
 
-  .lyr.selecting .line { color: var(--t-faint); transition: color .2s, background .2s; }
-  .lyr.selecting .line.sel { color: var(--text); background: var(--chip); }
+  .lyr.selecting .line { opacity: .36; transition: opacity .18s, background .18s; }
+  .lyr.selecting .line.sel { opacity: 1; background: var(--chip); }
   .lyr.selecting .line.note { opacity: .25; pointer-events: none; }
   .selbar { position: absolute; left: -8px; right: -8px; bottom: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between;
             padding: 22px 8px 6px; background: linear-gradient(transparent, var(--bg) 45%);
@@ -253,36 +253,26 @@
          opacity: 0; transform: translateY(8px); pointer-events: none;
          transition: opacity var(--fade) ease, transform var(--fade) ease; }
   .phone.lyr-mode .lyr { opacity: 1; transform: none; pointer-events: auto; transition-delay: var(--fade); }
-  .lyr .lines { height: 100%; overflow-y: auto; scrollbar-width: none; padding: 20% 8px 60%; margin: 0 -8px;
-                -webkit-mask-image: linear-gradient(transparent, #000 18%, #000 78%, transparent);
-                        mask-image: linear-gradient(transparent, #000 18%, #000 78%, transparent); }
+  @property --lyrics-top-fade {
+    syntax: "<length-percentage>";
+    inherits: false;
+    initial-value: 0%;
+  }
+  .lyr .lines { --lyrics-top-fade: 0%; height: 100%; overflow-y: auto; scrollbar-width: none; padding: 20% 8px 60%; margin: 0 -8px;
+                -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 var(--lyrics-top-fade), #000 78%, transparent 100%);
+                        mask-image: linear-gradient(to bottom, transparent 0, #000 var(--lyrics-top-fade), #000 78%, transparent 100%);
+                transition: --lyrics-top-fade .24s ease; }
+  .lyr .lines.scrolled { --lyrics-top-fade: 18%; }
   .lyr .lines::-webkit-scrollbar { display: none; }
   .lyr .line { font-size: calc(var(--fs) * (25px)); font-weight: 600; line-height: 1.38; margin-bottom: 16px; cursor: pointer;
                padding: 2px 8px; margin-left: -8px; border-radius: 8px;
-               color: var(--t-faint); transition: color .4s ease; }
-  .lyr .line.past { color: var(--t-mid); }
-  .lyr .line.now { color: var(--text); }
-  .lyr.plain .line { color: var(--text); cursor: default; }     /* letra sem tempo: mostra inteira */
-  /* preenchimento progressivo da linha atual (estilo Apple Music): cada palavra tem um degradê que varre da esquerda p/ direita.
-     O JS só define duração/atraso por palavra ao trocar de linha, pausar ou buscar; a animação roda sozinha no navegador. */
-  .lyr .line.now:not(.note) .w {
-    color: transparent; -webkit-background-clip: text; background-clip: text;
-    background-image: linear-gradient(90deg, var(--text) 0, var(--text) 47.6%, var(--t-faint) 52.4%, var(--t-faint) 100%);
-    background-size: 210% 100%; background-repeat: no-repeat; background-position: 0 0;   /* sem animação = palavra acesa */
-    animation-timing-function: linear; animation-fill-mode: both; }
-  .lyr .line.now.fa .w { animation-name: lyrfillA; }
-  .lyr .line.now.fb .w { animation-name: lyrfillB; }          /* A/B alternados: trocar o nome reinicia a animação do zero */
-  .phone.paused .lyr .line.now .w { animation-play-state: paused; }
-  .phone.player-hidden .lyr .line.now .w, .phone.overlay-open .lyr .line.now .w,
-  .phone:not(.lyr-mode) .lyr .line.now .w, html.page-hidden .phone .lyr .line.now .w { animation-play-state: paused; }
+               color: var(--text); opacity: .36; transition: opacity .22s ease; }
+  .lyr .line.now { opacity: 1; }
+  .lyr.plain .line { opacity: 1; cursor: default; }     /* letra sem tempo: mostra inteira */
+  /* A linha atual acende inteira; as demais mudam só a opacidade. */
   .phone.paused .act.dl.loading .dl-arrow, .phone.player-hidden .act.dl.loading .dl-arrow,
   .phone.overlay-open .act.dl.loading .dl-arrow,
   html.page-hidden .phone .act.dl.loading .dl-arrow { animation-play-state: paused; }
-  .lyr.selecting .line.now .w { animation: none; background: none; color: inherit; filter: none; }
-  @keyframes lyrfillA { from { background-position: 100% 0; filter: drop-shadow(0 0 0 transparent); }
-                        to   { background-position: 0 0;    filter: drop-shadow(0 0 9px color-mix(in srgb, var(--text) 28%, transparent)); } }
-  @keyframes lyrfillB { from { background-position: 100% 0; filter: drop-shadow(0 0 0 transparent); }
-                        to   { background-position: 0 0;    filter: drop-shadow(0 0 9px color-mix(in srgb, var(--text) 28%, transparent)); } }
   .lyr .empty { color: var(--text-dim); font-size: calc(var(--fs) * (16px)); padding-top: 20px; }
 </style>
 <script>
@@ -796,9 +786,14 @@ function lyricIndex(lrc, at) {
   while (lo < hi) { const mid = (lo + hi) >>> 1; if (lrc[mid][0] <= at) lo = mid + 1; else hi = mid; }
   return lo - 1;
 }
+const lyricLines = $("lines");
+lyricLines.addEventListener("scroll", () => {
+  lyricLines.classList.toggle("scrolled", lyricLines.scrollTop > 1);
+}, { passive: true });
 function buildLyrics() {
   const box = $("lines"), t = track();
-  box.innerHTML = ""; lastLine = -1; lyrMarked = -2; lyrMarkedFor = null; box.scrollTop = 0;
+  box.innerHTML = ""; lastLine = -1; lyrMarked = -2; lyrMarkedFor = null;
+  box.classList.remove("scrolled"); box.scrollTop = 0;
   exitSelect();
   $("shareBtn").classList.toggle("hidden", !t.lrc);
   if (t.lrc === undefined) { box.innerHTML = '<div class="empty">…</div>'; return; }   // letra ainda carregando
@@ -808,36 +803,17 @@ function buildLyrics() {
     const s = ln[0], txt = parseWordTags(t.lrc, i);
     const d = document.createElement("div");
     d.className = "line" + (isNote(txt) ? " note" : "") + (i === marked ? " now" : i < marked ? " past" : "");
-    if (d.classList.contains("note")) d.textContent = txt;
-    else txt.split(" ").forEach((w, k) => {                           // uma <span> por palavra (o preenchimento é por palavra)
-      if (k) d.appendChild(document.createTextNode(" "));
-      const sp = document.createElement("span"); sp.className = "w"; sp.textContent = w; d.appendChild(sp);
-    });
+    d.textContent = txt;
     d.onclick = () => selecting ? toggleLine(i) : (pos = s, render());
     box.appendChild(d);
   });
   lyrMarked = marked; lyrMarkedFor = box.firstElementChild;
 }
-// LRC "enhanced": <mm:ss.xx> antes de cada trecho. Tira as marcas do texto e guarda o início de cada palavra em lrc.wt[i] (segundos).
-// Sem marcas, devolve o texto normalizado (palavras separadas por 1 espaço) e o tempo sai proporcional aos caracteres.
+// LRC "enhanced": remove do texto as marcas <mm:ss.xx> que indicam o início de cada palavra.
 function parseWordTags(lrc, i) {
   const raw = lrc[i][1];
   if (!/<\d+:\d+(\.\d+)?>/.test(raw)) return raw.trim().split(/\s+/).join(" ");
-  const parts = raw.split(/<(\d+):(\d+(?:\.\d+)?)>/), segs = [];
-  let cur = lrc[i][0];
-  for (let k = 0; k < parts.length; k += 3) {
-    if (k) cur = (+parts[k - 2]) * 60 + (+parts[k - 1]);
-    const ws = parts[k].split(/\s+/).filter(Boolean);
-    if (ws.length) segs.push({ t: cur, ws });
-  }
-  const end = i + 1 < lrc.length ? lrc[i + 1][0] : lrc[i][0] + 5, words = [], wt = [];
-  segs.forEach((sg, k) => {
-    const e = k + 1 < segs.length ? segs[k + 1].t : Math.min(end, sg.t + 3);
-    const tot = sg.ws.reduce((a, w) => a + w.length, 0); let c = 0;
-    sg.ws.forEach(w => { words.push(w); wt.push(sg.t + (e - sg.t) * c / tot); c += w.length; });   // palavras do trecho: proporcional
-  });
-  (lrc.wt || (lrc.wt = []))[i] = wt;
-  return (lrc[i][1] = words.join(" "));
+  return raw.replace(/<\d+:\d+(?:\.\d+)?>/g, " ").trim().split(/\s+/).join(" ");
 }
 // barrinhas do bloco que está tocando: sobe e desce em 0,9 s (defasadas), param quando pausa
 function drawEq(now) {
@@ -865,45 +841,11 @@ function syncLyrics() {
   }
   if (ln !== lastLine && ln >= 0 && lyricsMode && !selecting) {
     const box = $("lines");
-    box.scrollTo({ top: els[ln].offsetTop - box.clientHeight * .35, behavior: "smooth" });
+    // Mantém o começo da letra no topo; as linhas seguintes sobem suavemente.
+    const top = ln === 0 ? 0 : els[ln].offsetTop - box.clientHeight * .35;
+    box.scrollTo({ top, behavior: "smooth" });
   }
-  syncFill(t, ln, els, at);
   lastLine = ln;
-}
-
-// Preenchimento da linha atual. Só reconfigura as palavras quando algo muda: linha, play/pause, modo letra/seleção, DOM novo
-// ou salto de posição (busca / ajuste de sincronia). Entre isso a animação CSS corre sozinha, sem escrita por quadro.
-let fillEl = null, fillPlaying = false, fillAt = 0, fillT = 0, fillFlip = false;
-function syncFill(t, ln, els, at) {
-  const el = lyricsMode && !selecting && !t.plain && ln >= 0 ? els[ln] : null;
-  if (!el || el.classList.contains("note")) {
-    if (fillEl) { fillEl.classList.remove("fa", "fb"); fillEl = null; }
-    return;
-  }
-  const now = performance.now();
-  const expect = fillAt + (fillPlaying ? (now - fillT) / 1000 : 0);            // onde a posição deveria estar se nada saltou
-  if (el === fillEl && playing === fillPlaying && Math.abs(at - expect) < .5) return;
-  if (fillEl && fillEl !== el) fillEl.classList.remove("fa", "fb");
-  fillEl = el; fillPlaying = playing; fillAt = at; fillT = now;
-  const ws = el.children, n = ws.length; if (!n) return;
-  const s = t.lrc[ln][0], e = ln + 1 < t.lrc.length ? t.lrc[ln + 1][0] : s + 5;
-  const elapsed = Math.max(0, at - s), wt = t.lrc.wt && t.lrc.wt[ln];
-  const st = [], en = [];
-  if (wt && wt.length === n) {                                                     // tempos por palavra vindos da letra
-    const last = Math.min(e, wt[n - 1] + 3);
-    for (let i = 0; i < n; i++) { st[i] = wt[i] - s; en[i] = (i + 1 < n ? wt[i + 1] : last) - s; }
-  } else {                                                                         // proporcional aos caracteres, em no máx. 8 s
-    const D = Math.min(Math.max(e - s, .4), 8);
-    let tot = 0; for (let i = 0; i < n; i++) tot += ws[i].textContent.length;
-    let c = 0;
-    for (let i = 0; i < n; i++) { st[i] = D * c / tot; c += ws[i].textContent.length; en[i] = D * c / tot; }
-  }
-  for (let i = 0; i < n; i++) {
-    ws[i].style.animationDuration = Math.max(.05, en[i] - st[i]).toFixed(3) + "s";
-    ws[i].style.animationDelay = (st[i] - elapsed).toFixed(3) + "s";               // negativo = já passou desse ponto
-  }
-  fillFlip = !fillFlip;                                                            // trocar o nome da animação reinicia o relógio dela
-  el.classList.toggle("fa", fillFlip); el.classList.toggle("fb", !fillFlip);
 }
 
 // ---- Relógio visual: só existe enquanto o player está visível e tocando ----
