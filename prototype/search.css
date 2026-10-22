@@ -90,3 +90,6 @@
         cursor: pointer; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; color: #fff; font: inherit; text-align: left; }
 .s-pl .meta { position: absolute; left: 0; right: 0; bottom: 0; padding: 18px 8px 7px; background: linear-gradient(transparent, rgba(0,0,0,.75)); }
 .s-pl .t { font-size: calc(var(--fs) * (12.5px)); font-weight: 700; }
+/* mini-player por cima da busca (fechar o player na busca deixa o mini visível); resultados não ficam atrás dele */
+.phone:has(.search-ov.open) .mini { z-index: 51; }
+.search-ov.open .sbody { padding-bottom: 96px; }
