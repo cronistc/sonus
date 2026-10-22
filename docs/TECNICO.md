@@ -300,9 +300,13 @@ passou. O APK integrado foi instalado no Galaxy A54 e abriu normalmente na tela 
   a linha atual estava inteira acesa e a máscara superior já aparecia. O esmaecimento inferior
   aparece nas duas capturas.
 - A persistência foi conferida no código: `loadCurrent()` não limpa `lyricsMode` nem a classe
-  `lyr-mode`. A fila local permaneceu na mesma faixa durante a tentativa de troca via controle.
+  `lyr-mode`. No aparelho, o comando Avançar manteve a faixa atual no contexto local, então a
+  persistência entre duas faixas distintas foi verificada no fluxo de código, não nessa fila.
 - Um toque usado para pausar a faixa abriu por engano a tela `InstalledAppDetails`; voltei ao
   Sonus com `am start` imediatamente e não alterei configurações do sistema.
+- `git merge main` integrou sem conflitos pela estratégia `ort`. Depois da integração, o build
+  limpo com `-PversionCode=7` passou; o APK integrado foi instalado e abriu com a `MainActivity`
+  em primeiro plano.
 
 Capturas da instalação final:
 
