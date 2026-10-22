@@ -22,3 +22,6 @@ Escreva no fim deste arquivo o que mudou. Commit; `git merge main`, resolva, com
   `SounosAdd` e some quando não há música atual.
 - Removido o “+” sobre a capa, que agora só exibe a capa. As letras no player grande continuam
   usando o fluxo nativo de letras.
+- Após `git merge main` (`Already up to date.`), passaram `node --check prototype/home-native.js`, a
+  verificação dos scripts inline de `home.html` e `JAVA_HOME=~/Android/jdk17 ./gradlew -q
+  :app:assembleDebug -PversionCode=5`.
