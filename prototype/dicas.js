@@ -132,6 +132,8 @@
   function placeTip(entry, target) {
     const bubble = document.createElement("div");
     bubble.className = "sonus-dica";
+    bubble.style.width = `${Math.max(0, Math.min(280, innerWidth - 24))}px`;
+    bubble.style.maxWidth = `${Math.max(0, innerWidth - 24)}px`;
     bubble.setAttribute("role", "status");
     bubble.setAttribute("aria-live", "polite");
     bubble.innerHTML = `<span class="sonus-dica-text"></span><button class="sonus-dica-fechar" type="button" aria-label="Fechar dica">×</button>`;
