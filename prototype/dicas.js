@@ -22,6 +22,9 @@
 
   const top = (() => { try { return window.top; } catch { return window; } })();
   const hub = top.__sounosTipsHub ||= { active: null, pending: [], queued: new Set(), nextAt: 0, lastTouch: 0, pointers: new Set(), timer: 0 };
+  const TIP_DURATION = 7000;
+  const TIP_GAP = 520;
+  const EXIT_DURATION = 240;
   const parse = key => { try { return JSON.parse(localStorage.getItem(key)); } catch { return null; } };
   const readVersion = () => {
     const update = window.Sounos?.call("getUpdate");
@@ -91,10 +94,13 @@
     return true;
   }
   function finishTip(tip, bubble) {
+    const active = hub.active?.bubble === bubble ? hub.active : null;
     if (bubble.classList.contains("saindo")) return;
+    if (active?.timeout) clearTimeout(active.timeout);
     bubble.classList.add("saindo");
-    if (hub.active?.bubble === bubble) hub.active = null;
-    setTimeout(() => bubble.remove(), 190);
+    if (active) hub.active = null;
+    bubble.querySelector(".sonus-dica-fechar")?.setAttribute("disabled", "");
+    setTimeout(() => bubble.remove(), EXIT_DURATION);
     if (tip) {
       state.seen[tip.id] = true;
       const unfinished = TIPS.some(item => !state.seen[item.id] && compareVersion(item.version, currentVersion) <= 0 &&
@@ -102,13 +108,34 @@
       if (!unfinished) { state.version = currentVersion; state.newcomer = false; }
       save();
     }
+    hub.nextAt = Date.now() + TIP_GAP;
     pump();
+  }
+  function runTipTimer(active) {
+    if (hub.active !== active || active.paused) return;
+    active.startedAt = Date.now();
+    active.timeout = setTimeout(() => finishTip(active.tip, active.bubble), active.remaining);
+  }
+  function pauseTip(active) {
+    if (hub.active !== active || active.paused) return;
+    clearTimeout(active.timeout);
+    active.timeout = 0;
+    active.remaining = Math.max(0, active.remaining - (Date.now() - active.startedAt));
+    active.paused = true;
+  }
+  function resumeTip(active) {
+    if (hub.active !== active || !active.paused) return;
+    active.paused = false;
+    if (active.remaining <= 0) finishTip(active.tip, active.bubble);
+    else runTipTimer(active);
   }
   function placeTip(entry, target) {
     const bubble = document.createElement("div");
     bubble.className = "sonus-dica";
     bubble.setAttribute("role", "status");
-    bubble.textContent = entry.tip.text;
+    bubble.setAttribute("aria-live", "polite");
+    bubble.innerHTML = `<span class="sonus-dica-text"></span><button class="sonus-dica-fechar" type="button" aria-label="Fechar dica">×</button>`;
+    bubble.querySelector(".sonus-dica-text").textContent = entry.tip.text;
     document.body.appendChild(bubble);
     const tr = target.getBoundingClientRect(), br = bubble.getBoundingClientRect(), gap = 12, pad = 12;
     const below = innerHeight - tr.bottom >= br.height + gap || tr.top < br.height + gap;
@@ -118,10 +145,24 @@
     bubble.style.left = `${left}px`;
     bubble.style.top = `${topY}px`;
     bubble.style.setProperty("--dica-seta", `${Math.max(12, Math.min(br.width - 12, tr.left + tr.width / 2 - left))}px`);
-    requestAnimationFrame(() => bubble.classList.add("visivel"));
+    bubble.style.setProperty("--dica-origem-y", below ? "top" : "bottom");
+    bubble.style.setProperty("--dica-salto", below ? "-9px" : "9px");
     state.seen[entry.tip.id] = true;
-    hub.active = { bubble, close: () => finishTip(entry.tip, bubble) };
-    hub.nextAt = Date.now() + 20000;
+    const active = { tip: entry.tip, bubble, remaining: TIP_DURATION, timeout: 0, paused: false, startedAt: 0,
+      close: () => finishTip(entry.tip, bubble) };
+    hub.active = active;
+    bubble.querySelector(".sonus-dica-fechar").addEventListener("click", e => {
+      e.stopPropagation();
+      active.close();
+    });
+    bubble.addEventListener("pointerdown", () => pauseTip(active));
+    bubble.addEventListener("pointerup", () => resumeTip(active));
+    bubble.addEventListener("pointercancel", () => resumeTip(active));
+    requestAnimationFrame(() => {
+      if (hub.active !== active) return;
+      bubble.classList.add("visivel");
+      runTipTimer(active);
+    });
     save();
   }
   function schedulePump(delay) {
@@ -155,7 +196,7 @@
   document.addEventListener("pointerdown", e => {
     hub.pointers.add(`${window === top ? "top" : "frame"}:${e.pointerId}`);
     hub.lastTouch = Date.now();
-    hub.active?.close();
+    if (hub.active && !hub.active.bubble.contains(e.target)) hub.active.close();
   }, true);
   const releasePointer = e => {
     hub.pointers.delete(`${window === top ? "top" : "frame"}:${e.pointerId}`);
@@ -163,7 +204,6 @@
   };
   window.addEventListener("pointerup", releasePointer, true);
   window.addEventListener("pointercancel", releasePointer, true);
-  document.addEventListener("click", () => hub.active?.close(), true);
   window.SounosTips = api;
   save();
 })();
