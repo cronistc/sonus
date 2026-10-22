@@ -221,3 +221,9 @@ concluiu com sucesso.
 - O letreiro cobre player, mini-player, fila, cartões da tela inicial, busca, páginas e lista de adicionar à playlist.
 - Os tamanhos tipográficos do app usam o fator único `--fs: .94`, aplicado proporcionalmente em home, player, busca, páginas, configurações, adição e atualização. Ícones, capas, botões e espaçamentos mantêm suas dimensões.
 - Após integrar `main` sem conflitos, `git pull origin main` informou `Already up to date.`. Verificado novamente com `node --check` em todos os arquivos `prototype/*.js`, `git diff --check` e `cd android && JAVA_HOME=~/Android/jdk17 ./gradlew -q :app:assembleDebug -PversionCode=5`. Não houve instalação no celular.
+
+## Resumo do topo do player e das capas da fila (21/10/2026)
+
+- O player deixou de exibir os botões de configurações e busca e a clave de sol no topo. A ligação e os estilos da busca, e a ligação e os estilos do modal de configurações, saíram do player; a tela inicial conserva os dois recursos. O módulo de preferências continua carregado no player porque fornece o tema e o ajuste de sincronização da letra.
+- O cálculo da capa principal preserva o tamanho anterior. As capas da fila passam a ter 10% a mais que o tamanho calculado anteriormente para cada tela; o espaço restante continua livre entre a fila e os controles.
+- Após integrar `main`, `node --check prototype/player-native.js` e `JAVA_HOME=~/Android/jdk17 ./gradlew -q :app:assembleDebug -PversionCode=7` passaram. Não houve instalação no celular.
