@@ -179,36 +179,6 @@ amostras. Esse número não é comparável com o baseline reproduzindo. A autent
 impediu reabrir o Sonus para medir home/player após a instalação e capturar a tela de letras; essas
 medições e a comparação visual pós-instalação ficaram pendentes.
 
-## 8. Fluidez da letra e da troca de tema (21/10/2026)
-
-- A troca de tema atualiza primeiro o painel de Configurações e persiste a escolha sem redesenhar
-  os indicadores de armazenamento. O contêiner da tela recebe o novo tema depois que o painel
-  termina de fechar; assim a mudança de variáveis não recalcula a página enquanto ela está visível.
-- As variáveis de tema ficam no contêiner do app. O player oculto não recebe alterações de tema;
-  ao aparecer, consulta a preferência salva. A tela inicial sincroniza o tema depois que o player
-  fecha.
-- Foram removidas as transições globais de cor e as transições por linha da letra. Em Configurações,
-  permanecem as transições dos cartões e da prévia do tema; a entrada e a saída do painel continuam
-  animadas por transformação.
-- A letra é criada com as classes da linha atual. Durante a reprodução, só as linhas entre a posição
-  anterior e a nova recebem atualização; a seleção também altera apenas os trechos selecionados. O
-  sincronismo da letra e o ajuste da capa ficam no próximo quadro, fora do handler do toque.
-
-### Relatório antes/depois — Galaxy A54
-
-Quadros medidos com `dumpsys gfxinfo app.sounos` após zerar os contadores. A resposta é o tempo
-síncrono do handler no DevTools. Na medição da letra, o player estava pausado e a letra já estava
-montada antes do toque.
-
-| Ação | Antes | Depois |
-| --- | --- | --- |
-| Tema Escuro → Claro → Gradiente | 210 ms de resposta; recálculo de estilos 782 ms; 8/14 quadros janky; p95 85 ms; quadros acima de 50 ms | 2,4 ms e 1,2 ms; recálculo 64 ms no conjunto; 3/73 quadros janky; p95 21 ms; nenhum acima de 50 ms |
-| Fechar Configurações após trocar o tema | atualização global durante o painel aberto | aplicação ao contêiner após o fechamento; 2/83 quadros janky; p95 26 ms; nenhum acima de 50 ms |
-| Ativar/desativar letra | 6,7 ms; 4/50 quadros janky; p95 13 ms; até 31 ms; a entrada visual esperava 280 ms | 5,2 ms / 2,0 ms com 68 linhas; 12/59 quadros janky; p95 28 ms; nenhum acima de 50 ms |
-
-O número de linhas variou de 41 no baseline para 68 na medição final. As duas ações responderam
-abaixo de 100 ms e não produziram quadros acima de 50 ms na medição final.
-
 ## Registro do teste de estresse no Galaxy A54 (21/10/2026)
 
 | Bug | Causa | Correção | Confirmado no aparelho? |
@@ -274,3 +244,38 @@ concluiu com sucesso.
 - Testes unitários cobrem LRU entre imagens/metadados, cache JSON, reaproveitamento de URL, miniaturas de lista, limite de 3 GiB do áudio e resposta local sem rede. `node --check` passou para todos os `prototype/*.js`.
 - Validação local: `:core:extractor:test`, `node --check` em todos os scripts e `JAVA_HOME=~/Android/jdk17 ./gradlew -q :app:assembleDebug -PversionCode=7` passaram. Nenhum APK foi instalado.
 - Após o commit, `git merge main` integrou sem conflitos a limpeza dos nomes de álbuns e o mini-player sobre a busca; as duas mudanças foram mantidas junto ao cache. A verificação seguinte informou `Already up to date.`. Repeti testes unitários, `node --check` e a compilação `versionCode=7` depois da integração; todos passaram.
+
+## Tarefa: letra e troca de tema — relatório antes/depois (21/10/2026)
+
+- A troca de tema atualiza primeiro o painel de Configurações e persiste a escolha sem redesenhar
+  os indicadores de armazenamento. O contêiner da tela recebe o novo tema depois que o painel
+  termina de fechar; assim a mudança de variáveis não recalcula a página enquanto ela está visível.
+- As variáveis de tema ficam no contêiner do app. O player oculto não recebe alterações de tema;
+  ao aparecer, consulta a preferência salva. A tela inicial sincroniza o tema depois que o player
+  fecha.
+- Foram removidas as transições globais de cor e as transições por linha da letra. Em Configurações,
+  permanecem as transições dos cartões e da prévia do tema; a entrada e a saída do painel continuam
+  animadas por transformação.
+- A letra é criada com as classes da linha atual. Durante a reprodução, só as linhas entre a posição
+  anterior e a nova recebem atualização; a seleção também altera apenas os trechos selecionados. O
+  sincronismo da letra e o ajuste da capa ficam no próximo quadro, fora do handler do toque.
+
+### Medições — Galaxy A54
+
+Quadros medidos com `dumpsys gfxinfo app.sounos` após zerar os contadores. A resposta é o tempo
+síncrono do handler no DevTools. Na medição da letra, o player estava pausado e a letra já estava
+montada antes do toque.
+
+| Ação | Antes | Depois |
+| --- | --- | --- |
+| Tema Escuro → Claro → Gradiente | 210 ms de resposta; recálculo de estilos 782 ms; 8/14 quadros janky; p95 85 ms; quadros acima de 50 ms | 2,4 ms e 1,2 ms; recálculo 64 ms no conjunto; 3/73 quadros janky; p95 21 ms; nenhum acima de 50 ms |
+| Fechar Configurações após trocar o tema | atualização global durante o painel aberto | aplicação ao contêiner após o fechamento; 2/83 quadros janky; p95 26 ms; nenhum acima de 50 ms |
+| Ativar/desativar letra | 6,7 ms; 4/50 quadros janky; p95 13 ms; até 31 ms; a entrada visual esperava 280 ms | 5,2 ms / 2,0 ms com 68 linhas; 12/59 quadros janky; p95 28 ms; nenhum acima de 50 ms |
+
+O número de linhas variou de 41 no baseline para 68 na medição final. As duas ações responderam
+abaixo de 100 ms e não produziram quadros acima de 50 ms na medição final.
+
+Após integrar `main`, o conflito em `player.html` foi resolvido preservando o player sem o topo de
+configurações/busca e as otimizações da letra. A execução seguinte de `git merge main` retornou
+`Already up to date.`. A compilação `JAVA_HOME=~/Android/jdk17 ./gradlew -q :app:assembleDebug
+-PversionCode=7` passou; o APK foi instalado no Galaxy A54 e abriu normalmente na tela inicial.
