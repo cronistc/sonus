@@ -33,3 +33,28 @@ no main: confira que não há outras).
 
 Commits por correção. Relatório final no fim deste arquivo: tabela falha → causa → correção → status, e como rodar
 o script de auditoria. Depois `git merge main`, compile, commit.
+
+## Relatório da execução
+
+Passe completo em APK debug no aparelho `192.168.1.100:38401`, 21/10/2026 às 21:37. O script percorreu 25 telas: inicial, quatro buscas, os 12 artistas de “Seus artistas”, três álbuns, Minhas músicas, configurações, atualização e player (fila e sugestões). Foram chamadas 313 rotas únicas de capa/foto, incluindo as 49 chaves encontradas no índice persistente de artistas.
+
+| Falha / verificação | Causa | Correção | Status |
+| --- | --- | --- | --- |
+| Tribalistas usava a capa de “Eletrotribalistas” | A busca aceitava canais com nome aproximado; índice e cache antigos podiam vencer uma busca nova. | Exigir nome normalizado idêntico; escolher canal com selo/inscritos e imagem de perfil; revalidar o índice suspeito e substituir a imagem em arquivo temporário, preservando a antiga como `.unverified` até a nova baixar. | Corrigido. A rota `artist:tribalistas` respondeu HTTP 200, largura 400; marcador de revisão removido. |
+| Sufixos de tamanho repetidos em URLs de artista | URLs antigas acumulavam sufixos Google (`=...=...`) e deixavam de baixar. | Normalizador remove todos os sufixos finais; registros suspeitos são revalidados sem apagar a cópia anterior. | Corrigido. 49 chaves revisadas; 0 marcadores `_recheck.*` restantes; 313 rotas com 0 falhas. |
+| Cortes, sobreposições, largura zero e overflow horizontal | Verificação automatizada nas telas percorridas. | O auditor mede texto renderizado, caixas, viewport e conteúdo cortado. | 0 ocorrências em 25 telas. |
+| Erro de JavaScript | Verificação de exceções, `console.error` e logs JavaScript do WebView. | Captura de console e exceções no CDP. | 0 erros JavaScript. |
+| 404 em `updates/support.json` | O JSON de apoio remoto é opcional e não existe no ramo `updates`; sem ele, a opção de apoio fica oculta. | Separado de erros JavaScript e rotas de capa para não mascarar a causa nem reportá-lo como falha visual. | Permanece como recurso opcional ausente; sem efeito nas telas auditadas. |
+| Tela de playlist | Não existe playlist salva neste perfil. | Nenhuma playlist foi criada nem os dados do usuário foram apagados. | Não foi possível abrir uma playlist; registrado pelo auditor. |
+
+### Como rodar
+
+Deixe o Sonus aberto em primeiro plano e execute na raiz do repositório:
+
+```sh
+python3 tools/auditoria/auditar.py --serial <serial-adb> --output /tmp/sonus-auditoria.json
+```
+
+O serial pode ser consultado com `adb devices -l`. O script recusa iniciar se o Sonus não estiver em primeiro plano, não instala nem limpa dados, percorre as quatro buscas padrão e salva o relatório JSON no caminho indicado. Para trocar os termos, passe exatamente quatro após `--terms`.
+
+Uma repetição posterior foi interrompida enquanto outro processo executava `am force-stop` no Sonus. O auditor parou quando a atividade saiu do primeiro plano; ao voltar, confirmou que o histórico local e o espelho nativo foram restaurados. Um teste curto das novas rotas canceláveis respondeu HTTP 200 (400 px para Tribalistas e 1200 px para a faixa atual).

@@ -48,6 +48,12 @@ class CoverStore(
     fun local(trackId: String): File? =
         pinnedFile(trackId).takeIf { it.length() > 0 } ?: browseFile(trackId).takeIf { it.length() > 0 }
 
+    /** Chaves persistidas para a auditoria percorrer também fotos antigas fora de “Seus artistas”. */
+    fun knownArtistKeys(): List<String> = synchronized(artistIndexLock) {
+        loadArtistIndexLocked()
+        artistUrls.stringPropertyNames().filterNot { it.startsWith("_recheck.") }.sorted()
+    }
+
     /** Resolve e persiste a URL pelo nome; o perfil e a rota de imagem compartilham esta busca. */
     suspend fun resolveArtistPhoto(
         name: String,
