@@ -35,3 +35,5 @@ compile limpo, commit; deixe instalado um build que abre normal.
 - `git merge main` informou `Already up to date` porque o ramo já continha o merge paralelo
   `dd6ab48`; as alterações de `dicas.js` e `home.html` continuaram presentes. Compilação limpa
   (`clean :app:assembleDebug -PversionCode=7`) concluída com sucesso antes da instalação.
+- Depois, integrei o commit mais recente de `main` (`55f1ce8`), compilei novamente com `clean` (código
+  de saída 0), reinstalei o APK e confirmei que o Sonus abriu normalmente na tela inicial.
