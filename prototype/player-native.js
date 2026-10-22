@@ -7,7 +7,7 @@
   const root = document.documentElement.style;
 
   const toLocal = t => ({ id: t.id, title: t.title || "—", artist: Sounos.artistLine(t), dur: Math.max(1, t.dur || 1),
-                          c: Sounos.hashColors(t.id), lrc: lyricsById[t.id] ? lyricsById[t.id].lrc : undefined, plain: !!(lyricsById[t.id] && lyricsById[t.id].plain), cover: Sounos.coverUrl(t, true), raw: t });
+                          c: Sounos.hashColors(t.id), lrc: lyricsById[t.id] ? lyricsById[t.id].lrc : undefined, plain: !!(lyricsById[t.id] && lyricsById[t.id].plain), cover: Sounos.coverUrl(t), raw: t });
   const coverBg = t => `url('${t.cover}') center/cover no-repeat, linear-gradient(135deg,${t.c[0]},${t.c[1]} 60%,${t.c[2]})`;
 
   // ---------- estado do app → tela ----------
@@ -27,6 +27,7 @@
     context = st.context?.type === "radio" ? "radio" : "playlist";
     const cur = tracks[nowT];
     if (cur) {
+      cur.cover = Sounos.coverUrl(st.current || st.queue[nowT], false, true);
       cur.c = st.colors;
       if (st.durationMs > 0) cur.dur = st.durationMs / 1000;
       st.colors.forEach((c, k) => root.setProperty(`--c${k + 1}`, c));

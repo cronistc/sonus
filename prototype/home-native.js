@@ -2,7 +2,7 @@
 (() => {
   if (!Sounos.native) return;
   const esc = s => String(s ?? "").replace(/[&<>"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
-  const bg = (t, round) => `url('${Sounos.coverUrl(t, true)}') center/cover no-repeat, linear-gradient(135deg,${Sounos.hashColors(t.id).join(",")})`;
+  const bg = (t, round) => `url('${Sounos.coverUrl(t)}') center/cover no-repeat, linear-gradient(135deg,${Sounos.hashColors(t.id).join(",")})`;
   const artistKey = n => String(n || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
   let S = Sounos.call("getState");
   let offline = !!Sounos.call("getOffline").offline;
