@@ -24,7 +24,7 @@ class AudioCache(
     private val client: OkHttpClient,
     val headBytes: Int = 384 * 1024,
     val maxTotalBytes: Long = 3L * 1024 * 1024 * 1024,
-    private val maxAgeMs: Long = 3L * 24 * 60 * 60 * 1000,
+    private val maxAgeMs: Long = Long.MAX_VALUE,              // sem prazo (pedido do dono): só sai por espaço
 ) {
     init { dir.mkdirs() }
     private val locks = ConcurrentHashMap<String, Mutex>()
@@ -43,7 +43,7 @@ class AudioCache(
     fun totalLength(id: String): Long = runCatching { lenFile(id).readText().trim().toLong() }.getOrDefault(-1)
     fun isComplete(id: String): Boolean = totalLength(id).let { it > 0 && length(id) >= it }
     fun isFreshComplete(id: String, now: Long = System.currentTimeMillis()): Boolean =
-        isComplete(id) && now - lastUsed(id, file(id)) < maxAgeMs
+        isComplete(id) && maxAgeMs == Long.MAX_VALUE || now - lastUsed(id, file(id)) < maxAgeMs
     fun hasHead(id: String): Boolean = length(id) >= minOf(headBytes.toLong(), totalLength(id).takeIf { it > 0 } ?: headBytes.toLong())
 
     /** Atualiza a data de uso quando a pessoa realmente ouve a música. */
@@ -59,7 +59,7 @@ class AudioCache(
         for (f in files) {
             val id = f.nameWithoutExtension
             if (id in keep) continue
-            if (now - lastUsed(id, f) >= maxAgeMs) deleteEntry(id)
+            if (maxAgeMs != Long.MAX_VALUE && now - lastUsed(id, f) >= maxAgeMs) deleteEntry(id)
         }
         trimLocked()
         val after = dir.listFiles()?.sumOf { it.length() } ?: 0L
@@ -170,8 +170,9 @@ class AudioCache(
         val keep = protectedIds.map(::safe).toSet() + active.keys
         val files = dir.listFiles { f -> f.name.endsWith(".audio") }?.sortedBy { it.lastModified() } ?: return
         var total = files.sumOf { it.length() }
+        val limite = EspacoLivre.limite(dir, maxTotalBytes, total)
         for (f in files.sortedBy { lastUsed(it.nameWithoutExtension, it) }) {
-            if (total <= maxTotalBytes) break
+            if (total <= limite) break
             if (f.nameWithoutExtension in keep) continue
             total -= f.length(); deleteEntry(f.nameWithoutExtension)
         }
@@ -182,7 +183,7 @@ class AudioCache(
 
     private fun isExpired(id: String, now: Long): Boolean {
         val audio = file(id)
-        return audio.exists() && now - lastUsed(id, audio) >= maxAgeMs
+        return maxAgeMs != Long.MAX_VALUE && audio.exists() && now - lastUsed(id, audio) >= maxAgeMs
     }
 
     private fun deleteEntry(id: String) {

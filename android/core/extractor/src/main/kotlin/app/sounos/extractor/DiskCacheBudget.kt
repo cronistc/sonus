@@ -6,7 +6,7 @@ import java.security.MessageDigest
 /** LRU compartilhado por capas de navegação e metadados guardados em disco. */
 class DiskCacheBudget(
     private val roots: List<File>,
-    val maxBytes: Long = 2L * 1024 * 1024 * 1024,
+    val maxBytes: Long = 4L * 1024 * 1024 * 1024,   // imagens + dados: até 4 GB (encolhe se faltar espaço)
 ) {
     data class Trim(val beforeBytes: Long, val afterBytes: Long, val removedFiles: Int) {
         val removedBytes: Long get() = beforeBytes - afterBytes
@@ -20,8 +20,9 @@ class DiskCacheBudget(
         val before = files.sumOf(File::length)
         var total = before
         var removed = 0
+        val limite = roots.firstOrNull()?.let { EspacoLivre.limite(it, maxBytes, before) } ?: maxBytes
         for (file in files.sortedBy(File::lastModified)) {
-            if (total <= maxBytes) break
+            if (total <= limite) break
             val size = file.length()
             if (file.delete()) { total -= size; removed++ }
         }
