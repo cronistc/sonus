@@ -174,7 +174,12 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
         startCurrent()
     }
 
-    fun seek(ms: Long) { if (current == null) resumeAtMs = ms else engine.seekTo(ms); emit("progress", progress()) }
+    // pulo pedido enquanto a música ainda carrega: vale assim que ela ficar pronta (antes se perdia)
+    private var seekWhenReadyMs = -1L
+    fun seek(ms: Long) {
+        if (current == null) { resumeAtMs = ms; if (loading) seekWhenReadyMs = ms } else engine.seekTo(ms)
+        emit("progress", progress())
+    }
 
     fun setRepeat(r: Repeat) {
         repeat = r
@@ -247,7 +252,7 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
         if (!online && !isAvailableOffline(t)) { skipUnavailableOffline(); return }
         app.audio.protectedIds = (upcoming().map { it.id } + t.id).toSet()
         val my = ++token
-        loading = true; playWhenReady = true; current = null; currentUsesCache = false; durationMs = t.durationSec * 1000
+        loading = true; playWhenReady = true; seekWhenReadyMs = -1; current = null; currentUsesCache = false; durationMs = t.durationSec * 1000
         fillJob?.cancel()
         engine.release()
         app.covers.local(t.id)?.let { colors = CoverColors.of(it) }
@@ -354,6 +359,7 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
         errorsInARow = 0
         currentTrack?.takeUnless { app.library.isDownloaded(it.id) }?.let { app.audio.markHeard(it.id) }
         if (durationMs > 0) this.durationMs = durationMs
+        if (seekWhenReadyMs >= 0) { engine.seekTo(seekWhenReadyMs); seekWhenReadyMs = -1 }
         loading = false; playWhenReady = engine.isPlaying; emitState(); ticker()
     }
 
