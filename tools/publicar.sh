@@ -21,7 +21,7 @@ test -f "$HOME/Sonus-chave/sonus.properties" || { echo "Chave não encontrada em
 test -f "$NOTES" || { echo "Arquivo de novidades não existe: $NOTES"; exit 1; }
 
 echo "» Compilando Sonus $NAME (código $CODE)…"
-(cd "$ROOT/android" && ./gradlew -q :app:assembleRelease -PversionName="$NAME" -PversionCode="$CODE")
+(cd "$ROOT/android" && JAVA_HOME="${JAVA_HOME:-$HOME/Android/jdk17}" ./gradlew -q clean :app:assembleRelease -PversionName="$NAME" -PversionCode="$CODE")
 APK="$ROOT/android/app/build/outputs/apk/release/app-release.apk"
 FILE="Sonus-$NAME.apk"
 SHA=$(sha256sum "$APK" | cut -d' ' -f1)
