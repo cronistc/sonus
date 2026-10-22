@@ -107,38 +107,20 @@
   /* Mini-player fixo embaixo: abre o player completo */
   .mini { position: absolute; left: 10px; right: 10px; bottom: 12px; height: 64px; border-radius: 14px;
           background: var(--mini-bg); display: flex; flex-direction: column;
-          box-shadow: 0 10px 30px rgba(0,0,0,.5); cursor: pointer; overflow: hidden;
-          transition: height .35s cubic-bezier(.2,.9,.3,1); }
+          box-shadow: 0 10px 30px rgba(0,0,0,.5); cursor: pointer; overflow: hidden; }
   .mini .mrow { height: 64px; flex-shrink: 0; display: flex; align-items: center; gap: 12px; padding: 0 8px; }
-  /* letra dentro do mini-player: um trecho por vez */
-  .mlyr { flex: 1 1 0; min-height: 0; position: relative; overflow: hidden; opacity: 0; transition: opacity .25s; cursor: default; }
-  .mini.lyr-open .mlyr { opacity: 1; transition-delay: .15s; }
-  .mlyr .l { position: absolute; left: 14px; right: 14px; top: 50%; transform: translateY(-50%);
-             font-size: calc(var(--fs) * (19px)); font-weight: 800; line-height: 1.3; color: var(--text); text-align: left;
-             animation: lineIn .38s cubic-bezier(.2,.9,.3,1) both; }
-  .mlyr .l.dim { color: var(--t-mid); }
-  .mlyr .l.out { animation: lineOut .28s ease-in both; }
-  @keyframes lineIn  { from { opacity: 0; transform: translateY(calc(-50% + 18px)); } }
-  @keyframes lineOut { to   { opacity: 0; transform: translateY(calc(-50% - 18px)); } }
-  .mlyr .empty { color: var(--text-dim); font-size: calc(var(--fs) * (14px)); font-weight: 600; }
-  .mini .ab { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; margin-right: 2px;
+  .mini .add-btn { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; margin-right: 2px;
               color: var(--text-dim); transition: background .3s, color .3s; }
-  .mini .ab span { font: 800 18px Georgia, "Times New Roman", serif; }
-  .mini .ab[hidden] { display: none; }
-  .mini.lyr-open .ab { color: var(--text); background: var(--chip); }
+  .mini .add-btn svg { width: 22px; height: 22px; fill: currentColor; }
+  .mini .add-btn[hidden] { display: none; }
   .mini .cv { width: 48px; height: 48px; border-radius: 8px; flex-shrink: 0; display: grid; place-items: center;
               font-weight: 800; font-size: 20px; color: rgba(255,255,255,.85);
               background: linear-gradient(135deg, var(--c1), var(--c2) 60%, var(--c3)); }
   .mini .tx { flex: 1; min-width: 0; align-self: stretch; display: flex; flex-direction: column; justify-content: center; }
   .mini { touch-action: none; }
   .mini .cv { position: relative; overflow: hidden; transition: transform .12s; }
-  .mini .cv:active { transform: scale(.92); }
-  .mini .cv .plus { position: absolute; inset: 0; display: grid; place-items: center; font-size: 30px; font-weight: 500;
-                    background: rgba(0,0,0,.45); color: #fff; opacity: 0; transform: scale(.6); transition: opacity .2s, transform .25s; }
-  .mini .cv.pop .plus { opacity: 1; transform: none; }
   /* itens que viajam entre o mini-player e o player */
   .mini .cv { view-transition-name: cover; }
-  #miniLyr { view-transition-name: btn-lyrics; }
   #miniPrev { view-transition-name: btn-prev; }
   #miniPP { view-transition-name: btn-play; }
   #miniNext { view-transition-name: btn-next; }
@@ -163,9 +145,6 @@
   /* largura cheia + scaleX: mesmo desenho, mas anda sem refazer o layout a cada quadro */
   .mini .bar { position: absolute; left: 0; bottom: 0; height: 3px; width: 100%; transform: scaleX(0); transform-origin: left; transition: height .2s;
                background: linear-gradient(90deg, var(--c1), var(--c2), var(--c3)); }
-  .phone.overlay-open .mini .mlyr .l, .phone.player-open .mini .mlyr .l,
-  .phone.paused .mini .mlyr .l, .mini:not(.lyr-open) .mlyr .l,
-  html.page-hidden .mini .mlyr .l { animation-play-state: paused; }
   /* modo scrub: segurar o play e arrastar para o lado */
   .mini .time { display: none; font-size: calc(var(--fs) * (20px)); font-weight: 900; font-variant-numeric: tabular-nums; }
   .mini.scrub .time { display: block; }
@@ -182,8 +161,6 @@
 <script src="add.js"></script>
 <link rel="stylesheet" href="settings.css">
 <link rel="stylesheet" href="theme.css">
-<link rel="stylesheet" href="marquee.css">
-<script src="marquee.js" defer></script>
 <script src="update.js"></script>
 <script src="support.js"></script>
 <script src="settings.js"></script>
@@ -231,15 +208,15 @@
   </div>
 
   <div class="mini" id="mini">
-    <div class="mlyr" id="mlyr"></div>
     <div class="mrow">
-    <!-- capa = mesmo botão "+" do player (adicionar à playlist) -->
-    <button class="cv" id="miniCv" aria-label="Adicionar à playlist"><span id="miniIni">L</span><span class="plus">+</span></button>
+    <div class="cv" id="miniCv"><span id="miniIni">L</span></div>
     <!-- nome = abre o player completo -->
     <div class="tx" id="miniOpen"><div class="t" id="miniT"></div><div class="a" id="miniA"></div><div class="time" id="miniTime"></div></div>
     <div class="ctrl">
-      <!-- A = letra: o mini-player cresce para cima e mostra a letra sincronizada -->
-      <button class="ab" id="miniLyr" aria-label="Letra"><span>A</span></button>
+      <!-- Usa o mesmo fluxo do botão "+" do player completo. -->
+      <button class="add-btn" id="miniAdd" type="button" aria-label="Adicionar à playlist">
+        <svg viewBox="0 0 24 24"><path d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6z"/></svg>
+      </button>
       <button class="sk" id="miniPrev" aria-label="Voltar">
         <svg class="lu solid" viewBox="0 0 24 24"><polygon points="19 20 9 12 19 4 19 20"/><line x1="5" x2="5" y1="19" y2="5"/></svg>
       </button>
@@ -270,11 +247,6 @@ const tracks = NAMES.map(([title, artist], i) => {
   const h = ((i - 2) * 47 + 20 + 3600) % 360;
   return { title, artist, c: FIXED[i] || [`hsl(${h} 70% 42%)`, `hsl(${(h + 40) % 360} 75% 52%)`, `hsl(${(h + 80) % 360} 85% 60%)`] };
 });
-// Letras de exemplo (mesmas do player)
-const LRC = {
-  0: [[0,"♪"],[8,"Acendo a rua com a luz do meu olhar"],[16,"Cada esquina guarda um verso pra contar"],[25,"O vento leva o que eu não sei dizer"],[33,"E a cidade inteira dança pra você"],[42,"♪"],[50,"Se a noite é longa, eu fico até o fim"],[58,"Toda canção começa e termina em mim"],[67,"Luz da cidade, me leva daqui"],[75,"Luz da cidade, eu sempre volto aqui"]],
-  1: [[0,"♪"],[6,"A maré subiu e eu nem vi"],[13,"Fiquei olhando o céu de abril"],[21,"Tudo que eu quero é ficar aqui"],[29,"Na beira do mar, longe do frio"]],
-};
 const grad = c => `linear-gradient(135deg,${c[0]},${c[1]} 60%,${c[2]})`;
 const toHandle = name => String(name ?? "").trim();  // nome do artista como vem (sem @)
 const artistColors = a => tracks.find(x => x.artist === a).c;
@@ -438,14 +410,17 @@ window.addEventListener("pointermove", e => {
   $("mini").classList.remove("dragging");
   if (sw.dragged && sw.y - e.clientY > 90 && t === "pointerup") openPlayer();
   else if (sw.dragged && window.__playerShell) window.__playerShell.close();
-  else fitMini();                                   // volta ao tamanho normal com animação
   setTimeout(() => sw.dragged = false, 0);
 }));
 
-// Capa = botão "+": abre a janela de adicionar à playlist (a mesma do player)
+// O "+" abre a janela compartilhada de adicionar à playlist.
 const add = SounosAdd.attach($("phone"), { onChange: list => { playlists = list; renderPlaylists(); } });
 let currentForAdd = () => order[cur];
-$("miniCv").onclick = () => { if (!sw.dragged) add.open(currentForAdd()); };
+$("miniAdd").onclick = () => {
+  if (sw.dragged) return;
+  const t = currentForAdd();
+  if (t != null) add.open(t);
+};
 
 // ---- Mini-player: mesmas regras do player completo ----
 const fmt = x => `${Math.floor(x / 60)}:${String(Math.floor(x % 60)).padStart(2, "0")}`;
@@ -473,46 +448,8 @@ function loadMini() {
   }
   miniFirst = false;
   lastBarPixel = -1;
-  buildMiniLyrics();
   drawMiniProgress();
 }
-// ---- Letra no mini-player ----
-const lyricsOffset = () => SounosSettings.get().lyricsOffset;
-let lyrOpen = false, lastLine = -1;
-function showLine(text, cls = "") {
-  const box = $("mlyr");
-  [...box.children].forEach(el => { el.classList.add("out"); setTimeout(() => el.remove(), 300); });
-  const d = document.createElement("div");
-  d.className = "l " + cls; d.textContent = text;
-  box.appendChild(d);
-  fitMini();
-}
-// Altura do mini-player = linha de controles + altura do trecho atual (1, 2, 3 linhas…), sem sobra
-const MINI_ROW = 64, LYR_PAD = 26;
-function fitMini() {
-  const line = [...$("mlyr").children].filter(el => !el.classList.contains("out")).pop();
-  const h = lyrOpen && line ? MINI_ROW + line.offsetHeight + LYR_PAD : MINI_ROW;
-  $("mini").style.height = h + "px";
-  $("phone").style.setProperty("--mini-h", h + "px");
-  fitHome();
-}
-function buildMiniLyrics() { lastLine = null; syncMiniLyrics(); }
-// Mostra só o trecho atual; antes da primeira linha, mostra a primeira apagada
-function syncMiniLyrics() {
-  const l = LRC[order[cur]];
-  if (!l) { if (lastLine !== "none") { lastLine = "none"; showLine("Letra indisponível para esta faixa", "empty"); } return; }
-  const at = pos + lyricsOffset();                                     // + ajuste de sincronia das configurações
-  let ln = -1; for (let i = 0; i < l.length && l[i][0] <= at; i++) ln = i;
-  if (ln === lastLine) return;
-  lastLine = ln;
-  showLine(l[Math.max(ln, 0)][1], ln < 0 ? "dim" : "");
-}
-$("miniLyr").onclick = () => {
-  lyrOpen = !lyrOpen;
-  $("mini").classList.toggle("lyr-open", lyrOpen);
-  fitMini();
-  if (lyrOpen) syncMiniLyrics();
-};
 const LU = {
   play:    '<svg class="lu solid" viewBox="0 0 24 24" style="margin-left:2px"><polygon points="6 3 20 12 6 21 6 3"/></svg>',
   pause:   '<svg class="lu solid" viewBox="0 0 24 24"><rect x="14" y="4" width="4" height="16" rx="1"/><rect x="6" y="4" width="4" height="16" rx="1"/></svg>',
@@ -618,7 +555,6 @@ function homeClockTick(now) {
   }
   last = now;
   drawMiniProgress();
-  if (lyrOpen) syncMiniLyrics();
   if (scrubbing) miniRaf = requestAnimationFrame(homeClockTick);
   else if (playing) miniTimer = setTimeout(() => homeClockTick(performance.now()), HOME_MS);
 }

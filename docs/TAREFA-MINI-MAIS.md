@@ -13,3 +13,15 @@ Pedido do dono (prototype/home.html + home-native.js):
    ocupava. Some quando não há música.
 3. As letras continuam funcionando no player grande, como hoje.
 Escreva no fim deste arquivo o que mudou. Commit; `git merge main`, resolva, compile, commit.
+
+## Alterações realizadas
+
+- Removidos do mini-player o botão “A”, a linha de letra, a expansão de altura e o código de
+  sincronização/animação de letra que rodava junto do relógio de progresso.
+- Colocado no espaço do “A” o botão “+” com o ícone do player. Ele abre o mesmo fluxo
+  `SounosAdd` e some quando não há música atual.
+- Removido o “+” sobre a capa, que agora só exibe a capa. As letras no player grande continuam
+  usando o fluxo nativo de letras.
+- Após `git merge main` (`Already up to date.`), passaram `node --check prototype/home-native.js`, a
+  verificação dos scripts inline de `home.html` e `JAVA_HOME=~/Android/jdk17 ./gradlew -q
+  :app:assembleDebug -PversionCode=5`.
