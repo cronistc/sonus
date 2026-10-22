@@ -188,8 +188,12 @@ class MainActivity : Activity() {
         return imageResponse(local)
     }
 
+    // cada capa avisa a tela no máximo uma vez por sessão (avisar sempre virava um laço: a tela recarregava,
+    // pedia de novo, a capa "mudava" de novo… e piscava sem parar)
+    private val coverNotified = java.util.Collections.newSetFromMap(java.util.concurrent.ConcurrentHashMap<String, Boolean>())
+
     private fun notifyCoverReady(id: String) {
-        if (!::web.isInitialized || isFinishing) return
+        if (!::web.isInitialized || isFinishing || !coverNotified.add(id)) return
         web.post { web.evaluateJavascript("window.__sounos&&window.__sounos.emit('coverReady',{id:${JSONObject.quote(id)}})", null) }
     }
 
