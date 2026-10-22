@@ -177,7 +177,8 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
     // pulo pedido enquanto a música ainda carrega: vale assim que ela ficar pronta (antes se perdia)
     private var seekWhenReadyMs = -1L
     fun seek(ms: Long) {
-        if (current == null) { resumeAtMs = ms; if (loading) seekWhenReadyMs = ms } else engine.seekTo(ms)
+        if (loading) seekWhenReadyMs = ms                 // ainda preparando o áudio: aplica quando ficar pronto
+        if (current == null) resumeAtMs = ms else engine.seekTo(ms)
         emit("progress", progress())
     }
 
