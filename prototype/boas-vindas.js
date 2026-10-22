@@ -19,18 +19,12 @@
     notificacoes: !!Sounos.call("getNotificationPermission").granted,
     bateria: !!Sounos.call("getBatteryOptimization").enabled,
   });
-  const usuarioAntigo = () => {
-    const historico = Sounos.call("getHistory");
-    let listas = [];
-    try { listas = JSON.parse(localStorage.getItem("sounos.playlists") || "[]"); } catch {}
-    if (!Array.isArray(listas)) listas = window.SounosData?.getPlaylists?.() || [];
-    return (Array.isArray(historico) && historico.length > 0) || (Array.isArray(listas) && listas.length > 0);
-  };
-
+  // Quem ainda não passou por esta tela vê (instalação nova ou vindo da 0.1.2). Quem já passou, nunca mais,
+  // mesmo atualizando — a não ser que a tela mude (aí sobe VERSAO).
   const estadoSalvo = lerEstado();
   if (estadoSalvo?.versao === VERSAO && estadoSalvo.concluida) return;
-  const antigo = usuarioAntigo();
-  if (antigo && Object.values(permissao()).every(Boolean)) return;
+  window.__sonusBoasVindas = true;          // dicas e novidades já esperam desde agora
+  window.__sonusBoasVindasFechar = () => { if (tela?.isConnected) fechar(); };   // botão voltar = Começar
 
   let tela, fechando = false;
   function atualizar() {
@@ -126,11 +120,9 @@
     }
   });
 
-  window.__sonusBoasVindas = false;
   const esperaAbertura = setInterval(() => {
     if (window.__sonusAberturaFim === undefined || document.body.classList.contains("sonus-opening")) return;
     clearInterval(esperaAbertura);
-    window.__sonusBoasVindas = true;
     mostrar();
   }, 120);
 })();

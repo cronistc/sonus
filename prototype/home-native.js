@@ -107,6 +107,7 @@
   // botão voltar do Android: fecha a tela interna mais alta antes de sair do player ou da página
   // (nunca depende só do histórico do navegador: se ele não tiver a entrada, o app fechava em vez de voltar)
   window.__sonusBack = () => {
+    if (window.__sonusBoasVindas) { window.__sonusBoasVindasFechar?.(); return true; }
     if (window.__playerOpen) {
       if (window.__playerBack?.()) return true;            // o player fecha o que tiver dentro dele (letra, fila…)
       window.__playerShell?.close?.(); return true;        // senão, desce o player

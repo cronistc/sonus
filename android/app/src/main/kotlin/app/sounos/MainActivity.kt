@@ -67,7 +67,6 @@ class MainActivity : Activity() {
             setBackgroundColor(windowColor)
             alpha = 0f
             overScrollMode = WebView.OVER_SCROLL_NEVER
-            if (BuildConfig.DEBUG) settings.cacheMode = android.webkit.WebSettings.LOAD_NO_CACHE
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
             settings.allowFileAccess = false
