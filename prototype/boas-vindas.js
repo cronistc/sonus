@@ -58,7 +58,8 @@
     setTimeout(remover, 440);
   }
 
-  function mostrar() {
+  function mostrar(semEntrada) {
+    if (tela) return;
     tela = document.createElement("section");
     tela.className = "bv-tela";
     tela.setAttribute("role", "dialog");
@@ -89,7 +90,10 @@
       <footer class="bv-foot"><button class="upd-btn primary bv-comecar" type="button"><span>Começar</span></button></footer>`;
     phone.appendChild(tela);
     atualizar();
-    requestAnimationFrame(() => tela?.classList.add("visivel"));
+    if (semEntrada) {                       // a abertura do app termina revelando esta tela: já está no lugar
+      tela.classList.add("sem-entrada", "visivel");
+      requestAnimationFrame(() => requestAnimationFrame(() => tela?.classList.remove("sem-entrada")));
+    } else requestAnimationFrame(() => tela?.classList.add("visivel"));
 
     tela.addEventListener("click", e => {
       const botao = e.target.closest("[data-permissao]");
@@ -120,6 +124,7 @@
     }
   });
 
+  window.__sonusTelaInicial = () => { clearInterval(esperaAbertura); mostrar(true); };
   const esperaAbertura = setInterval(() => {
     if (window.__sonusAberturaFim === undefined || document.body.classList.contains("sonus-opening")) return;
     clearInterval(esperaAbertura);

@@ -74,9 +74,13 @@ window.SounosUpdate = (() => {
       else Sounos.call("checkUpdate");
     });
 
-    function open() {
+    function open(semEntrada) {
       if (isOpen) return;
       isOpen = true; render();
+      if (semEntrada) {                                  // aberta pela abertura do app: já está no lugar, sem deslizar
+        el.classList.add("sem-entrada");
+        requestAnimationFrame(() => requestAnimationFrame(() => el.classList.remove("sem-entrada")));
+      }
       el.classList.add("open");
       history.pushState({ settings: true, upd: true }, "");
       if (get()?.justUpdated) Sounos.call("seenUpdate");

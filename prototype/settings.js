@@ -165,7 +165,12 @@
       };
       tenta();
     }
-    if (upd?.justUpdated) automatica(() => updUi.open());
+    if (upd?.justUpdated) {
+      let jaAbriu = false;
+      // a abertura do app termina revelando direto esta tela (a não ser que "Antes de começar" venha antes)
+      window.__sonusTelaInicial = () => { jaAbriu = true; updUi.open(true); };
+      automatica(() => { if (!jaAbriu) updUi.open(); });
+    }
     const AVISO = "sounos.updAviso";
     let avisou = false;
     function avisaVersaoNova() {

@@ -22,3 +22,6 @@
 @media (prefers-reduced-motion: reduce) {
   .bv-tela { transition-duration: .01ms; }
 }
+
+/* aberta pela abertura do app (revelada pelo esmaecimento radial): sem deslizar */
+.sem-entrada, .sem-entrada * { transition: none !important; }
