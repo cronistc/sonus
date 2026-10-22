@@ -23,7 +23,7 @@ class AudioCache(
     private val dir: File,
     private val client: OkHttpClient,
     val headBytes: Int = 384 * 1024,
-    private val maxTotalBytes: Long = 5L * 1024 * 1024 * 1024,
+    val maxTotalBytes: Long = 3L * 1024 * 1024 * 1024,
     private val maxAgeMs: Long = 3L * 24 * 60 * 60 * 1000,
 ) {
     init { dir.mkdirs() }

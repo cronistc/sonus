@@ -12,27 +12,29 @@ import java.util.Locale
 import java.util.Properties
 
 /**
- * Capas que não somem.
- *  - FIXADAS (pinnedDir, armazenamento interno que o Android não limpa): tudo que foi tocado, curtido,
- *    está em playlist ou foi baixado. Nunca são apagadas aqui.
- *  - NAVEGAÇÃO (browseDir, pode ser o cacheDir): capas só vistas na busca; LRU com limite de tamanho.
- * O arquivo é nomeado pelo ID da música (não pela URL), então URL nova ou expirada não "perde" a capa.
- * Sempre tenta a MAIOR resolução primeiro e cai para alternativas se uma URL falhar.
+ * Capas em diretórios separados: as fixadas por playlists/downloads ficam permanentes; as demais
+ * compartilham o LRU de imagens e metadados. O índice por URL permite reutilizar a mesma imagem
+ * quando telas diferentes usam IDs distintos.
  */
 class CoverStore(
     private val pinnedDir: File,
     private val browseDir: File,
     private val client: OkHttpClient,
     private val browseMaxBytes: Long = 300L * 1024 * 1024,
+    private val budget: DiskCacheBudget = DiskCacheBudget(listOf(browseDir), browseMaxBytes),
 ) {
     init { pinnedDir.mkdirs(); browseDir.mkdirs() }
 
     data class ArtistPhoto(val name: String, val url: String?, val file: File?, val channelUrl: String? = null)
 
-    private val artistIndexFile = File(pinnedDir, "artist-urls.properties")
+    private val artistIndexFile = File(browseDir, "artist-urls.properties")
     private val artistIndexLock = Any()
     private val artistUrls = Properties()
     private var artistIndexLoaded = false
+    private val aliasesFile = File(browseDir, "cover-urls.properties")
+    private val aliasesLock = Any()
+    private val aliases = Properties()
+    private var aliasesLoaded = false
     private val artistLookupMisses = java.util.concurrent.ConcurrentHashMap<String, Long>()
 
     private fun needsArtistRecheck(key: String): Boolean = synchronized(artistIndexLock) {
@@ -43,10 +45,145 @@ class CoverStore(
     private fun name(trackId: String) = trackId.replace(':', '_') + ".img"
     fun pinnedFile(trackId: String) = File(pinnedDir, name(trackId))
     fun browseFile(trackId: String) = File(browseDir, name(trackId))
+    fun largeBrowseFile(trackId: String) = File(browseDir, name(trackId) + ".large")
 
-    /** Capa local (fixada primeiro). Não acessa a rede. */
-    fun local(trackId: String): File? =
-        pinnedFile(trackId).takeIf { it.length() > 0 } ?: browseFile(trackId).takeIf { it.length() > 0 }
+    /** Capa local. O modo de lista prefere a versão pequena; não acessa a rede. */
+    fun local(trackId: String, hint: String? = null, large: Boolean = false): File? {
+        val pinned = pinnedFile(trackId)
+        val browse = browseFile(trackId)
+        val largeBrowse = largeBrowseFile(trackId)
+        val direct = if (large) {
+            largeBrowse.takeIf { it.length() > 0 && !isSmall(it) }
+                ?: pinned.takeIf { it.length() > 0 && !isSmall(it) }
+                ?: aliasFor(hint, true)
+                ?: browse.takeIf { it.length() > 0 }
+                ?: pinned.takeIf { it.length() > 0 }
+        } else {
+            browse.takeIf { it.length() > 0 && isSmall(it) }?.also(::touch)
+                ?: pinned.takeIf { it.length() > 0 && isSmall(it) }
+                ?: aliasFor(hint, false)
+                ?: browse.takeIf { it.length() > 0 }?.also(::touch)
+                ?: pinned.takeIf { it.length() > 0 }
+        }
+        if (direct != null) return direct.also(::touch)
+        return null
+    }
+
+    /** Atualiza o LRU somente para arquivos da área descartável. */
+    fun touch(file: File) {
+        if (file.parentFile == browseDir) file.setLastModified(System.currentTimeMillis())
+    }
+
+    /** Fixa no armazenamento permanente somente se a capa já estiver no cache. */
+    fun pinLocal(trackId: String, hint: String? = null): File? {
+        val existing = local(trackId, hint, large = false) ?: return null
+        if (existing.parentFile == pinnedDir) return existing
+        return promoteFile(existing, pinnedFile(trackId))
+    }
+
+    /** Move capas antigas da área permanente para o LRU, preservando downloads e playlists. */
+    fun migrateLegacyPinned(keepIds: Set<String>): Pair<Int, Long> {
+        val keepNames = keepIds.map(::name).toSet()
+        var moved = 0
+        var bytes = 0L
+        val oldIndex = File(pinnedDir, artistIndexFile.name)
+        if (oldIndex.isFile) {
+            if (artistIndexFile.exists()) { oldIndex.delete(); moved++ }
+            else if (oldIndex.renameTo(artistIndexFile) || runCatching { oldIndex.copyTo(artistIndexFile, overwrite = false); oldIndex.delete() }.isSuccess) moved++
+        }
+        pinnedDir.listFiles { file -> file.isFile && file.name.endsWith(".img") }?.forEach { source ->
+            if (source.name in keepNames) return@forEach
+            val target = File(browseDir, source.name)
+            if (target.length() >= source.length()) {
+                source.delete()
+                updateAliasesForMove(source, target)
+                moved++
+                return@forEach
+            }
+            val oldSize = source.length()
+            val ok = source.renameTo(target) || runCatching {
+                source.copyTo(target, overwrite = true).also { target.setLastModified(source.lastModified()) }
+                source.delete()
+                true
+            }.getOrDefault(false)
+            if (ok) { updateAliasesForMove(source, target); moved++; bytes += oldSize }
+        }
+        return moved to bytes
+    }
+
+    private fun aliasFor(url: String?, large: Boolean): File? {
+        if (url.isNullOrBlank()) return null
+        val key = cacheUrlKey(url) ?: return null
+        return synchronized(aliasesLock) {
+            loadAliasesLocked()
+            if (aliasesFile.isFile) aliasesFile.setLastModified(System.currentTimeMillis())
+            val ref = aliases.getProperty("$key:${if (large) "large" else "small"}")
+                ?: aliases.getProperty(key) ?: return@synchronized null
+            when {
+                ref.startsWith("p:") -> File(pinnedDir, ref.removePrefix("p:"))
+                ref.startsWith("b:") -> File(browseDir, ref.removePrefix("b:"))
+                else -> null
+            }
+        }?.takeIf { it.isFile && it.length() > 0 }?.also(::touch)
+    }
+
+    private fun rememberAlias(url: String, file: File, large: Boolean) {
+        val key = cacheUrlKey(url) ?: return
+        val ref = when (file.parentFile) {
+            pinnedDir -> "p:${file.name}"
+            browseDir -> "b:${file.name}"
+            else -> return
+        }
+        synchronized(aliasesLock) {
+            loadAliasesLocked()
+            val aliasKey = "$key:${if (large) "large" else "small"}"
+            if (aliases.getProperty(aliasKey) == ref) return
+            aliases.setProperty(aliasKey, ref)
+            savePropertiesLocked(aliases, aliasesFile)
+        }
+    }
+
+    private fun updateAliasesForMove(from: File, to: File) = synchronized(aliasesLock) {
+        loadAliasesLocked()
+        val oldRef = if (from.parentFile == browseDir) "b:${from.name}" else "p:${from.name}"
+        val newRef = if (to.parentFile == browseDir) "b:${to.name}" else "p:${to.name}"
+        var changed = false
+        aliases.stringPropertyNames().forEach { key ->
+            if (aliases.getProperty(key) == oldRef) { aliases.setProperty(key, newRef); changed = true }
+        }
+        if (changed) savePropertiesLocked(aliases, aliasesFile)
+    }
+
+    private fun preserveLegacyLarge(trackId: String, from: File) {
+        val to = largeBrowseFile(trackId)
+        if (to.length() > 0 || !from.isFile || isSmall(from)) return
+        if (!runCatching { from.copyTo(to, overwrite = false) }.isSuccess) return
+        val oldRef = "b:${from.name}"
+        val newRef = "b:${to.name}"
+        synchronized(aliasesLock) {
+            loadAliasesLocked()
+            var changed = false
+            aliases.stringPropertyNames().filter { it.endsWith(":large") }.forEach { key ->
+                if (aliases.getProperty(key) == oldRef) { aliases.setProperty(key, newRef); changed = true }
+            }
+            if (changed) savePropertiesLocked(aliases, aliasesFile)
+        }
+    }
+
+    private fun loadAliasesLocked() {
+        if (aliasesLoaded) return
+        if (aliasesFile.isFile) runCatching { aliasesFile.inputStream().use(aliases::load) }
+        aliasesLoaded = true
+    }
+
+    private fun savePropertiesLocked(properties: Properties, target: File) {
+        val tmp = File(target.parentFile, target.name + ".tmp")
+        runCatching {
+            FileOutputStream(tmp).use { properties.store(it, null) }
+            if (!tmp.renameTo(target)) { target.delete(); check(tmp.renameTo(target)) }
+            target.setLastModified(System.currentTimeMillis())
+        }.onFailure { tmp.delete() }
+    }
 
     /** Chaves persistidas para a auditoria percorrer também fotos antigas fora de “Seus artistas”. */
     fun knownArtistKeys(): List<String> = synchronized(artistIndexLock) {
@@ -71,7 +208,10 @@ class CoverStore(
             val indexStarted = System.nanoTime()
             val recheck = needsArtistRecheck(key)
             val indexed = readArtistUrl(key)
-            val cached = pinnedFile(id).takeIf { it.length() > 0 && !recheck }
+            val cached = if (recheck) null else {
+                browseFile(id).takeIf { it.length() > 0 }?.also(::touch)
+                    ?: pinnedFile(id).takeIf { it.length() > 0 }
+            }
             trace("chave=$key etapa=disco_indice_ms=${elapsedMs(indexStarted)} imagem=${cached != null} url=${indexed != null}")
 
             var matchedName = name
@@ -113,7 +253,7 @@ class CoverStore(
         }
     }
 
-    /** Baixa a foto resolvida para a área permanente, em tamanho de avatar (~400 px). */
+    /** Baixa a foto resolvida para o LRU, em tamanho de avatar (~400 px). */
     suspend fun getArtistPhoto(
         name: String,
         hintUrl: String? = null,
@@ -134,24 +274,33 @@ class CoverStore(
         var sharedCache = false
         lockFor(id).withLock {
             trace("chave=$key etapa=download_lock_ms=${elapsedMs(lockStarted)}")
-            val target = pinnedFile(id)
+            val target = browseFile(id)
             val recheck = needsArtistRecheck(key)
             if (target.length() > 0 && !recheck) {
+                touch(target)
                 sharedCache = true
                 return@withLock photo.copy(file = target)
             }
             val downloadStarted = System.nanoTime()
-            val staged = File(pinnedDir, target.name + ".refresh")
+            val staged = File(browseDir, target.name + ".refresh")
             staged.delete()
             val ok = download(photo.url, staged)
-            if (ok && target.isFile && target.length() > 0 && recheck) {
-                val preserved = File(pinnedDir, target.name + ".unverified")
-                if (!preserved.exists()) runCatching { target.copyTo(preserved, overwrite = false) }
-            }
-            val installed = ok && (staged.renameTo(target) || runCatching {
+            val oldPhoto = listOf(target, pinnedFile(id)).firstOrNull { it.isFile && it.length() > 0 }
+            val preserved = if (ok && recheck && oldPhoto != null) {
+                val backup = File(pinnedDir, target.name + ".unverified")
+                backup.isFile || runCatching { oldPhoto.copyTo(backup, overwrite = false) }.isSuccess
+            } else true
+            val installed = ok && preserved && (staged.renameTo(target) || runCatching {
                 staged.copyTo(target, overwrite = true); staged.delete(); true
             }.getOrDefault(false))
-            if (installed && recheck) clearArtistRecheck(key)
+            if (installed) {
+                rememberAlias(photo.url, target, large = false)
+                hintUrl?.let { rememberAlias(it, target, large = false) }
+                if (recheck) clearArtistRecheck(key)
+                val trimStarted = System.nanoTime()
+                val trim = budget.trim()
+                trace("chave=$key etapa=lru_ms=${elapsedMs(trimStarted)} removidos_bytes=${trim.removedBytes}")
+            } else staged.delete()
             trace("chave=$key etapa=download_ms=${elapsedMs(downloadStarted)} bytes=${if (installed) target.length() else 0} ok=$installed")
             photo.copy(file = target.takeIf { installed })
         }.also {
@@ -162,6 +311,7 @@ class CoverStore(
 
     private fun readArtistUrl(key: String): String? = synchronized(artistIndexLock) {
         loadArtistIndexLocked()
+        if (artistIndexFile.isFile) artistIndexFile.setLastModified(System.currentTimeMillis())
         artistUrls.getProperty(key)?.takeUnless { artistUrls.getProperty("_recheck.$key") == "true" }
     }
 
@@ -180,22 +330,24 @@ class CoverStore(
     }
 
     private fun persistArtistIndexLocked() {
-        val tmp = File(pinnedDir, artistIndexFile.name + ".tmp")
+        val tmp = File(browseDir, artistIndexFile.name + ".tmp")
         runCatching {
             FileOutputStream(tmp).use { artistUrls.store(it, null) }
             if (!tmp.renameTo(artistIndexFile)) {
                 // renameTo não substitui em todas as implementações; preserva o arquivo íntegro.
-                val backup = File(pinnedDir, artistIndexFile.name + ".old")
+                val backup = File(browseDir, artistIndexFile.name + ".old")
                 if (artistIndexFile.exists() && !artistIndexFile.renameTo(backup)) return
                 if (!tmp.renameTo(artistIndexFile) && backup.exists()) backup.renameTo(artistIndexFile)
                 else backup.delete()
             }
+            if (artistIndexFile.isFile) artistIndexFile.setLastModified(System.currentTimeMillis())
         }.onFailure { tmp.delete() }
     }
 
     private fun loadArtistIndexLocked() {
         if (artistIndexLoaded) return
-        if (artistIndexFile.isFile) runCatching { artistIndexFile.inputStream().use(artistUrls::load) }
+        val source = artistIndexFile.takeIf { it.isFile } ?: File(pinnedDir, artistIndexFile.name)
+        if (source.isFile) runCatching { source.inputStream().use(artistUrls::load) }
         var changed = false
         artistUrls.stringPropertyNames().filterNot { it.startsWith("_recheck.") }.forEach { key ->
             val old = artistUrls.getProperty(key) ?: return@forEach
@@ -218,51 +370,67 @@ class CoverStore(
 
     /**
      * Devolve a capa, baixando se preciso.
-     * pin = true → garante que fica na área fixada (música tocada/curtida/baixada).
+     * pin fixa em disco; large pede qualidade de player e fica independente da fixação.
      */
-    suspend fun get(track: Track, pin: Boolean): File? = withContext(Dispatchers.IO) {
+    suspend fun get(track: Track, pin: Boolean, large: Boolean = false, trace: (String) -> Unit = {}): File? = withContext(Dispatchers.IO) {
         if (!validId(track.id)) return@withContext null
+        val totalStarted = System.nanoTime()
+        val lockStarted = System.nanoTime()
         lockFor(track.id).withLock {                   // uma capa por vez por música (sem arquivo pela metade)
-            // capa pequena guardada antes: só vale trocar pela grande quando ela vai aparecer grande (fixada)
-            if (pin) local(track.id)?.let { old -> if (isSmall(old) && upgradeTried.add(track.id)) upgrade(track, old) }
-            pinnedFile(track.id).takeIf { it.length() > 0 }?.let { return@withLock it }
-            browseFile(track.id).takeIf { it.length() > 0 }?.let { cached ->
-                return@withLock if (pin) promote(track.id) ?: cached else cached.also { it.setLastModified(System.currentTimeMillis()) }
+            trace("id=${track.id} etapa=lock_ms=${elapsedMs(lockStarted)}")
+            val diskStarted = System.nanoTime()
+            val hint = track.thumbs.maxByOrNull { it.width * it.height }?.url
+            val target = if (large && !pin) largeBrowseFile(track.id) else if (pin) pinnedFile(track.id) else browseFile(track.id)
+            val cached = local(track.id, hint, large)
+            trace("id=${track.id} etapa=disco_ms=${elapsedMs(diskStarted)} imagem=${cached != null} grande=${cached?.let { !isSmall(it) } ?: false}")
+            if (cached != null) {
+                if (pin && cached.parentFile == browseDir && !large) {
+                    val promoted = promoteFile(cached, target)
+                    if (promoted != null) return@withLock promoted
+                }
+                val fits = if (large) !isSmall(cached) else isSmall(cached)
+                if (fits && (!pin || cached == target || target.length() > 0L)) {
+                    if (!pin) touch(cached)
+                    return@withLock cached
+                }
+                if (!large && cached == target && !isSmall(cached)) preserveLegacyLarge(track.id, cached)
             }
-            val target = if (pin) pinnedFile(track.id) else browseFile(track.id)
-            // busca/listas (não fixada): tamanho médio, que chega rápido; fixada: a maior que existir
-            for (url in candidates(track, browse = !pin)) {
-                if (download(url, target)) { if (!pin) trimBrowse(); return@withLock target }
+            // Listas: miniaturas de aproximadamente 400 px. A capa grande só é pedida no player.
+            for (url in candidates(track, browse = !large)) {
+                val downloadStarted = System.nanoTime()
+                if (download(url, target)) {
+                    rememberAlias(url, target, large)
+                    hint?.let { rememberAlias(it, target, large) }
+                    if (!pin) {
+                        val trimStarted = System.nanoTime()
+                        val trim = budget.trim()
+                        trace("id=${track.id} etapa=lru_ms=${elapsedMs(trimStarted)} removidos_bytes=${trim.removedBytes}")
+                    }
+                    trace("id=${track.id} etapa=download_ms=${elapsedMs(downloadStarted)} bytes=${target.length()} ok=true")
+                    return@withLock target
+                }
+                trace("id=${track.id} etapa=download_ms=${elapsedMs(downloadStarted)} bytes=0 ok=false")
             }
             null
-        }
+        }.also { trace("id=${track.id} etapa=total_ms=${elapsedMs(totalStarted)} origem=${if (it == null) "vazio" else "disco_ou_rede"}") }
     }
 
     private val locks = java.util.concurrent.ConcurrentHashMap<String, kotlinx.coroutines.sync.Mutex>()
     private fun lockFor(id: String) = locks.getOrPut(id) { kotlinx.coroutines.sync.Mutex() }
 
-    private val upgradeTried = java.util.Collections.synchronizedSet(HashSet<String>())
-
-    /** Capa guardada antes em tamanho pequeno: tenta trocar pela grande (uma vez por sessão; se falhar, fica a antiga). */
-    private fun upgrade(track: Track, old: File) {
-        val tmp = File(old.parentFile, old.name + ".up")
-        for (url in candidates(track)) {
-            if (!download(url, tmp)) continue
-            val ok = (imageSize(tmp)?.let { minOf(it.first, it.second) } ?: 0) > (imageSize(old)?.let { minOf(it.first, it.second) } ?: 0)
-            if (ok && tmp.renameTo(old)) return
-            tmp.delete(); return
-        }
-    }
-
     /** Menor lado abaixo de 600 px (as capas do app são exibidas em até ~1000 px). */
     fun isSmall(f: File): Boolean = imageSize(f)?.let { minOf(it.first, it.second) < 600 } ?: false
 
     /** Move da navegação para a área fixada (ex.: a pessoa tocou ou curtiu a música). */
-    fun promote(trackId: String): File? {
-        val from = browseFile(trackId); val to = pinnedFile(trackId)
+    fun promote(trackId: String): File? = promoteFile(browseFile(trackId), pinnedFile(trackId))
+
+    private fun promoteFile(from: File, to: File): File? {
         if (to.length() > 0) return to
         if (from.length() == 0L) return null
-        return if (from.renameTo(to) || (runCatching { from.copyTo(to, overwrite = true) }.isSuccess && from.delete())) to else null
+        val moved = from.renameTo(to) || (runCatching { from.copyTo(to, overwrite = true) }.isSuccess && from.delete())
+        if (!moved) return null
+        updateAliasesForMove(from, to)
+        return to
     }
 
     /** Limpar cache (configurações): só a área de navegação. As fixadas ficam. */
@@ -289,12 +457,6 @@ class CoverStore(
         }.getOrElse { tmp.delete(); false }
     }
 
-    private fun trimBrowse() {
-        val files = browseDir.listFiles { f -> f.name.endsWith(".img") }?.sortedBy { it.lastModified() } ?: return
-        var total = files.sumOf { it.length() }
-        for (f in files) { if (total <= browseMaxBytes) break; total -= f.length(); f.delete() }
-    }
-
     companion object {
         private const val MAX_BYTES = 6L * 1024 * 1024
         /** Só ids de música/artista do app (sem "../" nem caminhos). */
@@ -304,6 +466,18 @@ class CoverStore(
             val url = runCatching { java.net.URI(u) }.getOrNull() ?: return false
             val h = url.host?.lowercase() ?: return false
             return url.scheme == "https" && (h == "i.ytimg.com" || h.endsWith(".ytimg.com") || h.endsWith(".googleusercontent.com") || h.endsWith(".ggpht.com"))
+        }
+
+        /** Mesma imagem com URLs de tamanhos diferentes compartilha uma chave de disco. */
+        fun cacheUrlKey(raw: String): String? {
+            if (!allowedUrl(raw)) return null
+            val uri = runCatching { java.net.URI(raw) }.getOrNull() ?: return null
+            val host = uri.host?.lowercase(Locale.ROOT) ?: return null
+            if (host == "i.ytimg.com") {
+                Regex("""/vi/([^/]+)/""").find(uri.path.orEmpty())?.groupValues?.getOrNull(1)?.let { return "yt:$it" }
+            }
+            val path = uri.rawPath.orEmpty().replace(Regex("(=[^/?&#=]*)+$"), "")
+            return "img:${host.lowercase(Locale.ROOT)}$path"
         }
 
         /** Chave estável para foto e índice, igual à normalização usada pela interface. */
@@ -370,11 +544,20 @@ class CoverStore(
          */
         fun candidates(track: Track, browse: Boolean = false): List<String> {
             if (browse) {
-                // listas e busca: ~400 px chegam em ~0,2 s e ficam iguais na tela (linhas de 44–100 px)
-                val q = track.thumbs.sortedByDescending { it.width * it.height }.map { it.url }
-                val g = q.filter { "googleusercontent.com" in it && GOOGLE_SIZE.containsMatchIn(it) }.map { GOOGLE_SIZE.replace(it, "=w400-h400-l90-rj") }
-                val v = track.videoId?.let { listOf("https://i.ytimg.com/vi/$it/mqdefault.jpg") }.orEmpty()   // 16:9 sem tarja preta
-                return (g + v + candidates(track, browse = false)).distinct()
+                // Listas e busca: cerca de 400 px; evita baixar capas grandes para cartões pequenos.
+                val square = { t: Thumb -> t.width > 0 && kotlin.math.abs(t.width - t.height) <= 2 }
+                val thumbs = track.thumbs.sortedByDescending { it.width * it.height }
+                val resized = thumbs.mapNotNull { thumb ->
+                    val url = thumb.url
+                    when {
+                        "googleusercontent.com" in url && GOOGLE_SIZE.containsMatchIn(url) -> GOOGLE_SIZE.replace(url, "=w400-h400-l90-rj")
+                        thumb.width in 1..480 && thumb.height in 1..480 -> url
+                        else -> null
+                    }
+                }
+                val video = track.videoId?.let { listOf("https://i.ytimg.com/vi/$it/mqdefault.jpg") }.orEmpty()
+                val squareThumbs = thumbs.filter { square(it) && it.width in 1..480 }.map { it.url }
+                return (squareThumbs + resized + video).distinct()
             }
             // quadradas (capa de álbum) antes das 16:9 (miniatura de vídeo); dentro de cada grupo, a maior primeiro
             val square = { t: Thumb -> t.width > 0 && kotlin.math.abs(t.width - t.height) <= 2 }
