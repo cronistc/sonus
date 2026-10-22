@@ -7,7 +7,7 @@
   const N = window.SounosNative;
   if (!N || window.__sounosMirror) return;
   window.__sounosMirror = true;
-  const KEYS = ["sounos.playlists", "sounos.searchHistory", "sounos.settings", "sounos.downloads", "sounos.tips", "sounos.tipsVersion"];
+  const KEYS = ["sounos.playlists", "sounos.searchHistory", "sounos.settings", "sounos.downloads", "sounos.tips", "sounos.tipsVersion", "sounos.boasVindas"];
   const nativeCall = (m, a) => { try { return JSON.parse(N.call(m, JSON.stringify(a)) || "{}"); } catch { return {}; } };
   const isJson = s => { if (typeof s !== "string") return false; try { const v = JSON.parse(s); return v !== null && typeof v === "object"; } catch { return false; } };
   // vazio ([] ou {}): suspeito quando o espelho tem conteúdo (sinal de dados perdidos), por isso não vale como "válido"

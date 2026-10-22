@@ -191,6 +191,7 @@
   }
   function pump() {
     if (hub.active || !hub.pending.length) return;
+    if (top.__sonusBoasVindas) { schedulePump(500); return; }
     // durante a abertura animada nenhuma dica aparece; elas começam um pouco depois dela terminar
     if (top.Sounos?.native && top.__sonusAberturaFim === undefined) { schedulePump(600); return; }   // abertura ainda não decidiu
     if (top.document.body.classList.contains("sonus-opening")) { schedulePump(600); return; }

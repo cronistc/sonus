@@ -328,3 +328,10 @@ Capturas da instalação final:
 - A versão do app vem de `getUpdate`. As dicas vistas e a versão de referência ficam em `sounos.tips` e `sounos.tipsVersion`, espelhadas pelo `native.js`. Quem começa sem histórico recebe as dicas básicas aos poucos; quem já tem biblioteca recebe as dicas de versões posteriores à sua referência.
 - No primeiro comando de reprodução, o app consulta `PowerManager.isIgnoringBatteryOptimizations` e, se necessário, abre uma vez o pedido do Android. Configurações ganhou a linha “Tocar sem interrupções”, com estado atualizado ao voltar do sistema e opção de tentar novamente quando desligado.
 - Validação antes e depois da integração: `node --check` em todos os scripts de `prototype/`, `git diff --check` e `JAVA_HOME=~/Android/jdk17 ./gradlew -q clean :app:assembleDebug -PversionCode=7`. Não houve instalação nem acesso ao celular.
+
+## Configuração inicial de permissões (21/10/2026)
+
+- A tela “Seu som, sem pausas” aparece no app após `window.__sonusAberturaFim`. Para uma instalação nova, ela oferece atualizar sozinho, notificações e reprodução sem interrupções; “Começar” também permite seguir sem conceder permissões. Para quem já tem histórico ou playlists, só aparece se uma dessas permissões estiver faltando.
+- Cada item consulta o estado atual do Android e abre o pedido correspondente ao tocar. Ao voltar do sistema, a tela atualiza os três estados. O estado de conclusão fica em `sounos.boasVindas`, espelhado pelo `native.js`; as dicas aguardam a tela fechar.
+- O pedido de `POST_NOTIFICATIONS` saiu da abertura da `MainActivity` e agora é iniciado pelo item Notificações. O pedido de otimização de bateria reaproveita a preferência já usada na primeira reprodução, evitando uma segunda solicitação depois que a pessoa o resolveu aqui.
+- Verificação no Galaxy A54: APK com `versionCode=7` compilado limpo, instalado por cima e aberto normalmente. A prévia visual da tela foi capturada em `/tmp/sonus-boas-vindas-preview.png`; os três estados apareceram como ativos. Não abri telas do Android nem alterei dados do aparelho durante a conferência.
