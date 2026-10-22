@@ -105,10 +105,15 @@
     setTimeout(() => { SounosTips?.offer("home"); if (offline) SounosTips?.offer("offline"); if (cur()) SounosTips?.offer("mini"); }, 350);
   } });
   // botão voltar do Android: fecha a tela interna mais alta antes de sair do player ou da página
+  // (nunca depende só do histórico do navegador: se ele não tiver a entrada, o app fechava em vez de voltar)
   window.__sonusBack = () => {
-    if (window.__playerOpen) return window.__playerBack?.() || false;
-    if (!pages.isOpen()) return false;
-    pages.closeTop(); return true;
+    if (window.__playerOpen) {
+      if (window.__playerBack?.()) return true;            // o player fecha o que tiver dentro dele (letra, fila…)
+      window.__playerShell?.close?.(); return true;        // senão, desce o player
+    }
+    if (pages.isOpen()) { pages.closeTop(); return true; }
+    if (window.homeSearch?.isOpen?.()) { window.homeSearch.close(); return true; }
+    return false;
   };
   Sounos.on("offline", ev => {
     const next = !!ev.offline;

@@ -9,6 +9,12 @@ S = sys.argv[1]; ROUNDS = int(sys.argv[2]) if len(sys.argv) > 2 else 40
 adb = lambda *a: subprocess.run(["adb", "-s", S, *a], capture_output=True, text=True).stdout
 
 def front():
+    for _ in range(4):                     # tolera um instante de outra tela (ex.: diálogo do sistema)
+        if _front(): return True
+        time.sleep(.5)
+    return False
+
+def _front():
     return "app.sounos/.MainActivity" in adb("shell", "dumpsys", "activity", "activities").split("topResumedActivity")[1][:200]
 
 def ws_url():
@@ -60,11 +66,14 @@ async def main():
         p = Page(ws)
         await ws.send(json.dumps({"id": 0, "method": "Runtime.enable"}))
         for i in range(ROUNDS):
-            nome = random.choice(list(ACOES))
-            if not front(): log.append(f"{i}: app saiu da frente"); break
+            nome = random.choice(list(ACOES)); ult = locals().get("nome_ant", "-"); nome_ant = nome
+            if not front(): log.append(f"{i}: app saiu da frente (depois de {ult})"); break
             t0 = time.time()
             try:
-                if ACOES[nome] is None: adb("shell", "input", "keyevent", "4")
+                if ACOES[nome] is None:
+                    # voltar só com algo aberto (na tela inicial, voltar manda o app para o fundo — é o certo)
+                    aberto = await p.ev("!!(window.__playerOpen || window.SounosPages?.isOpen?.() || document.querySelector('.search-ov.open'))")
+                    if aberto: adb("shell", "input", "keyevent", "4")
                 else: await p.ev(ACOES[nome])
                 ok = await p.ev("1")      # a página responde?
             except Exception as e:

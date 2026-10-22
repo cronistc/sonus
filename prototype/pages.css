@@ -73,4 +73,3 @@
 .pg .sk { height: 50px; margin: 7px 8px; border-radius: 10px; background: var(--chip-soft); animation: pgPulse 1.1s ease-in-out infinite alternate; }
 html.page-hidden .pg .sk, .pg:not(.open) .sk, .phone.overlay-open .pg .sk { animation-play-state: paused; }
 @keyframes pgPulse { to { opacity: .4; } }
-.pg.artist .tr .a { display: none; }   /* na página do artista o @artista das músicas é redundante */
