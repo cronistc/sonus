@@ -48,7 +48,7 @@ class SounosApp : Application() {
         Sounos.init(language = s.optString("language", "pt-BR").substringBefore('-'), country = s.optString("country", "BR"))
         source = NewPipeSource()
         resolver = StreamResolveCache(source)
-        audio = AudioCache(File(cacheDir, "audio"), Sounos.http, maxTotalBytes = 3L * 1024 * 1024 * 1024) // cache de música
+        audio = AudioCache(File(cacheDir, "audio"), Sounos.http, maxTotalBytes = 6L * 1024 * 1024 * 1024) // cache de música: até 6 GB, sem prazo (encolhe se faltar espaço)
         cacheBudget = DiskCacheBudget(listOf(File(cacheDir, "covers"), File(cacheDir, "metadata")))
         metadata = DiskMetadataCache(File(cacheDir, "metadata"), cacheBudget)
         covers = CoverStore(File(filesDir, "covers"), File(cacheDir, "covers"), Sounos.http, budget = cacheBudget) // capas fixadas ficam fora do LRU
