@@ -6,7 +6,6 @@
   const artistKey = n => String(n || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
   let S = Sounos.call("getState");
   let offline = !!Sounos.call("getOffline").offline;
-  let lyr = null;                          // letra da música atual (sincronizada)
   let items = [];                          // o que está na tela (para os toques)
 
   // ---------- seções ----------
@@ -138,6 +137,7 @@
     const appeared = !!t && !$("mini").classList.contains("has-track") && stateSeen;   // mini-player acabou de aparecer
     stateSeen = true;
     $("mini").classList.toggle("has-track", !!t);
+    $("miniAdd").hidden = !t;
     $("phone").classList.toggle("paused", !st.playing);
     $("phone").style.setProperty("--mini-h", t ? $("mini").offsetHeight + "px" : "0px");
     playing = !!st.playing; shuffle = st.shuffle; repeat = st.repeat;
@@ -163,23 +163,6 @@
       swapIn($("miniA"), { opacity: 0, transform: "translateX(12px)" }, 360);
     }
     miniFirst = false;
-    lyr = null; syncMiniA(); buildMiniLyrics();
-  };
-  // "A" do mini-player só com letra sincronizada (e a letra aberta fecha quando a música não tem)
-  function syncMiniA() {
-    $("miniLyr").hidden = !lyr;
-    if (!lyr && lyrOpen) $("miniLyr").click();
-  }
-  syncMiniLyrics = function () {
-    if (!lyrOpen) return;
-    if (!lyr) { if (lastLine !== "none") { lastLine = "none"; showLine("Letra indisponível para esta faixa", "empty"); } return; }
-    const at = pos + lyricsOffset();
-    let lo = 0, hi = lyr.length;
-    while (lo < hi) { const mid = (lo + hi) >>> 1; if (lyr[mid][0] <= at) lo = mid + 1; else hi = mid; }
-    const ln = lo - 1;
-    if (ln === lastLine) return;
-    lastLine = ln;
-    showLine(lyr[Math.max(ln, 0)][1], ln < 0 ? "dim" : "");
   };
   curDur = () => Math.max(1, (S?.durationMs || 0) / 1000 || cur()?.dur || 1);
   atEnd = () => { pos = curDur(); };                 // o player nativo passa para a próxima
@@ -209,15 +192,9 @@
     if (homeCanAnimate() && !playing) drawMiniProgress();
     homeClockChanged();
   });
-  Sounos.on("lyrics", p => {
-    if (!cur() || p.id !== cur().id || p.pending) return;
-    const l = p.lyrics; lyr = l && l.synced ? l.synced : null;
-    syncMiniA();
-    buildMiniLyrics();
-  });
-
   renderHome();
   applyState(S);
+  // O player embutido lê a letra nativa; este envio mantém o quadro sincronizado ao carregá-la.
   if (cur()) window.__sounos.emit("lyrics", Sounos.call("getLyrics"));
 
 // ---------- player embutido ----------
