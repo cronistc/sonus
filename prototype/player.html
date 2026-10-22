@@ -867,11 +867,11 @@ function playerCanAnimate() {
 }
 function syncPlayerClock() {
   clearTimeout(clockTimer); clockTimer = 0;
-  if (playing && playerCanAnimate()) clockTimer = setTimeout(clockLoop, VIS_MS);
+  if (playing && playerCanAnimate() && !$("phone").classList.contains("loading")) clockTimer = setTimeout(clockLoop, VIS_MS);
 }
 function clockLoop() {
   clockTimer = 0;
-  if (!playing || !playerCanAnimate()) return;
+  if (!playing || !playerCanAnimate() || $("phone").classList.contains("loading")) return;
   tick(performance.now());
   syncPlayerClock();
 }
@@ -881,7 +881,8 @@ function refreshNativePosition() {
   if (!Number.isFinite(p.pos)) return;
   pos = p.pos;
   if (p.dur > 0) track().dur = p.dur;
-  playing = !!p.playing;
+  playing = !!p.playing || (!!p.loading && !!p.playWhenReady);
+  renderPlayIcon();
 }
 function setPlayerVisible(visible) {
   playerVisible = !!visible;
@@ -943,7 +944,8 @@ function renderPlayIcon() {
   }
   lastModes = modes;
   let key, html, combo = false;
-  if (flash && performance.now() < flash.until) { key = flash.key; html = flash.html; }
+  if ($("phone").classList.contains("loading")) { flash = null; key = playing ? "pause" : "play"; html = playing ? LU.pause : LU.play; }
+  else if (flash && performance.now() < flash.until) { key = flash.key; html = flash.html; }
   else if (playing) { flash = null; key = "pause"; html = LU.pause; }
   else              { flash = null; key = "play"; html = LU.play; }
   if (key === lastIconKey) return;
