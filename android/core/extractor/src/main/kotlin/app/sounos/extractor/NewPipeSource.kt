@@ -83,7 +83,7 @@ class NewPipeSource(private val service: StreamingService = ServiceList.YouTube)
         val handler = service.searchQHFactory.fromQuery(query, listOf(SearchFilter.ALBUMS.youtube), "")
         SearchInfo.getInfo(service, handler).relatedItems.mapNotNull { item ->
             (item as? PlaylistInfoItem)?.let {
-                AlbumResult(it.name, it.uploaderName ?: "", it.url, albumThumbs(it.thumbnails.map(::toThumb)))
+                AlbumResult(albumName(it.name), it.uploaderName ?: "", it.url, albumThumbs(it.thumbnails.map(::toThumb)))
             }
         }
     }
@@ -92,7 +92,7 @@ class NewPipeSource(private val service: StreamingService = ServiceList.YouTube)
     suspend fun album(url: String): Album = withContext(Dispatchers.IO) {
         val info = PlaylistInfo.getInfo(service, url)
         Album(
-            name = info.name,
+            name = albumName(info.name),
             artist = info.uploaderName ?: "",
             thumbs = albumThumbs(info.thumbnails.map(::toThumb)),
             items = info.relatedItems.mapNotNull(::toTrack),
@@ -169,6 +169,10 @@ class NewPipeSource(private val service: StreamingService = ServiceList.YouTube)
     }
 
     private fun toThumb(i: Image) = Thumb(i.url, i.width.coerceAtLeast(0), i.height.coerceAtLeast(0))
+
+    /** O YouTube Music manda "Album - Nome" / "Álbum - Nome" / "EP - Nome": fica só o nome. */
+    private fun albumName(raw: String?): String =
+        (raw ?: "").replace(Regex("^\\s*(?:[ÁáAa]lbum|EP|Single)\\s*[-–—:·]\\s*", RegexOption.IGNORE_CASE), "").trim()
 
     private fun albumThumbs(thumbs: List<Thumb>): List<Thumb> {
         val squares = thumbs.filter { it.width > 0 && it.height > 0 && kotlin.math.abs(it.width - it.height) * 20 <= maxOf(it.width, it.height) }
