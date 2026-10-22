@@ -18,6 +18,7 @@ O player abre por cima da busca, sem fechar o que você buscou
 Vários artistas separados por vírgula, sem @
 O botão voltar sempre volta uma tela
 A música não para mais com o app em segundo plano
+Playlist Músicas baixadas: toda música baixada entra nela, e tirar dela (ou tocar de novo em baixar) apaga do celular
 ## Correções
 Página do artista e do álbum: foto certa, álbuns sem repetição e botão de tocar/pausar
 Capas e fotos que não carregavam ou piscavam
