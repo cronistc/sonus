@@ -3,7 +3,7 @@
 Leia docs/TECNICO.md antes. Regras: comentários em português; NÃO mudar o visual existente (o design é do dono —
 elementos novos copiam exatamente o estilo dos existentes); não publicar, não fazer push, não mexer em
 tools/publicar.sh, na chave (~/Sonus-chave) nem no nome da versão. NÃO instale no celular (o Claude instala).
-Compilar: `cd android && JAVA_HOME=~/Android/jdk17 ./gradlew -q :app:assembleDebug -PversionCode=5` e
+Compilar: `cd android && JAVA_HOME=~/Android/jdk17 ./gradlew -q :app:assembleDebug -PversionCode=7` e
 `node --check` nos JS alterados. Antes de começar: `git merge main` (pegue o trabalho mais novo).
 
 1. Tela inicial, carrossel de playlists: o cartão "Nova playlist" fica SEMPRE por último (à direita); playlist nova
@@ -42,5 +42,5 @@ Escreva no fim deste arquivo o que mudou e o que testou. Commit no ramo (sem pus
 - `git merge main`: já estava atualizado.
 - `node --check` em `add.js`, `home-native.js`, `pages.js` e `search.js`; também verifiquei os três blocos JavaScript inline de `home.html`.
 - `git diff --check`.
-- `JAVA_HOME=~/Android/jdk17 ./gradlew -q :app:assembleDebug -PversionCode=5`: concluído com código 0.
+- `JAVA_HOME=~/Android/jdk17 ./gradlew -q :app:assembleDebug -PversionCode=7`: concluído com código 0.
 - Não instalei no celular.

@@ -2,7 +2,7 @@
 
 Leia docs/TECNICO.md. Regras: comentários em português; não mudar o resto do visual; não publicar, não push, não
 mexer em tools/publicar.sh, na chave nem no nome da versão. NÃO instale no celular.
-Compilar: `cd android && JAVA_HOME=~/Android/jdk17 ./gradlew -q :app:assembleDebug -PversionCode=5`; `node --check`.
+Compilar: `cd android && JAVA_HOME=~/Android/jdk17 ./gradlew -q :app:assembleDebug -PversionCode=7`; `node --check`.
 
 Pedido do dono (prototype/home.html + home-native.js; evento nativo "offline" e Sounos.call("getOffline") já existem):
 1. ONLINE: tela inicial = "Ouvidos recentemente", "Seus artistas", "Suas playlists". O bloco "Minhas músicas" NÃO

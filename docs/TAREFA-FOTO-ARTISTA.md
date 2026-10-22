@@ -2,7 +2,7 @@
 
 Leia docs/TECNICO.md. Regras: comentários em português; NÃO mudar o visual (design do dono); não publicar, não
 push, não mexer em tools/publicar.sh, na chave nem no nome da versão. NÃO instale no celular.
-Compilar: `cd android && JAVA_HOME=~/Android/jdk17 ./gradlew -q :app:assembleDebug -PversionCode=5` e
+Compilar: `cd android && JAVA_HOME=~/Android/jdk17 ./gradlew -q :app:assembleDebug -PversionCode=7` e
 `node --check`. Antes: `git merge main`. Outros programadores mexem em search.js (busca) e em prototype/*.html
 (desempenho): mudanças pequenas e localizadas nesses arquivos.
 

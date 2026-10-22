@@ -2,7 +2,7 @@
 
 Leia docs/TECNICO.md. Regras: comentários em português; não mudar o resto do visual; não publicar, não push, não
 mexer em tools/publicar.sh, na chave nem no nome da versão. NÃO instale nem mexa no celular.
-Compilar: `cd android && JAVA_HOME=~/Android/jdk17 ./gradlew -q :app:assembleDebug -PversionCode=5`; `node --check`.
+Compilar: `cd android && JAVA_HOME=~/Android/jdk17 ./gradlew -q :app:assembleDebug -PversionCode=7`; `node --check`.
 Outro programador mexe em home.html (fonte/letreiro): mudanças pequenas e localizadas.
 
 Pedido do dono (prototype/home.html + home-native.js):
@@ -24,4 +24,4 @@ Escreva no fim deste arquivo o que mudou. Commit; `git merge main`, resolva, com
   usando o fluxo nativo de letras.
 - Após `git merge main` (`Already up to date.`), passaram `node --check prototype/home-native.js`, a
   verificação dos scripts inline de `home.html` e `JAVA_HOME=~/Android/jdk17 ./gradlew -q
-  :app:assembleDebug -PversionCode=5`.
+  :app:assembleDebug -PversionCode=7`.

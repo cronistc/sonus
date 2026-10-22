@@ -20,6 +20,6 @@ não fazer git push, não mexer em tools/publicar.sh nem na chave (~/Sonus-chave
 4b. Página do ARTISTA (pages.js, openArtist): além das músicas, mostrar uma seção "Álbuns" do artista
    (carrossel de capas quadradas). Fonte: `searchAlbums` com o nome do artista, filtrando só os álbuns
    cujo artista é ele (nome normalizado igual/contido). Tocar num álbum abre openAlbum.
-5. Compilar: `cd android && JAVA_HOME=~/Android/jdk17 ./gradlew -q :app:assembleDebug -PversionCode=5`
+5. Compilar: `cd android && JAVA_HOME=~/Android/jdk17 ./gradlew -q :app:assembleDebug -PversionCode=7`
    e `node --check` nos JS alterados. NÃO instale no celular (o Claude instala).
 6. Escreva no fim deste arquivo um resumo do que mudou e do que testou.

@@ -2,7 +2,7 @@
 
 Leia docs/TECNICO.md. Regras: comentários em português; não mudar o resto do visual; não publicar, não push, não
 mexer em tools/publicar.sh, na chave nem no nome da versão. NÃO instale nem mexa no celular.
-Compilar: `cd android && JAVA_HOME=~/Android/jdk17 ./gradlew -q :app:assembleDebug -PversionCode=5`; `node --check`.
+Compilar: `cd android && JAVA_HOME=~/Android/jdk17 ./gradlew -q :app:assembleDebug -PversionCode=7`; `node --check`.
 
 1. BUG letreiro: quando um texto não cabe (título/artista no player, mini-player, cartões), ele anda para mostrar o
    nome inteiro, mas trava depois de uma passada e só volta a andar quando a pessoa toca na tela. Provável causa: a

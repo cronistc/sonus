@@ -3,7 +3,7 @@
 Leia docs/TECNICO.md antes. Regras: comentários em português; NÃO mudar o visual existente (o design é do dono —
 elementos novos devem copiar exatamente o estilo dos que já existem); não publicar, não fazer push, não mexer em
 tools/publicar.sh, na chave (~/Sonus-chave) nem no nome da versão. NÃO instale no celular (o Claude instala).
-Compilar: `cd android && JAVA_HOME=~/Android/jdk17 ./gradlew -q :app:assembleDebug -PversionCode=5` e
+Compilar: `cd android && JAVA_HOME=~/Android/jdk17 ./gradlew -q :app:assembleDebug -PversionCode=7` e
 `node --check` nos JS alterados. Outro programador está mexendo em desempenho (prototype/*.html) e outro em
 álbuns (search.js/pages.js): faça mudanças pequenas e localizadas nesses arquivos.
 
@@ -45,6 +45,6 @@ Escreva no fim deste arquivo o que mudou e o que testou. Commit no ramo (sem pus
 
 ### Verificações
 
-- `cd android && JAVA_HOME=~/Android/jdk17 ./gradlew -q :app:assembleDebug -PversionCode=5` — passou.
+- `cd android && JAVA_HOME=~/Android/jdk17 ./gradlew -q :app:assembleDebug -PversionCode=7` — passou.
 - `node --check prototype/home-native.js`, `node --check prototype/pages.js` e `node --check` no script inline alterado de `home.html` — passaram.
 - `git diff --check` — passou.

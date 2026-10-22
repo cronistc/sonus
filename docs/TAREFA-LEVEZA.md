@@ -23,7 +23,7 @@ na página). O NewPipe e o áudio são leves.
 4. Nativo: conferir se eventos de progresso do PlayerController/Bridge vêm em excesso (ex.: >4/s) e reduzir;
    com tela apagada não mandar eventos para a WebView.
 5. MEDIR no celular (adb já conectado; se cair: `adb mdns services` e `adb connect` na porta _adb-tls-connect):
-   compilar `cd android && JAVA_HOME=~/Android/jdk17 ./gradlew -q :app:assembleDebug -PversionCode=5`,
+   compilar `cd android && JAVA_HOME=~/Android/jdk17 ./gradlew -q :app:assembleDebug -PversionCode=7`,
    instalar `adb install -r -i app.sounos android/app/build/outputs/apk/debug/app-debug.apk`,
    tocar uma música e medir `adb shell top -b -n 5 -d 2 | grep app.sounos` em: player aberto, tela inicial,
    tela apagada (`adb shell input keyevent 26`). Quadros: `adb shell dumpsys gfxinfo app.sounos` (reset antes).

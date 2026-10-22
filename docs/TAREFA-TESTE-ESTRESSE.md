@@ -3,7 +3,7 @@
 Leia docs/TECNICO.md. Regras: comentários em português; NÃO mudar o visual; não publicar, não push, não mexer em
 tools/publicar.sh, na chave nem no nome da versão. Celular: Galaxy A54 por adb sem fio (`adb devices`; se cair:
 `adb mdns services` e `adb connect` na porta _adb-tls-connect; use sempre `-s <ip:porta>`). PODE instalar:
-`cd android && JAVA_HOME=~/Android/jdk17 ./gradlew -q :app:assembleDebug -PversionCode=5` e
+`cd android && JAVA_HOME=~/Android/jdk17 ./gradlew -q :app:assembleDebug -PversionCode=7` e
 `adb -s <serial> install -r -i app.sounos android/app/build/outputs/apk/debug/app-debug.apk`.
 NUNCA apagar dados do app (nada de `pm clear`, desinstalar, apagar files/): playlists/baixadas do dono são sagradas.
 Se o celular estiver bloqueado, NÃO tente desbloquear: escreva no log "PRECISO DO CELULAR DESBLOQUEADO" e siga

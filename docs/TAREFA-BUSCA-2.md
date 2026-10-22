@@ -2,7 +2,7 @@
 
 Leia docs/TECNICO.md. Regras: comentários em português; NÃO mudar o visual (o design é do dono); não publicar,
 não fazer push, não mexer em tools/publicar.sh, na chave nem no nome da versão. NÃO instale no celular.
-Compilar: `cd android && JAVA_HOME=~/Android/jdk17 ./gradlew -q :app:assembleDebug -PversionCode=5` e
+Compilar: `cd android && JAVA_HOME=~/Android/jdk17 ./gradlew -q :app:assembleDebug -PversionCode=7` e
 `node --check` nos JS alterados. Antes de começar: `git merge main`.
 
 1. Resultados da busca (prototype/search.js, nativeResults): o bloco "Álbuns" hoje aparece no fim. Manter o MESMO
