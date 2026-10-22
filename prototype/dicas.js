@@ -132,25 +132,39 @@
   function placeTip(entry, target) {
     const bubble = document.createElement("div");
     bubble.className = "sonus-dica";
-    bubble.style.width = `${Math.max(0, Math.min(280, innerWidth - 24))}px`;
-    bubble.style.maxWidth = `${Math.max(0, innerWidth - 24)}px`;
     bubble.setAttribute("role", "status");
     bubble.setAttribute("aria-live", "polite");
     bubble.innerHTML = `<span class="sonus-dica-text"></span><button class="sonus-dica-fechar" type="button" aria-label="Fechar dica">×</button>`;
     bubble.querySelector(".sonus-dica-text").textContent = entry.tip.text;
     document.body.appendChild(bubble);
-    const tr = target.getBoundingClientRect(), br = bubble.getBoundingClientRect(), gap = 12, pad = 12;
-    const below = innerHeight - tr.bottom >= br.height + gap || tr.top < br.height + gap;
-    const left = Math.max(pad, Math.min(innerWidth - br.width - pad, tr.left + tr.width / 2 - br.width / 2));
-    const topY = below ? Math.min(innerHeight - br.height - pad, tr.bottom + gap) : Math.max(pad, tr.top - br.height - gap);
-    bubble.dataset.lado = below ? "baixo" : "cima";
-    // alvo do lado direito da tela: o × vai para a esquerda (o balão "vira" e nada vaza)
-    bubble.classList.toggle("x-esquerda", tr.left + tr.width / 2 > innerWidth * .55);
-    bubble.style.left = `${left}px`;
-    bubble.style.top = `${topY}px`;
-    bubble.style.setProperty("--dica-seta", `${Math.max(12, Math.min(br.width - 12, tr.left + tr.width / 2 - left))}px`);
-    bubble.style.setProperty("--dica-origem-y", below ? "top" : "bottom");
-    bubble.style.setProperty("--dica-salto", below ? "-9px" : "9px");
+    // Posiciona o balão SEMPRE dentro da janela deste documento (na tela inicial ou no quadro do player).
+    // Mede com offsetWidth/offsetHeight: getBoundingClientRect devolvia o tamanho já encolhido pelo
+    // transform inicial (scale .68), então o balão era posicionado como se fosse menor e vazava da tela.
+    const reposition = () => {
+      const vw = Math.min(innerWidth, document.documentElement.clientWidth || innerWidth);
+      const vh = Math.min(innerHeight, document.documentElement.clientHeight || innerHeight);
+      const gap = 12, pad = 12;
+      bubble.style.width = `${Math.max(0, Math.min(280, vw - 2 * pad))}px`;
+      bubble.style.maxWidth = `${Math.max(0, vw - 2 * pad)}px`;
+      const tr = target.getBoundingClientRect();
+      const bw = bubble.offsetWidth, bh = bubble.offsetHeight;      // já com o texto e sem o efeito do transform
+      const spaceBelow = vh - tr.bottom - gap - pad, spaceAbove = tr.top - gap - pad;
+      const below = spaceBelow >= bh || (spaceAbove < bh && spaceBelow >= spaceAbove);   // cabe embaixo; senão em cima; senão onde há mais espaço
+      const left = Math.max(pad, Math.min(vw - bw - pad, tr.left + tr.width / 2 - bw / 2));
+      const rawTop = below ? tr.bottom + gap : tr.top - bh - gap;
+      const topY = Math.max(pad, Math.min(vh - bh - pad, rawTop));
+      bubble.dataset.lado = below ? "baixo" : "cima";
+      // alvo do lado direito da tela: o × vai para a esquerda (o balão "vira" e nada vaza)
+      bubble.classList.toggle("x-esquerda", tr.left + tr.width / 2 > vw * .55);
+      bubble.style.left = `${left}px`;
+      bubble.style.top = `${topY}px`;
+      // a seta acompanha o alvo, mas fica dentro do corpo do balão (longe das quinas arredondadas)
+      const seta = Math.max(20, Math.min(bw - 20, tr.left + tr.width / 2 - left));
+      bubble.style.setProperty("--dica-seta", `${seta}px`);
+      bubble.style.setProperty("--dica-origem-y", below ? "top" : "bottom");
+      bubble.style.setProperty("--dica-salto", below ? "-9px" : "9px");
+    };
+    reposition();
     state.seen[entry.tip.id] = true;
     const active = { tip: entry.tip, bubble, target, remaining: TIP_DURATION, timeout: 0, paused: false, startedAt: 0,
       close: () => finishTip(entry.tip, bubble) };
@@ -159,11 +173,13 @@
       e.stopPropagation();
       active.close();
     });
+    active.reposition = reposition;
     bubble.addEventListener("pointerdown", () => pauseTip(active));
     bubble.addEventListener("pointerup", () => resumeTip(active));
     bubble.addEventListener("pointercancel", () => resumeTip(active));
     requestAnimationFrame(() => {
       if (hub.active !== active) return;
+      reposition();                       // remede (fonte/layout podem ter mudado desde a criação)
       bubble.classList.add("visivel");
       runTipTimer(active);
     });
@@ -213,6 +229,8 @@
   };
   window.addEventListener("pointerup", releasePointer, true);
   window.addEventListener("pointercancel", releasePointer, true);
+  // girou a tela / mudou o tamanho da janela: reencaixa o balão aberto
+  window.addEventListener("resize", () => { try { if (hub.active?.bubble.ownerDocument === document) hub.active.reposition?.(); } catch {} });
   window.SounosTips = api;
   save();
 })();

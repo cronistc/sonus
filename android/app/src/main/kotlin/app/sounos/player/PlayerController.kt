@@ -530,6 +530,7 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
     }
 
     fun progress(): JSONObject = JSONObject().put("pos", positionMs() / 1000.0).put("dur", durationMs / 1000.0).put("playing", engine.isPlaying)
+        .put("id", currentTrack?.id ?: JSONObject.NULL)   // a tela ignora progresso de outra música
 
     private var ticking = false
     private fun ticker() {

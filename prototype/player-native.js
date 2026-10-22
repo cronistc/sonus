@@ -180,6 +180,7 @@
   Sounos.on("state", st => applyState(st, false));
   Sounos.on("progress", p => {
     if (!track()) return;
+    if (p.id && S?.current && p.id !== S.current.id) return;   // progresso de outra música (troca em andamento)
     if (!scrubbing && !ring.classList.contains("drag")) pos = p.pos;
     if (p.dur > 0) track().dur = p.dur;
     const changed = p.playing !== playing;

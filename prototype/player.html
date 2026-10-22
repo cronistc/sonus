@@ -508,7 +508,7 @@ const FADE_STOPS = [[0, 1], [.25, .898], [.5, .533], [.75, .169], [1, 0]];   // 
 let ringColor = null, lastRingPixel = -1;
 new MutationObserver(() => {
   ringColor = null; lastRingPixel = -1;
-  if (playerCanAnimate()) drawRingFill(Math.min(pos / track().dur, 1) * 1000);
+  if (playerCanAnimate()) drawRingFill((track().dur > 1 ? Math.min(pos / track().dur, 1) : 0) * 1000);
 }).observe(document.documentElement, { attributes: true, attributeFilter: ["style", "data-theme"] });
 function drawRingFill(P) {
   if (!RING) return;
@@ -570,7 +570,7 @@ function loadCurrent() {
 let lastEqDraw = -1e9, lastCurText = "";
 function render(fromTick) {
   if (!playerCanAnimate()) return;
-  const t = track(), f = Math.min(pos / t.dur, 1), now = performance.now();
+  const t = track(), f = t.dur > 1 ? Math.min(Math.max(pos / t.dur, 0), 1) : 0, now = performance.now();
   // um só compasso visual (~15×/s): barrinhas, anel e tempo mudam juntos → a tela redesenha poucas vezes
   if (fromTick && now - lastEqDraw < 50) { syncLyrics(); return; }
   lastEqDraw = now;

@@ -159,7 +159,8 @@
     if (appeared) miniRise();
     if (!t) return;
     (st.colors || []).forEach((c, k) => root.setProperty(`--c${k + 1}`, c));
-    if (before !== t.id) { shownId = t.id; lastBarPixel = -1; loadMini(); if (before) renderHome(); }
+    if (before !== t.id) { shownId = t.id; resetMiniBar(); loadMini(); if (before) renderHome(); }
+    if (homeCanAnimate()) drawMiniProgress();   // barra já na posição nova (não espera o próximo ciclo do relógio)
     SounosTips?.offer("mini");
   }
   loadMini = function () {
@@ -176,6 +177,7 @@
     miniFirst = false;
   };
   curDur = () => Math.max(1, (S?.durationMs || 0) / 1000 || cur()?.dur || 1);
+  durKnown = () => (S?.durationMs || 0) > 0 || (cur()?.dur || 0) > 1;
   atEnd = () => { pos = curDur(); };                 // o player nativo passa para a próxima
   step = d => Sounos.call(d > 0 ? "next" : "prev");
   doShuffle = () => Sounos.call("setShuffle", { on: !shuffle });
@@ -187,6 +189,7 @@
 
   Sounos.on("state", applyState);
   Sounos.on("progress", p => {
+    if (p.id && cur() && p.id !== cur().id) return;       // progresso de outra música (troca em andamento)
     const changed = playing !== p.playing;
     if (!scrubbing) pos = p.pos;
     playing = p.playing; $("phone").classList.toggle("paused", !playing); last = performance.now();
