@@ -50,6 +50,7 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (BuildConfig.DEBUG) WebView.setWebContentsDebuggingEnabled(true)
         // onCreate só ocorre numa criação nova; voltar do segundo plano usa onResume e não repete a abertura.
         coldOpening = true
         val theme = SounosApp.instance.library.settings().optString("theme", "gradient")
@@ -66,6 +67,7 @@ class MainActivity : Activity() {
             setBackgroundColor(windowColor)
             alpha = 0f
             overScrollMode = WebView.OVER_SCROLL_NEVER
+            if (BuildConfig.DEBUG) settings.cacheMode = android.webkit.WebSettings.LOAD_NO_CACHE
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
             settings.allowFileAccess = false

@@ -78,15 +78,15 @@
           <h3>Permissões</h3>
           <div class="set-card">
             <button class="set-row bv-row" type="button" data-permissao="notificacoes">
-              <span class="tx"><span class="t">Notificações</span><span class="d">Mostra os controles da música na notificação.</span></span>
+              <div class="tx"><div class="t">Notificações</div><div class="d">Mostra os controles da música na notificação.</div></div>
               <span class="sw" aria-hidden="true"></span>
             </button>
             <button class="set-row bv-row" type="button" data-permissao="bateria">
-              <span class="tx"><span class="t">Tocar sem interrupções</span><span class="d">Ajuda a música a continuar em segundo plano.</span></span>
+              <div class="tx"><div class="t">Tocar sem interrupções</div><div class="d">Ajuda a música a continuar em segundo plano.</div></div>
               <span class="sw" aria-hidden="true"></span>
             </button>
             <button class="set-row bv-row" type="button" data-permissao="instalar">
-              <span class="tx"><span class="t">Atualizar sozinho</span><span class="d">Permite instalar atualizações do Sonus.</span></span>
+              <div class="tx"><div class="t">Atualizar sozinho</div><div class="d">Permite instalar atualizações do Sonus.</div></div>
               <span class="sw" aria-hidden="true"></span>
             </button>
           </div>
