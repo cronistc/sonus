@@ -27,17 +27,18 @@ window.SounosUpdate = (() => {
       </div>`;
     phone.appendChild(el);
     const $ = s => el.querySelector(s);
-    let isOpen = false;
+    let isOpen = false, lastJust = null;
 
     function render() {
       const u = get(); if (!u || !u.current) return;
+      if (u.justUpdated) lastJust = u.justUpdated;     // continua dizendo "Atualizado para…" mesmo depois de marcado como visto
       const nv = u.update, cur = u.current.versionName, pct = Math.round((u.progress || 0) * 100);
       const has = !!nv && ["available", "downloading", "ready", "installing", "error"].includes(u.status);
       $(".upd-ver").innerHTML = has ? `<span class="old">${esc(cur)}</span><span class="arrow">→</span><b>${esc(nv.versionName)}</b>` : `<b>${esc(cur)}</b>`;
       const status = {
-        uptodate: u.justUpdated ? `Atualizado para a ${u.justUpdated}` : "Você está na versão mais recente",
-        idle: "Você está na versão mais recente",
-        checking: "Você está na versão mais recente",
+        uptodate: lastJust ? `Atualizado para a ${lastJust}` : "Você está na versão mais recente",
+        idle: lastJust ? `Atualizado para a ${lastJust}` : "Você está na versão mais recente",
+        checking: lastJust ? `Atualizado para a ${lastJust}` : "Você está na versão mais recente",
         available: "Nova versão disponível",
         downloading: `Baixando… ${pct}%`,
         ready: "Pronta para instalar",

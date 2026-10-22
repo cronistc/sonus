@@ -148,6 +148,20 @@
     // ---------- Atualizações ----------
     let upd = window.Sounos?.native ? Sounos.call("getUpdate") : null;
     const updUi = SounosUpdate.attach(ov.parentElement, () => upd);
+    // Acabou de atualizar: mostra "Nesta versão" sozinho, depois da abertura e da tela "Antes de começar".
+    // Enquanto espera ou está aberta, as dicas aguardam (__sonusNovidades).
+    if (upd?.justUpdated) {
+      window.__sonusNovidades = true;
+      const fim = () => { if (updUi.isOpen()) return setTimeout(fim, 400); window.__sonusNovidades = false; };
+      const tenta = () => {
+        if (window.__sonusAberturaFim === undefined || document.body.classList.contains("sonus-opening") || window.__sonusBoasVindas) return setTimeout(tenta, 400);
+        setTimeout(() => {
+          if (window.__sonusBoasVindas) return tenta();
+          updUi.open(); setTimeout(fim, 400);
+        }, 700);
+      };
+      tenta();
+    }
     const supUi = window.SounosSupport?.attach(ov.parentElement);
     const showSup = () => ov.querySelectorAll("[data-sup]").forEach(s => s.hidden = !window.SounosSupport?.available());
     window.SounosSupport?.onChange(showSup);
