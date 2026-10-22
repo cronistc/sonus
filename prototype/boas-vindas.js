@@ -37,9 +37,9 @@
     };
     for (const [id, concedida] of Object.entries(estados)) {
       const linha = tela.querySelector(`[data-permissao="${id}"]`);
-      const chave = linha?.querySelector(".sw");
-      if (!linha || !chave) continue;
-      chave.setAttribute("aria-checked", String(concedida));
+      const botao = linha?.querySelector(".pill");    // como em Configurações: "Permitir" abre a janela do Android
+      if (!linha || !botao) continue;
+      botao.textContent = concedida ? "Ativo" : "Permitir";
       linha.setAttribute("aria-label", `${nomes[id]}: ${concedida ? "ativa" : "permitir"}`);
       linha.disabled = concedida || (linha.dataset.ocupado === "true");
     }
@@ -58,7 +58,8 @@
     setTimeout(remover, 440);
   }
 
-  function mostrar() {
+  function mostrar(semEntrada) {
+    if (tela) return;
     tela = document.createElement("section");
     tela.className = "bv-tela";
     tela.setAttribute("role", "dialog");
@@ -73,15 +74,15 @@
           <div class="set-card">
             <button class="set-row bv-row" type="button" data-permissao="notificacoes">
               <div class="tx"><div class="t">Notificações</div><div class="d">Mostra os controles da música na notificação.</div></div>
-              <span class="sw" aria-hidden="true"></span>
+              <span class="pill" aria-hidden="true"></span>
             </button>
             <button class="set-row bv-row" type="button" data-permissao="bateria">
               <div class="tx"><div class="t">Tocar sem interrupções</div><div class="d">Ajuda a música a continuar em segundo plano.</div></div>
-              <span class="sw" aria-hidden="true"></span>
+              <span class="pill" aria-hidden="true"></span>
             </button>
             <button class="set-row bv-row" type="button" data-permissao="instalar">
               <div class="tx"><div class="t">Atualizar sozinho</div><div class="d">Permite instalar atualizações do Sonus.</div></div>
-              <span class="sw" aria-hidden="true"></span>
+              <span class="pill" aria-hidden="true"></span>
             </button>
           </div>
         </section>
@@ -89,7 +90,10 @@
       <footer class="bv-foot"><button class="upd-btn primary bv-comecar" type="button"><span>Começar</span></button></footer>`;
     phone.appendChild(tela);
     atualizar();
-    requestAnimationFrame(() => tela?.classList.add("visivel"));
+    if (semEntrada) {                       // a abertura do app termina revelando esta tela: já está no lugar
+      tela.classList.add("sem-entrada", "visivel");
+      requestAnimationFrame(() => requestAnimationFrame(() => tela?.classList.remove("sem-entrada")));
+    } else requestAnimationFrame(() => tela?.classList.add("visivel"));
 
     tela.addEventListener("click", e => {
       const botao = e.target.closest("[data-permissao]");
@@ -120,6 +124,7 @@
     }
   });
 
+  window.__sonusTelaInicial = () => { clearInterval(esperaAbertura); mostrar(true); };
   const esperaAbertura = setInterval(() => {
     if (window.__sonusAberturaFim === undefined || document.body.classList.contains("sonus-opening")) return;
     clearInterval(esperaAbertura);

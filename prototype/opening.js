@@ -1,6 +1,8 @@
 // Abertura (só na inicialização fria):
 // 1) "Sonus" caligráfico (o mesmo desenho do splash do Android) 2) as letras SE TRANSFORMAM, contorno a contorno,
-// na clave de sol 3) a clave sobe sozinha até o cabeçalho 4) encaixa como uma joia e só então a tela inicial aparece.
+// na clave de sol 3) a clave sobe sozinha até o cabeçalho 4) a tela inicial aparece num esmaecimento radial que nasce da clave.
+// Quando há uma tela para mostrar logo de cara ("Antes de começar" ou as novidades da versão), a clave NÃO sobe:
+// depois da transformação, o esmaecimento radial nasce dela ali no meio e já abre essa tela (window.__sonusTelaInicial).
 // Desenho quadro a quadro em canvas; os contornos casados vêm de opening-pontos.js (tools/abertura/gera.py).
 (() => {
   const CLAVE_ALTURA = 156;                         // altura da clave no meio da tela (px)
@@ -8,7 +10,7 @@
   const MORPH_INI = 300, MORPH_DUR = 1250, ATRASO_LETRA = 0, PAUSA = 220, SUBIDA = 950, ENCAIXE = 0, REVELA = 700;
   const MORPH_FIM = MORPH_INI + MORPH_DUR;
   const SOBE_INI = MORPH_FIM + PAUSA, SOBE_FIM = SOBE_INI + SUBIDA, T = SOBE_FIM + ENCAIXE + REVELA;
-  let medido = false, joia, desloc = 0, letrasOnus, layer, base, bg, canvas, ctx, off, octx, ratio, cor, fundo, alvo, clavePath, textoPath, D, pares, startAt, done = false;
+  let telaInicial = null, telaAberta = false, T_TELA = 0, medido = false, joia, desloc = 0, letrasOnus, layer, base, bg, canvas, ctx, off, octx, ratio, cor, fundo, alvo, clavePath, textoPath, D, pares, startAt, done = false;
   const clamp = v => Math.max(0, Math.min(1, v));
   const fase = (t, a, b) => clamp((t - a) / (b - a));
   const suave = t => t * t * (3 - 2 * t);
@@ -43,6 +45,8 @@
       b: Float32Array.from(p.b, v => v * s),
       o: p.o ? [p.o[0] * s, p.o[1] * s] : null,
     }));
+    telaInicial = typeof window.__sonusTelaInicial === "function" ? window.__sonusTelaInicial : null;
+    T_TELA = MORPH_FIM + PAUSA + REVELA;
     layer = document.createElement("div"); layer.className = "sonus-opening-layer";
     // começa na cor lisa do splash do Android e passa para o fundo do tema sem salto
     base = document.createElement("div"); base.className = "sonus-opening-bg";
@@ -84,6 +88,7 @@
   function paint(ms) {
     // centro alinhado com o splash do Android (que centra na tela inteira); vai se ajustando durante a morfose
     const cx = innerWidth / 2, cy = innerHeight / 2 + desloc * (1 - inOut(fase(ms, MORPH_INI, MORPH_FIM)));
+    if (telaInicial && ms >= MORPH_FIM) return paintTela(ms, cx, cy);   // (não limpa: a clave pronta fica no canvas)
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
@@ -144,8 +149,28 @@
     }
   }
 
+  // com tela inicial: a clave fica no meio; o esmaecimento radial nasce dela e revela a tela por baixo,
+  // enquanto a própria clave se desfaz (some com um leve desfoque)
+  function paintTela(ms, cx, cy) {
+    if (!telaAberta) {
+      telaAberta = true;
+      paint(MORPH_FIM - .01);                              // último quadro da transformação: a clave pronta
+      try { telaInicial(); } catch (e) { console.warn(e); }
+      window.__sonusTelaInicial = null;
+    }
+    bg.style.opacity = "1";
+    const r = fase(ms, MORPH_FIM + PAUSA, T_TELA);
+    if (r <= 0) return;
+    const raio = Math.hypot(innerWidth, innerHeight) * suave(r) * 1.1, borda = 140;
+    const m = `radial-gradient(circle at ${cx}px ${cy}px, transparent ${Math.max(0, raio - borda)}px, #000 ${raio}px)`;
+    base.style.maskImage = bg.style.maskImage = base.style.webkitMaskImage = bg.style.webkitMaskImage = m;
+    canvas.style.opacity = String(1 - suave(fase(r, 0, .7)));
+    canvas.style.filter = `blur(${(suave(r) * 8).toFixed(1)}px)`;
+  }
+
   function finish() {
     if (done) return;
+    if (telaInicial && !telaAberta) { telaAberta = true; try { telaInicial(); } catch {} window.__sonusTelaInicial = null; }
     done = true;
     window.__sonusAberturaFim = Date.now();             // as dicas esperam a abertura terminar
     document.body.classList.remove("sonus-opening");
@@ -157,8 +182,9 @@
   function frame(now) {
     if (done) return;
     const ms = now - startAt;
-    paint(Math.min(ms, T));
-    if (ms >= T) finish();
+    const fim = telaInicial ? T_TELA : T;
+    paint(Math.min(ms, fim));
+    if (ms >= fim) finish();
     else requestAnimationFrame(frame);
   }
 
