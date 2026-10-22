@@ -16,7 +16,7 @@
 .bv-row { cursor: pointer; }
 .bv-row:active:not(:disabled) { background: var(--chip-soft); }
 .bv-row:disabled { opacity: 1; cursor: default; }
-.bv-row .sw { display: block; pointer-events: none; }
+.bv-row .pill { pointer-events: none; flex-shrink: 0; }
 .bv-foot { flex-shrink: 0; padding: 12px 24px max(28px, env(safe-area-inset-bottom)); }
 .bv-comecar { height: 54px; }
 @media (prefers-reduced-motion: reduce) {

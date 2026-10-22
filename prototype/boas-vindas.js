@@ -37,9 +37,9 @@
     };
     for (const [id, concedida] of Object.entries(estados)) {
       const linha = tela.querySelector(`[data-permissao="${id}"]`);
-      const chave = linha?.querySelector(".sw");
-      if (!linha || !chave) continue;
-      chave.setAttribute("aria-checked", String(concedida));
+      const botao = linha?.querySelector(".pill");    // como em Configurações: "Permitir" abre a janela do Android
+      if (!linha || !botao) continue;
+      botao.textContent = concedida ? "Ativo" : "Permitir";
       linha.setAttribute("aria-label", `${nomes[id]}: ${concedida ? "ativa" : "permitir"}`);
       linha.disabled = concedida || (linha.dataset.ocupado === "true");
     }
@@ -74,15 +74,15 @@
           <div class="set-card">
             <button class="set-row bv-row" type="button" data-permissao="notificacoes">
               <div class="tx"><div class="t">Notificações</div><div class="d">Mostra os controles da música na notificação.</div></div>
-              <span class="sw" aria-hidden="true"></span>
+              <span class="pill" aria-hidden="true"></span>
             </button>
             <button class="set-row bv-row" type="button" data-permissao="bateria">
               <div class="tx"><div class="t">Tocar sem interrupções</div><div class="d">Ajuda a música a continuar em segundo plano.</div></div>
-              <span class="sw" aria-hidden="true"></span>
+              <span class="pill" aria-hidden="true"></span>
             </button>
             <button class="set-row bv-row" type="button" data-permissao="instalar">
               <div class="tx"><div class="t">Atualizar sozinho</div><div class="d">Permite instalar atualizações do Sonus.</div></div>
-              <span class="sw" aria-hidden="true"></span>
+              <span class="pill" aria-hidden="true"></span>
             </button>
           </div>
         </section>
