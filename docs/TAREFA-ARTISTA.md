@@ -32,3 +32,5 @@ Prints em docs/artista/. Commit; `git merge main`; compile limpo; instale; commi
    normalizado + duração parecida). Mostre as principais primeiro e um "Ver todas" (ou rolagem que continua carregando,
    como na busca). Compare a contagem com a página do artista no YouTube Music para 3 artistas (ex.: Djavan,
    Tribalistas, Anavitória) e registre.
+
+CONTINUAÇÃO: você já fez quase tudo neste ramo (commit "WIP artista"); parou nos testes finais. Confira com git show HEAD, termine o que faltar, teste TODOS os itens e entregue a tabela.
