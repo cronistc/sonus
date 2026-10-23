@@ -2,6 +2,8 @@
 
 Build instalado com `JAVA_HOME=~/Android/jdk17 ./gradlew clean assembleDebug -PversionCode=10` e `adb install -r`. Os testes foram feitos dentro do Sonus; os dados do app não foram apagados.
 
+Após o merge com main, o mesmo build limpo passou novamente e o APK foi reinstalado no A54; o app abriu com a sessão pausada, repetir e aleatório desligados.
+
 ## Tempos medidos
 
 Os tempos usam `performance.now()` no WebView até o próximo quadro em que título, capa e item selecionado já apontavam para a faixa nova. O tempo de imagem vai até o evento `load` da capa grande.
