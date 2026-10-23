@@ -28,3 +28,5 @@ Commit; `git merge main`; compile limpo; instale; commit.
 5. No player (e mini-player/páginas/linhas onde houver a linha de artistas): CADA nome de artista é tocável
    separadamente e abre a página DAQUELE artista (hoje tocar no 2º abre o 1º). Mantenha o visual (nomes separados por
    vírgula); só a área de toque de cada nome é separada.
+
+CONTINUAÇÃO: você já começou esta tarefa neste mesmo ramo (commit "WIP metadados"). Continue de onde parou (confira o que já foi feito com git show HEAD), termine TODOS os itens e teste tudo.
