@@ -6,6 +6,11 @@
 .pg.open { transform: none; }
 .pg.closing { transform: translateX(100%); transition-duration: .3s; }
 .pg.dragging { transition: none; }
+.pg .pg-back { position: fixed; z-index: 5; top: 8px; left: 12px; width: 42px; height: 42px; border-radius: 14px;
+               display: grid; place-items: center; color: var(--text); background: rgba(0,0,0,.3); backdrop-filter: blur(12px);
+               -webkit-tap-highlight-color: transparent; }
+.pg .pg-back:active { background: var(--chip); }
+.pg .pg-back svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .phone.has-page .mini { z-index: 57; }        /* com página aberta, o mini-player continua por cima dela */
 
 .pg .hero { position: relative; width: 100%; aspect-ratio: 1 / 1; background: linear-gradient(135deg, var(--c1), var(--c2)); overflow: hidden; }
@@ -33,6 +38,10 @@
           background: none; border: 0; transition: background .25s, color .25s, transform .1s; position: relative; }
 .pg .ab:active { transform: scale(.92); }
 .pg .ab.on { color: var(--text); background: var(--chip); }
+.pg .follow { width: auto; min-width: 91px; height: 40px; padding: 0 12px; display: flex; gap: 7px; border: 1px solid var(--line-strong);
+              border-radius: 14px; color: var(--text); font-size: calc(var(--fs) * 13px); font-weight: 600; white-space: nowrap; }
+.pg .follow svg { width: 18px; height: 18px; }
+.pg .follow.on { background: var(--chip); border-color: transparent; }
 .pg .ab svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .pg .ab svg.dl-icon { position: relative; z-index: 1; }
 .pg .ab .dl-disc { fill: none; }
@@ -46,6 +55,10 @@
 .pg .big:active { transform: scale(.94); }
 .pg .big svg { width: 26px; height: 26px; fill: currentColor; margin-left: 3px; }
 .pg .big:disabled { opacity: .35; }
+.pg .all-songs { display: block; margin: 12px auto 18px; min-height: 42px; padding: 0 18px; border: 1px solid var(--line-strong);
+                  border-radius: 22px; color: var(--text); font-size: calc(var(--fs) * 14px); font-weight: 600; }
+.pg .all-songs[hidden] { display: none; }
+.pg .all-songs:active { background: var(--chip); }
 
 .pg .list { padding: 6px 12px 140px; }
 .pg.artist .list, .pg.album .list { padding-bottom: 8px; }

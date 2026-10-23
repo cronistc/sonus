@@ -98,6 +98,7 @@ class Bridge(
             "openingReady" -> {
                 main.post {
                     web.alpha = 1f
+                    (web.context as? MainActivity)?.applyWindowTheme(app.library.settings().optString("theme", "gradient"))
                     // a palavra nativa fica por cima mais um instante (está no mesmo lugar do 1º quadro da animação):
                     // assim nunca aparece um quadro vazio na troca
                     main.postDelayed({
@@ -190,15 +191,14 @@ class Bridge(
                     .put("thumb", album.thumbs.maxByOrNull { it.width * it.height }?.url ?: JSONObject.NULL)
                     .put("items", Json.tracks(album.items))
             }
-            // página do artista: foto do canal oficial + músicas dele (busca de músicas filtrada pelo artista)
+            // Página do artista: catálogo do YouTube Music, com álbuns e singles completos.
             "artist" -> cachedAsync(a, "artist", a.getString("name")) {
                 val name = a.getString("name")
                 val thumb = a.optString("thumb").takeIf { it.isNotBlank() }
-                val norm = { s: String -> TitleNormalizer.key("", s) }
-                val target = norm(name)
+                val artistUrl = a.optString("url").takeIf { it.isNotBlank() }
                 val started = System.nanoTime()
-                val (artists, page) = coroutineScope {
-                    val ar = async {
+                val (photo, songs) = coroutineScope {
+                    val photoJob = async {
                         runCatching {
                             app.covers.resolveArtistPhoto(
                                 name,
@@ -208,33 +208,21 @@ class Bridge(
                             )
                         }.getOrNull()
                     }
-                    val so = async {
+                    val songsJob = async {
                         val searchStarted = System.nanoTime()
-                        app.source.search(name, SearchFilter.SONGS).also {
-                            android.util.Log.i("Sonus", "Bridge.artist.searchSongs_ms=${(System.nanoTime() - searchStarted) / 1_000_000} resultados=${it.items.size}")
-                        }
+                        runCatching { app.source.artistTracks(name, artistUrl) { android.util.Log.i("Sonus", it) } }
+                            .onFailure { android.util.Log.w("Sonus", "catálogo YouTube Music falhou; usando busca filtrada para $name", it) }
+                            .getOrElse { fallbackArtistTracks(name) }
+                            .also { android.util.Log.i("Sonus", "Bridge.artist.catalogo_ms=${(System.nanoTime() - searchStarted) / 1_000_000} resultados=${it.size}") }
                     }
-                    ar.await() to so.await()
+                    photoJob.await() to songsJob.await()
                 }
-                // nome inteiro ou palavras inteiras ("Menos É Mais" ↔ "Grupo Menos É Mais"); "Ana" não pega "Mariana"
-                val within = { long: String, short: String -> short.length > 2 && " $long ".contains(" $short ") }
-                val by = { t: Track -> t.artists.ifEmpty { listOf(t.artist) }.map(norm).any { it == target || within(it, target) || within(target, it) } }
-                val songs = page.items.filter(by).toMutableList()
-                var next = page.nextPage
-                var pages = 0
-                val moreStarted = System.nanoTime()
-                while (songs.size < 30 && next != null && pages < 2) {
-                    pages++
-                    val more = runCatching { app.source.search(name, SearchFilter.SONGS, next) }.getOrNull() ?: break
-                    more.items.filter(by).filter { m -> songs.none { it.id == m.id } }.forEach(songs::add)
-                    next = more.nextPage
-                }
-                if (pages > 0) android.util.Log.i("Sonus", "Bridge.artist.moreSongs_ms=${(System.nanoTime() - moreStarted) / 1_000_000} paginas=$pages")
                 app.resolver.prefetch(songs.take(2))
-                android.util.Log.i("Sonus", "Bridge.artist_ms=${(System.nanoTime() - started) / 1_000_000} nome=$name")
-                JSONObject().put("name", artists?.name ?: name).put("url", artists?.channelUrl ?: JSONObject.NULL)
-                    .put("thumb", artists?.url ?: JSONObject.NULL)
-                    .put("items", Json.tracks(MusicPicks.clean(songs)))
+                val unique = songs.distinctBy { it.id }
+                android.util.Log.i("Sonus", "Bridge.artist_ms=${(System.nanoTime() - started) / 1_000_000} nome=$name musicas=${unique.size}")
+                JSONObject().put("name", photo?.name ?: name).put("url", photo?.channelUrl ?: artistUrl ?: JSONObject.NULL)
+                    .put("thumb", photo?.url ?: JSONObject.NULL)
+                    .put("items", Json.tracks(unique)).put("total", unique.size)
             }
             "suggest" -> cachedAsync(a, "suggest", a.getString("q")) { JSONObject().put("items", JSONArray(app.source.suggestions(a.getString("q")).take(6))) }
             "prefetch" -> app.resolver.prefetch(Json.tracks(a.optJSONArray("tracks")))
@@ -272,6 +260,10 @@ class Bridge(
             }
             "setSettings" -> { app.library.saveSettings(a); player.applySettings(a); app.applyStartTheme(a.optString("theme", "gradient"))
                 (web.context as? MainActivity)?.applyWindowTheme(a.optString("theme", "gradient")) }
+            "setFollowingArtists" -> {
+                val items = a.optJSONArray("items") ?: JSONArray()
+                if (app.userData.save("sounos.following", items.toString())) player.setFollowingArtists(items)
+            }
             // atualizações
             "checkUpdate" -> app.updater.check()
             "installUpdate" -> app.updater.install()
@@ -309,6 +301,29 @@ class Bridge(
         return JSONObject().put("downloaded", Json.tracks(downloaded)).put("cached", Json.tracks(cached))
     }
 
+    /** Plano de reserva para quando o endpoint de catálogo do YouTube Music estiver indisponível. */
+    private suspend fun fallbackArtistTracks(name: String): List<Track> = withContext(Dispatchers.IO) {
+        val norm = { value: String -> TitleNormalizer.key("", value).trim() }
+        val target = norm(name)
+        val matches = { track: Track ->
+            track.artists.ifEmpty { listOf(track.artist) }.map(norm).any { artist ->
+                artist == target || (target.length > 2 && " $artist ".contains(" $target ")) ||
+                    (artist.length > 2 && " $target ".contains(" $artist "))
+            }
+        }
+        val songs = mutableListOf<Track>()
+        var page = app.source.search(name, SearchFilter.SONGS)
+        var next = page.nextPage
+        songs += page.items.filter(matches)
+        var pages = 0
+        while (next != null && pages++ < 40) {
+            page = runCatching { app.source.search(name, SearchFilter.SONGS, next) }.getOrNull() ?: break
+            page.items.filter(matches).filter { track -> songs.none { it.id == track.id } }.forEach(songs::add)
+            next = page.nextPage
+        }
+        MusicPicks.clean(songs)
+    }
+
     /** Busca na rede em segundo plano; responde com o mesmo reqId que a interface mandou. */
     private fun async(a: JSONObject, work: suspend () -> JSONObject) {
         val req = a.optString("reqId")
@@ -333,6 +348,7 @@ class Bridge(
             if (cached != null) {
                 val first = JSONObject(cached.toString())
                 if (method == "search") first.put("hasMore", false) // o cursor do NewPipe não sobrevive à sessão
+                first.put("isCached", true)
                 send("reply", first.put("reqId", req))
             }
 
@@ -345,7 +361,7 @@ class Bridge(
                 return@launch
             }
 
-            val result = fresh.getOrThrow()
+            val result = fresh.getOrThrow().put("isCached", false)
             val writeStarted = System.nanoTime()
             val trim = runCatching { withContext(Dispatchers.IO) { app.metadata.write(cacheKey, result.toString()) } }
                 .onFailure { android.util.Log.w("Sonus", "cache metadados gravação falhou metodo=$method", it) }.getOrNull()

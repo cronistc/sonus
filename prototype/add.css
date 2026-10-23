@@ -90,9 +90,11 @@
 /* menu "⋮" das linhas de música */
 .tr-more { width: 36px; height: 40px; margin-right: -6px; flex-shrink: 0; display: grid; place-items: center; color: var(--text-dim, #a1a1aa); cursor: pointer; border-radius: 10px; -webkit-tap-highlight-color: transparent; }
 .tr-more svg { width: 22px; height: 22px; fill: currentColor; stroke: none; }
-/* tocar no ⋮ acende a linha inteira (o :active da linha), nunca um quadradinho só nos pontos */
+/* O realce de toque fica restrito ao botão dos três pontos. */
 .tr-more:focus { outline: none; }
-.tr.tm-on, .s-row.tm-on { background: var(--chip-soft, rgba(255,255,255,.06)); }
+.tr-more:active, .tr-more.tm-on { background: var(--chip-soft, rgba(255,255,255,.06)); }
+.tr:has(.tr-more:active) { background: var(--bg); }
+.s-row:has(.tr-more:active) { background: transparent; }
 .s-row .tr-more { margin-right: -10px; }
 .tm-list { padding: 0 0 calc(14px + env(safe-area-inset-bottom, 0px)); }
 .tm-row { gap: 16px; padding: 14px 20px; }

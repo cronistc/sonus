@@ -39,7 +39,11 @@ window.SounosTrackMenu = (() => {
       if (act === "add") setTimeout(() => window.__sounosAdd?.open(t), 120);
       else if (act === "dl") Sounos.call("download", { track: t });
       else if (act === "rm") Sounos.call("removeDownload", { id: t.id });
-      else if (act === "artist") setTimeout(() => window.SounosPages?.openArtist(Sounos.artistLine(t).split(",")[0].trim() || t.artist, {}), 120);
+      else if (act === "artist") {
+        window.__sonusArtistIntentAt = performance.now();
+        setTimeout(() => window.SounosPages?.openArtist(Sounos.artistLine(t).split(",")[0].trim() || t.artist,
+          { __intentAt: window.__sonusArtistIntentAt, url: t.artistUrl || "" }), 30);
+      }
     });
     window.addEventListener("popstate", () => { if (isOpen && !history.state?.trackMenu) { pushed = false; close(true); } });
   }
@@ -66,7 +70,7 @@ window.SounosTrackMenu = (() => {
   function close(fromPop = false) {
     if (!isOpen) return;
     isOpen = false; ov.classList.remove("open");
-    document.querySelectorAll(".tm-on").forEach(r => r.classList.remove("tm-on"));
+    document.querySelectorAll(".tr-more.tm-on").forEach(b => b.classList.remove("tm-on"));
     if (!fromPop && pushed) { pushed = false; history.back(); }
   }
 
@@ -75,8 +79,8 @@ window.SounosTrackMenu = (() => {
     const b = e.target.closest?.(".tr-more"); if (!b) return;
     e.stopPropagation(); e.preventDefault();
     // a linha fica acesa enquanto o menu dela está aberto
-    document.querySelectorAll(".tm-on").forEach(r => r.classList.remove("tm-on"));
-    b.closest(".tr, .s-row")?.classList.add("tm-on");
+    document.querySelectorAll(".tr-more.tm-on").forEach(x => x.classList.remove("tm-on"));
+    b.classList.add("tm-on");
     open(b.dataset.tm);
   }, true);
 

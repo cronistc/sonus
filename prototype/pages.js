@@ -36,6 +36,9 @@ window.SounosPages = (() => {
     grip: '<svg viewBox="0 0 24 24"><path d="M5 9h14M5 15h14"/></svg>',
     rm: '<svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg>',
     note: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>',
+    back: '<svg viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg>',
+    follow: '<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>',
+    following: '<svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg>',
   };
 
   let phone, opts = {}, stack = [], latestState = null; // páginas abertas (uma por cima da outra)
@@ -63,7 +66,8 @@ window.SounosPages = (() => {
     stack.push(page);
     phone.classList.add("has-page");
     page.d = (history.state?.d || 0) + 1;
-    history.pushState({ page: kind, d: page.d }, "");
+    history.pushState({ ...(history.state || {}), page: kind, d: page.d }, "");
+    if (window.__playerOpen) window.__playerShell?.lowerForPage?.();
     requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add("open")));
     swipeToClose(page);
     return page;
@@ -76,10 +80,20 @@ window.SounosPages = (() => {
     page.el.classList.add("closing");
     page.el.style.transform = "";
     stack = stack.filter(p => p !== page);
-    if (!stack.length) setTimeout(() => !stack.length && phone.classList.remove("has-page"), 320);
+    if (!stack.length) setTimeout(() => {
+      if (stack.length) return;
+      phone.classList.remove("has-page");
+      window.__playerShell?.restoreAfterPage?.();
+    }, 320);
     setTimeout(() => page.el.remove(), 320);
     if (!fromPop) history.back();
     opts.onChange?.();
+  }
+  function addBack(page) {
+    const b = document.createElement("button");
+    b.className = "pg-back"; b.type = "button"; b.setAttribute("aria-label", "Voltar"); b.innerHTML = I.back;
+    b.addEventListener("click", e => { e.stopPropagation(); close(page); });
+    page.el.appendChild(b);
   }
   // puxar para a direita fecha (como voltar)
   function swipeToClose(page) {
@@ -193,6 +207,7 @@ window.SounosPages = (() => {
       </div>
       <div class="list"></div>
       ${downloads ? "" : '<input type="file" accept="image/*" hidden>'}`;
+    addBack(page);
     const $ = s => el.querySelector(s);
     const nameEl = $(".name"), descEl = $(".desc"), list = $(".list"), file = $("input[type=file]");
 
@@ -348,6 +363,7 @@ window.SounosPages = (() => {
       <div class="acts"><button class="big" data-a="play" aria-label="Tocar" disabled>${I.play}</button>
         <button class="ab" data-a="shuffle" aria-label="Aleatório">${I.shuffle}</button></div>
       <div class="list"><div class="sec">Músicas</div><div class="songs">${'<div class="sk"></div>'.repeat(6)}</div></div>`;
+    addBack(page);
     const $ = s => el.querySelector(s);
     $(".name").textContent = name;
     $(".sub").textContent = handle(artist);
@@ -407,6 +423,7 @@ window.SounosPages = (() => {
         <button class="ab" data-a="shuffle" aria-label="Aleatório" ${list.length ? "" : "disabled"}>${I.shuffle}</button>
       </div>
       <div class="list">${list.length ? list.map((t, i) => rowHtml(t, i)).join("") : '<div class="note">Baixe músicas ou conecte à internet para encontrar músicas em cache.</div>'}</div>`;
+    addBack(page);
     const markNow = () => { const id = nowId(); el.querySelectorAll(".tr").forEach(r => r.classList.toggle("now", r.dataset.id === id)); };
     page.markNow = markNow;
     el.addEventListener("click", e => {
@@ -424,36 +441,76 @@ window.SounosPages = (() => {
   function openArtist(name, artistInfo = {}) {
     if (name && typeof name === "object") { artistInfo = name; name = artistInfo.name; }
     name = String(name || "").trim() || "Artista";
+    const intentAt = Number(artistInfo.__intentAt || window.__sonusArtistIntentAt) || performance.now();
+    window.__sonusArtistIntentAt = 0;
     const photoUrl = Sounos.coverUrl({ id: "artist:" + (key(name) || "x"), name, thumb: artistInfo.thumb || "" });
-    remember({ type: "a", name, thumb: artistInfo.thumb || "" });
+    remember({ type: "a", name, thumb: artistInfo.thumb || "", url: artistInfo.url || "" });
     const page = mount("artist");
     const el = page.el;
-    let songs = [], albums = [];
+    let songs = [], albums = [], showAllSongs = false, artistThumb = artistInfo.thumb || "";
     // primeiro o que já se sabe (histórico), depois o resto da rede
     const hist = (() => { try { return (Sounos.call("getHistory") || []).map(e => e.track).filter(Sounos.isSong); } catch { return []; } })();
     const mine = []; hist.forEach(t => { if (key(t.artist) === key(name) && !mine.some(m => m.id === t.id)) mine.push(t); });
 
     el.innerHTML = `<div class="hero" style="background:var(--surface)"><div class="img" style="background-image:url('${photoUrl.replace(/'/g, "%27")}')"></div></div>
-      <div class="ph"><div class="name">${handle(name)}</div><div class="sub">Artista</div></div>
+      <div class="ph"><div class="name">${esc(handle(name))}</div><div class="sub">Artista</div></div>
       <div class="acts">
         <button class="big" data-a="play" aria-label="Tocar" disabled>${I.play}</button>
         <button class="ab" data-a="shuffle" aria-label="Aleatório">${I.shuffle}</button>
+        <button class="ab follow" data-a="follow" aria-label="Seguir artista"></button>
       </div>
       <div class="list">${mine.length ? `<div class="sec">Você ouviu</div>` + mine.slice(0, 5).map((t, i) => rowHtml(t, "m" + i, "", false, false)).join("") : ""}
         <div class="albums"></div>
-        <div class="sec">Músicas</div><div class="songs">${'<div class="sk"></div>'.repeat(6)}</div></div>`;
+        <div class="sec">Músicas</div><div class="songs">${'<div class="sk"></div>'.repeat(6)}</div>
+        <button class="all-songs" hidden></button></div>`;
+    addBack(page);
     const $ = s => el.querySelector(s);
+    const followingKey = key(name);
+    const readFollowing = () => {
+      try { const v = JSON.parse(localStorage.getItem("sounos.following") || "[]"); return Array.isArray(v) ? v.filter(x => x && x.name && x.key) : []; } catch { return []; }
+    };
+    const paintFollow = () => {
+      const b = $("[data-a=follow]"), on = readFollowing().some(x => x.key === followingKey);
+      b.classList.toggle("on", on); b.innerHTML = `${on ? I.following : I.follow}<span>${on ? "Seguindo" : "Seguir"}</span>`;
+      b.setAttribute("aria-label", on ? "Deixar de seguir artista" : "Seguir artista");
+    };
+    const sameSong = (a, b) => {
+      const normTitle = t => String(t?.title || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
+      if (!normTitle(a) || normTitle(a) !== normTitle(b)) return false;
+      const x = Number(a.dur || 0), y = Number(b.dur || 0);
+      return !x || !y || Math.abs(x - y) <= Math.max(5, Math.max(x, y) * .03);
+    };
+    const heard = mine.slice(0, 5);
+    const all = () => {
+      const out = [...heard];
+      for (const t of songs) if (!out.some(x => x.id === t.id || sameSong(x, t))) out.push(t);
+      return out;
+    };
+    const drawSongs = () => {
+      const shown = showAllSongs ? songs : songs.slice(0, 20);
+      $(".songs").innerHTML = songs.length ? shown.map((t, i) => rowHtml(t, i, "", false, false)).join("") : `<div class="note">Nenhuma música encontrada.</div>`;
+      const more = $(".all-songs");
+      more.hidden = songs.length <= 20;
+      more.textContent = showAllSongs ? "Mostrar principais" : `Ver todas · ${count(all().length)}`;
+      markNow();
+    };
+    paintFollow();
     if (mine.length) $("[data-a=play]").disabled = false;
 
     const applyArtist = r => {
       if (page.closing) return;
       if (r.error) { $(".songs").innerHTML = `<div class="note">Não deu para carregar agora.</div>`; return; }
-      songs = r.items || [];
+      songs = (r.items || []).filter(t => !heard.some(x => x.id === t.id || sameSong(x, t)));
+      artistThumb = r.thumb || artistThumb;
       $(".name").textContent = handle(String(r.name || name || "Artista").trim() || "Artista");
-      $(".sub").textContent = songs.length ? `Artista · ${count(songs.length)}` : "Artista";
+      const total = all().length;
+      $(".sub").textContent = total ? `Artista · ${count(total)}` : "Artista";
       $("[data-a=play]").disabled = !(songs.length || mine.length);
-      $(".songs").innerHTML = songs.length ? songs.map((t, i) => rowHtml(t, i, "", false, false)).join("") : `<div class="note">Nenhuma música encontrada.</div>`;
-      markNow();
+      drawSongs();
+      if (r.isCached) requestAnimationFrame(() => {
+        const metric = { name, cached: true, cacheMs: Math.round(performance.now() - intentAt), tracks: total };
+        (window.__sonusArtistMetrics ||= []).push(metric); window.__sonusLastArtistMetric = metric;
+      });
     };
     const applyAlbums = r => {
       if (page.closing || r.error) return;
@@ -482,7 +539,13 @@ window.SounosPages = (() => {
         if (ev.method === "searchAlbums" && ev.cacheKey === Sounos.cacheKey("searchAlbums", name)) applyAlbums(ev.payload || {});
       }),
     ];
-    Sounos.ask("artist", { name, thumb: artistInfo.thumb || "" }).then(applyArtist);
+    Sounos.ask("artist", { name, thumb: artistInfo.thumb || "", url: artistInfo.url || "" }).then(r => {
+      applyArtist(r);
+      if (!window.__sonusLastArtistMetric || window.__sonusLastArtistMetric.name !== name) requestAnimationFrame(() => {
+        const metric = { name, cached: false, readyMs: Math.round(performance.now() - intentAt), tracks: all().length };
+        (window.__sonusArtistMetrics ||= []).push(metric); window.__sonusLastArtistMetric = metric;
+      });
+    });
     // A busca de álbuns é independente das músicas, para a página aparecer sem esperar ambas.
     Sounos.ask("searchAlbums", { q: name }).then(applyAlbums);
 
@@ -490,12 +553,28 @@ window.SounosPages = (() => {
     page.markNow = markNow;
     markNow();
     setTimeout(() => { if (!page.closing) window.SounosTips?.offer("artist"); }, 450);
-    const all = () => songs.length ? songs : mine;
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (page.closing) return;
+      const metric = { name, visibleMs: Math.round(performance.now() - intentAt), heard: heard.length, placeholders: !songs.length };
+      (window.__sonusArtistMetrics ||= []).push(metric); window.__sonusLastArtistMetric = metric;
+    }));
     el.addEventListener("click", e => {
       const a = e.target.closest("[data-a]")?.dataset.a;
       const ctx = { type: "artist", name };
       if (a === "play") return togglePagePlayback(page, "artist", name, all(), ctx);
       if (a === "shuffle") return playFrom(all(), 0, ctx, true);
+      if (a === "follow") {
+        const list = readFollowing(), index = list.findIndex(x => x.key === followingKey);
+        if (index >= 0) list.splice(index, 1);
+        else list.unshift({ name, key: followingKey, thumb: artistThumb || artistInfo.thumb || "", since: new Date().toISOString() });
+        const json = JSON.stringify(list);
+        try { localStorage.setItem("sounos.following", json); } catch { window.__sounosSave?.("sounos.following", json); }
+        window.__sounosSave?.("sounos.following", json);
+        Sounos.call("setFollowingArtists", { items: list });
+        window.dispatchEvent(new CustomEvent("sounos:following", { detail: list }));
+        paintFollow(); return;
+      }
+      if (e.target.closest(".all-songs")) { showAllSongs = !showAllSongs; return drawSongs(); }
       const album = e.target.closest("[data-album]"); if (album) { const x = albums[+album.dataset.album]; return openAlbum(x.url, x.name, x.artist, x.thumb); }
       const row = e.target.closest(".tr"); if (!row) return;
       const i = row.dataset.i;

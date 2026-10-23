@@ -227,6 +227,10 @@
       place(iconRect());
       setTimeout(() => { if (!isOpen) bar.classList.add("idle"); }, 400);
       setTimeout(() => { window.SounosTips?.offer("home"); window.SounosTips?.offer("offline"); window.SounosTips?.offer("mini"); }, 430);
+      setTimeout(() => {
+        const shell = window.parent !== window ? window.parent.__playerShell : window.__playerShell;
+        shell?.raiseAfterSearch?.();
+      }, 430);
       if (!fromPop && pushed) { pushed = false; window.history.back(); }
     }
     // o "voltar" do celular fecha a busca antes de sair da tela
@@ -369,7 +373,7 @@
       if (type === "nt") return playTrack(resultTracks[+id]);
       if (type === "na") {
         const a = resultArtists[+id]; if (!a) return;
-        rememberTerm(); remember({ type: "a", name: a.name, thumb: a.thumb });
+        rememberTerm(); remember({ type: "a", name: a.name, thumb: a.thumb, url: a.url });
         return openArtist(a.name, { ...a, photoUrl: artistPic(a) }) || (input.value = toHandle(a.name), bar.classList.add("has-text"), showResults(a.name));
       }
       if (type === "nal") { const a = resultAlbums[+id]; if (!a) return; rememberTerm(); return openAlbum(a.url, a.name, a.artist, a.thumb); }

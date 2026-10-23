@@ -55,7 +55,7 @@ class MainActivity : Activity() {
         coldOpening = true
         val theme = SounosApp.instance.library.settings().optString("theme", "gradient")
         val windowColor = windowColor(theme)
-        applyWindowTheme(theme)
+        applyWindowTheme(theme, opening = true)
         web = WebView(this).apply {
             setBackgroundColor(windowColor)
             alpha = 0f
@@ -117,14 +117,29 @@ class MainActivity : Activity() {
     private fun windowColor(theme: String) = if (theme == "light") Color.rgb(244, 244, 246) else Color.rgb(14, 14, 16)
 
     /** Barras do sistema (status e navegação) na cor do tema; chamado ao abrir e sempre que o tema muda. */
-    fun applyWindowTheme(theme: String) {
+    fun applyWindowTheme(theme: String, opening: Boolean = false) {
         val color = windowColor(theme)
-        window.statusBarColor = color
+        // Durante o splash vale o fundo noturno compartilhado por Escuro e Gradiente. Depois da
+        // abertura, o Gradiente usa a cor do primeiro ponto do fundo da tela; a navegação acompanha a base.
+        val status = if (theme == "gradient" && !opening) Color.rgb(32, 67, 152) else color
+        window.statusBarColor = status
         window.navigationBarColor = color
         window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(color))
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            window.isNavigationBarContrastEnforced = false
+            window.isStatusBarContrastEnforced = false
+        }
+        // Materialize o DecorView antes de pedir o InsetsController. No splash, onCreate ainda
+        // não passou por setContentView e PhoneWindow.insetsController pode falhar com DecorView nulo.
+        val decor = window.decorView
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val mask = android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or
+                android.view.WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
+            val appearance = if (theme == "light") mask else 0
+            window.insetsController?.setSystemBarsAppearance(appearance, mask)
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             @Suppress("DEPRECATION")
-            window.decorView.systemUiVisibility = if (theme == "light") {
+            decor.systemUiVisibility = if (theme == "light") {
                 android.view.View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or android.view.View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
             } else 0
         }

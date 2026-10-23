@@ -243,7 +243,8 @@
   $("artist").addEventListener("click", () => {
     const t = track(), P = window.parent !== window && window.parent.SounosPages;
     if (!t || !P) return;
-    window.parent.__playerShell.closeThen(() => P.openArtist(t.raw.artist));
+    window.parent.__sonusArtistIntentAt = performance.now();
+    P.openArtist(t.raw.artist, { __intentAt: window.parent.__sonusArtistIntentAt });
   });
 
   // ---------- "+" com a música de verdade ----------

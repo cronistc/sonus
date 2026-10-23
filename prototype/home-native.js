@@ -63,14 +63,21 @@
           <div class="ini" style="font-size:44px">♪</div>${meta("Busque uma música", "para começar")}</button>`;
     }
 
-    // seus artistas: os que você mais ouve (no app ainda não existe o botão "seguir")
+    // artistas seguidos aparecem primeiro; depois vêm os mais ouvidos que ainda não foram seguidos.
     const by = new Map();
     for (const e of list) { const a = e.track.artist; if (!a) continue; const x = by.get(a) || { n: 0, t: e.track }; x.n++; by.set(a, x); }
-    const arts = [...by.entries()].sort((a, b) => b[1].n - a[1].n).slice(0, 12);
+    let followed = [];
+    try { const saved = JSON.parse(localStorage.getItem("sounos.following") || "[]"); if (Array.isArray(saved)) followed = saved.filter(x => x?.name && x?.key); } catch {}
+    const ordered = followed.map(x => ({ name: x.name, thumb: x.thumb || "", following: true }));
+    const used = new Set(ordered.map(x => x.key || artistKey(x.name)));
+    [...by.entries()].sort((a, b) => b[1].n - a[1].n).forEach(([name, x]) => {
+      const k = artistKey(name); if (!used.has(k)) { used.add(k); ordered.push({ name, track: x.t }); }
+    });
+    const arts = ordered.slice(0, 12);
     artistsSec.style.display = arts.length ? "" : "none";
-    $("artists").innerHTML = arts.map(([name, x]) => {
-      const k = items.push({ kind: "artist", name }) - 1;
-      const photo = Sounos.coverUrl({ id: "artist:" + (artistKey(name) || "x"), name }).replace(/&/g, "&amp;").replace(/'/g, "%27");
+    $("artists").innerHTML = arts.map(x => {
+      const name = x.name, k = items.push({ kind: "artist", name, thumb: x.thumb || "" }) - 1;
+      const photo = Sounos.coverUrl({ id: "artist:" + (artistKey(name) || "x"), name, thumb: x.thumb || "" }).replace(/&/g, "&amp;").replace(/'/g, "%27");
       return `<button class="ar tap" data-k="${k}" style="text-align:center"><div class="pic" style="background:url('${photo}') center/cover no-repeat,${grad(Sounos.hashColors(name))}"></div><div class="n">${Sounos.handle(name)}</div></button>`;
     }).join("");
     renderPlaylists();
@@ -103,8 +110,9 @@
     else if (it.kind === "mineTrack") { Sounos.call("playQueue", { tracks: it.tracks, index: it.index, context: { type: "mine" } }); openPlayer(); }
     else if (it.kind === "playlist") pages.openPlaylist(it.p.id);
     else if (it.kind === "downloads") pages.openDownloads();
-    else if (it.kind === "artist") pages.openArtist(it.name);
+    else if (it.kind === "artist") { window.__sonusArtistIntentAt = performance.now(); pages.openArtist(it.name, { thumb: it.thumb || "", __intentAt: window.__sonusArtistIntentAt }); }
   }, true);
+  window.addEventListener("sounos:following", renderHome);
   // "Nova playlist": abre o fluxo sem guardar nada até a confirmação.
   document.addEventListener("click", e => {
     if (!e.target.closest("#playlists .blk.new")) return;
@@ -121,11 +129,11 @@
     // telas por cima (configurações, novidades/atualização, apoio, "adicionar à playlist"): fecham pelo histórico
     const st = history.state;
     if (st && (st.settings || st.upd || st.addSheet)) { history.back(); return true; }
+    if (pages.isOpen()) { pages.closeTop(); return true; }
     if (window.__playerOpen) {
       if (window.__playerBack?.()) return true;            // o player fecha o que tiver dentro dele (letra, fila…)
       window.__playerShell?.close?.(); return true;        // senão, desce o player
     }
-    if (pages.isOpen()) { pages.closeTop(); return true; }
     if (window.homeSearch?.isOpen?.()) { window.homeSearch.close(); return true; }
     return false;
   };
@@ -282,6 +290,15 @@
     },
     // fecha e, depois que o "voltar" do histórico terminar, faz outra coisa (ex.: abrir a página do artista)
     closeThen(fn) { if (isOpen && pushed) { afterBack = fn; shell.close(); } else { shell.close(); fn(); } },
+    lowerForPage() { if (isOpen) f.style.zIndex = "55"; },
+    restoreAfterPage() {
+      if (!isOpen) return;
+      setTimeout(() => {
+        if (!isOpen || pages.isOpen()) return;
+        f.style.zIndex = $("phone").querySelector(".search-ov.open") ? "49" : "60";
+      }, 330);
+    },
+    raiseAfterSearch() { if (isOpen && !pages.isOpen()) f.style.zIndex = "60"; },
     close(fromPop) {
       const wasOpen = isOpen;
       isOpen = false;

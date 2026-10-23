@@ -19,6 +19,7 @@ import app.sounos.engine.Loudness
 import app.sounos.extractor.MusicPicks
 import app.sounos.extractor.Sounos
 import app.sounos.extractor.AudioQuality
+import app.sounos.extractor.CoverStore
 import app.sounos.extractor.QueuePrefetcher
 import app.sounos.extractor.ResolvedAudio
 import app.sounos.extractor.ResolvedTrack
@@ -54,6 +55,7 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
     var shuffle = false; private set
     var context: JSONObject = JSONObject().put("type", "radio"); private set
     var suggestions = listOf<Track>(); private set
+    @Volatile private var followedArtistKeys: Set<String> = loadFollowingKeys()
     var current: ResolvedTrack? = null; private set
     var durationMs = 0L; private set
     var loading = false; private set
@@ -139,6 +141,18 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
         queue.add(index + 1, t); index++
         resumeAtMs = 0
         startCurrent()
+    }
+
+    /** Atualizado pela ponte quando a pessoa segue ou deixa de seguir um artista. */
+    fun setFollowingArtists(items: JSONArray) {
+        followedArtistKeys = (0 until items.length()).mapNotNull { index ->
+            items.optJSONObject(index)?.let { entry ->
+                entry.optString("key").takeIf(String::isNotBlank) ?: entry.optString("name").takeIf(String::isNotBlank)?.let { CoverStore.artistKey(it) }
+            }
+        }.toSet()
+        computeSuggestions()
+        if (isRadio() && index >= queue.size - 2) topUpRadio()
+        updatePrefetch(); emitState()
     }
 
     fun toggle() = if (engine.isPlaying || loading && playWhenReady) pause() else play()
@@ -483,7 +497,7 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
     /** Música solta: quando a fila está acabando, emenda músicas relacionadas (lista que nunca acaba). */
     private fun topUpRadio(): Boolean {
         val source = current?.related?.takeIf { it.isNotEmpty() } ?: if (online) emptyList() else offlineTracks()
-        val related = MusicPicks.clean(source, exclude = queue).take(10)
+        val related = mixFollowed(MusicPicks.clean(source, exclude = queue)).take(10)
         if (related.isEmpty()) return false
         queue.addAll(related); original = original + related
         return true
@@ -491,8 +505,33 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
 
     private fun computeSuggestions() {
         val source = current?.related?.takeIf { it.isNotEmpty() } ?: if (online) emptyList() else offlineTracks()
-        suggestions = MusicPicks.clean(source, exclude = listOfNotNull(currentTrack)).take(12)
+        suggestions = mixFollowed(MusicPicks.clean(source, exclude = listOfNotNull(currentTrack))).take(12)
     }
+
+    /** Uma música seguida entra a cada cinco posições quando o próprio rádio a recomenda. */
+    private fun mixFollowed(items: List<Track>): List<Track> {
+        if (followedArtistKeys.isEmpty()) return items
+        val followed = items.filter { track -> track.artists.ifEmpty { listOf(track.artist) }.any { CoverStore.artistKey(it) in followedArtistKeys } }.toMutableList()
+        if (followed.isEmpty()) return items
+        val other = items.filterNot { track -> track.artists.ifEmpty { listOf(track.artist) }.any { CoverStore.artistKey(it) in followedArtistKeys } }.toMutableList()
+        val mixed = ArrayList<Track>(items.size)
+        while (mixed.size < items.size) {
+            val addFollowed = mixed.size % 5 == 4 && followed.isNotEmpty()
+            val next = if (addFollowed) followed.removeAt(0) else if (other.isNotEmpty()) other.removeAt(0) else followed.removeAt(0)
+            mixed += next
+        }
+        return mixed
+    }
+
+    private fun loadFollowingKeys(): Set<String> = runCatching {
+        val saved = app.userData.load("sounos.following") ?: return@runCatching emptySet()
+        val list = JSONArray(saved)
+        (0 until list.length()).mapNotNull { index ->
+            list.optJSONObject(index)?.let { entry ->
+                entry.optString("key").takeIf(String::isNotBlank) ?: entry.optString("name").takeIf(String::isNotBlank)?.let { CoverStore.artistKey(it) }
+            }
+        }.toSet()
+    }.getOrDefault(emptySet())
 
     private fun radioCacheKey(track: Track) = "radio:${track.videoId ?: track.id.removePrefix("yt:")}"
 

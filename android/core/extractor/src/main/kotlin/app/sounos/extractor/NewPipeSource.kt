@@ -142,6 +142,20 @@ class NewPipeSource(private val service: StreamingService = ServiceList.YouTube)
 
     private fun isSong(s: StreamInfoItem) = s.uploaderName.orEmpty().endsWith(" - Topic", ignoreCase = true)
     private val ytm by lazy { YtMusicRadio(Sounos.http) }
+    private val ytmArtists by lazy { YtMusicArtist(Sounos.http) }
+
+    /** Faixas da aba Música e dos álbuns/singles oficiais do artista, sem versões duplicadas. */
+    suspend fun artistTracks(query: String, knownUrl: String? = null, trace: (String) -> Unit = {}): List<Track> = withContext(Dispatchers.IO) {
+        val channelId = knownUrl?.let(::channelId)
+            ?: searchArtists(query, trace).asSequence()
+                .filter { CoverStore.artistKey(it.name) == CoverStore.artistKey(query) }
+                .maxWithOrNull(compareBy<ArtistResult> { it.verified }.thenBy { it.subscriberCount.coerceAtLeast(0) })
+                ?.url?.let(::channelId)
+        if (channelId.isNullOrBlank()) return@withContext emptyList()
+        ytmArtists.tracks(channelId, query, trace)
+    }
+
+    private fun channelId(url: String): String? = Regex("UC[A-Za-z0-9_-]{22}").find(url)?.value
 
     /** Rádio do YouTube Music a partir de uma música (a mesma lista que o app oficial toca em seguida). */
     // Só músicas (com capa quadrada): rádio do YouTube Music; se ele falhar, o mix do YouTube filtrado para músicas.
