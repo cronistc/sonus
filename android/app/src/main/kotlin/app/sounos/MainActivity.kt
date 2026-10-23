@@ -54,15 +54,8 @@ class MainActivity : Activity() {
         // onCreate só ocorre numa criação nova; voltar do segundo plano usa onResume e não repete a abertura.
         coldOpening = true
         val theme = SounosApp.instance.library.settings().optString("theme", "gradient")
-        val windowColor = if (theme == "light") Color.rgb(244, 244, 246) else Color.rgb(14, 14, 16)
-        window.statusBarColor = windowColor
-        window.navigationBarColor = windowColor
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            @Suppress("DEPRECATION")
-            window.decorView.systemUiVisibility = if (theme == "light") {
-                android.view.View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or android.view.View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
-            } else 0
-        }
+        val windowColor = windowColor(theme)
+        applyWindowTheme(theme)
         web = WebView(this).apply {
             setBackgroundColor(windowColor)
             alpha = 0f
@@ -119,6 +112,26 @@ class MainActivity : Activity() {
         setContentView(shell)
         if (coldOpening || savedInstanceState == null) web.loadUrl("https://$HOST/home.html") else web.restoreState(savedInstanceState)
 
+    }
+
+    private fun windowColor(theme: String) = if (theme == "light") Color.rgb(244, 244, 246) else Color.rgb(14, 14, 16)
+
+    /** Barras do sistema (status e navegação) na cor do tema; chamado ao abrir e sempre que o tema muda. */
+    fun applyWindowTheme(theme: String) {
+        val color = windowColor(theme)
+        window.statusBarColor = color
+        window.navigationBarColor = color
+        window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(color))
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            @Suppress("DEPRECATION")
+            window.decorView.systemUiVisibility = if (theme == "light") {
+                android.view.View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or android.view.View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+            } else 0
+        }
+        if (::web.isInitialized) {
+            web.setBackgroundColor(color)
+            (web.parent as? android.view.View)?.background = android.graphics.drawable.ColorDrawable(color)
+        }
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
@@ -235,7 +248,7 @@ class MainActivity : Activity() {
                     app.covers.get(track, pin, large) { android.util.Log.i("Sonus", "cover $it") }
                 }.onFailure { android.util.Log.w("Sonus", "cover falhou id=$id", it) }.getOrNull()
                 android.util.Log.i("Sonus", "cover rota etapa=preload_ms=${(System.nanoTime() - fetchStarted) / 1_000_000} id=$id cache=${result != null}")
-                if (result != null) notifyCoverReady(id)
+                if (result != null) notifyCoverReady(id, large)
             }
             android.util.Log.i("Sonus", "cover rota etapa=total_ms=${(System.nanoTime() - started) / 1_000_000} origem=ausente_agendada")
             return notFound()
@@ -250,7 +263,7 @@ class MainActivity : Activity() {
             }.onFailure { android.util.Log.w("Sonus", "cover atualizacao falhou id=$id", it) }.getOrNull()
             android.util.Log.i("Sonus", "cover rota etapa=upgrade_ms=${(System.nanoTime() - fillStarted) / 1_000_000} id=$id cache=${result != null}")
             val replaced = result != null && (result.absolutePath != file.absolutePath || result.length() != beforeLength || result.lastModified() != beforeModified)
-            if (replaced && (large || (!beforeSmall && result?.let(app.covers::isSmall) == true))) notifyCoverReady(id)
+            if (replaced && (large || (!beforeSmall && result?.let(app.covers::isSmall) == true))) notifyCoverReady(id, large)
         }
         val responseStarted = System.nanoTime()
         val response = imageResponse(file)
@@ -266,7 +279,9 @@ class MainActivity : Activity() {
         val lookupStarted = System.nanoTime()
         val local = app.covers.local(id, hint, large = false)
         android.util.Log.i("Sonus", "cover artista etapa=disco_ms=${(System.nanoTime() - lookupStarted) / 1_000_000} imagem=${local != null}")
-        if (local == null) {
+        // foto marcada para conferir (regras novas): mostra a atual e confere em segundo plano
+        val recheck = local != null && app.covers.artistNeedsRecheck(key)
+        if (local == null || recheck) {
             app.io.launch {
                 val fetchStarted = System.nanoTime()
                 val photo = runCatching {
@@ -280,20 +295,23 @@ class MainActivity : Activity() {
                 android.util.Log.i("Sonus", "cover artista etapa=preload_ms=${(System.nanoTime() - fetchStarted) / 1_000_000} cache=${photo?.file != null}")
                 if (photo?.file != null) notifyCoverReady(id)
             }
-            android.util.Log.i("Sonus", "cover artista etapa=total_ms=${(System.nanoTime() - started) / 1_000_000} origem=ausente_agendada")
-            return notFound()
+            if (local == null) {
+                android.util.Log.i("Sonus", "cover artista etapa=total_ms=${(System.nanoTime() - started) / 1_000_000} origem=ausente_agendada")
+                return notFound()
+            }
         }
         android.util.Log.i("Sonus", "cover artista etapa=resposta_ms=${(System.nanoTime() - started) / 1_000_000} bytes=${local.length()} origem=disco")
         return imageResponse(local)
     }
 
     // cada capa avisa a tela no máximo uma vez por sessão (avisar sempre virava um laço: a tela recarregava,
-    // pedia de novo, a capa "mudava" de novo… e piscava sem parar)
+    // pedia de novo, a capa "mudava" de novo… e piscava sem parar). Pequena e grande contam separado: se a
+    // pequena já avisou, a grande do player (pedida antes de baixar) ainda precisa avisar, senão fica o fundo de reserva.
     private val coverNotified = java.util.Collections.newSetFromMap(java.util.concurrent.ConcurrentHashMap<String, Boolean>())
 
-    private fun notifyCoverReady(id: String) {
-        if (!::web.isInitialized || isFinishing || !coverNotified.add(id)) return
-        web.post { web.evaluateJavascript("window.__sounos&&window.__sounos.emit('coverReady',{id:${JSONObject.quote(id)}})", null) }
+    private fun notifyCoverReady(id: String, large: Boolean = false) {
+        if (!::web.isInitialized || isFinishing || !coverNotified.add(if (large) "$id|grande" else id)) return
+        web.post { web.evaluateJavascript("window.__sounos&&window.__sounos.emit('coverReady',{id:${JSONObject.quote(id)},large:$large})", null) }
     }
 
     private fun imageResponse(file: File): WebResourceResponse {

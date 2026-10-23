@@ -13,6 +13,7 @@ import app.sounos.extractor.Track
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import app.sounos.player.PlayerController
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -44,15 +45,34 @@ class Bridge(
     private val app = SounosApp.instance
     private val player get() = app.player
     private val main = Handler(Looper.getMainLooper())
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main + CoroutineExceptionHandler { _, e -> android.util.Log.e("Sonus", "tarefa em segundo plano falhou", e) })
     private val listener: (String, JSONObject) -> Unit = { name, payload -> send(name, payload) }
     private val updListener: (JSONObject) -> Unit = { send("update", it) }
     private val searchPages = ConcurrentHashMap<String, Page>()
     private val searchPageLocks = ConcurrentHashMap<String, Mutex>()
     @Volatile private var pageActive = true
 
-    fun attach() { player.addListener(listener); app.updater.addListener(updListener) }
-    fun detach() { player.removeListener(listener); app.updater.removeListener(updListener); scope.cancel() }
+    // Wi-Fi ↔ dados móveis: com "Baixar só no Wi-Fi", o botão de baixar some nos dados móveis
+    private val connectivity = app.getSystemService(android.net.ConnectivityManager::class.java)
+    private fun metered() = runCatching { connectivity.isActiveNetworkMetered }.getOrDefault(false)
+    private val netCallback = object : android.net.ConnectivityManager.NetworkCallback() {
+        override fun onCapabilitiesChanged(network: android.net.Network, caps: android.net.NetworkCapabilities) = sendNetwork()
+        override fun onLost(network: android.net.Network) = sendNetwork()
+    }
+    private var lastMetered: Boolean? = null
+    private fun sendNetwork() {
+        val m = metered()
+        if (m != lastMetered) { lastMetered = m; send("network", JSONObject().put("metered", m)) }
+    }
+
+    fun attach() {
+        player.addListener(listener); app.updater.addListener(updListener)
+        runCatching { connectivity.registerDefaultNetworkCallback(netCallback) }
+    }
+    fun detach() {
+        player.removeListener(listener); app.updater.removeListener(updListener); scope.cancel()
+        runCatching { connectivity.unregisterNetworkCallback(netCallback) }
+    }
     fun setPageActive(active: Boolean) { pageActive = active }
 
     fun send(name: String, payload: Any) {
@@ -89,6 +109,10 @@ class Bridge(
             "getLyrics" -> onMain { player.lyricsJson().toString() }
             "getProgress" -> onMain { player.progress().toString() }
             "getHistory" -> app.library.history().toString()
+            // correções de metadados para playlists e buscas recentes (só manda a lista quando ela mudou)
+            "trackFixes" -> app.library.fixesRev().let { rev ->
+                JSONObject().put("rev", rev).apply { if (a.optInt("rev", -1) != rev) put("fixes", app.library.fixes()) }.toString()
+            }
             "getUpdate" -> app.updater.state().toString()
             "getBatteryOptimization" -> JSONObject().put("enabled", batteryOptimizationIgnored()).toString()
             "getNotificationPermission" -> JSONObject().put("granted", notificationPermissionGranted()).toString()
@@ -108,7 +132,10 @@ class Bridge(
             }
             "loadData" -> JSONObject().put("value", app.userData.load(a.optString("key")) ?: JSONObject.NULL).toString()
             "getDownloads" -> app.library.downloadedMeta().toString()
+            "getNetwork" -> JSONObject().put("metered", metered()).toString()
             "getStorage" -> JSONObject()
+                .put("deviceBytes", runCatching { android.os.StatFs(app.filesDir.path).totalBytes }.getOrDefault(0L))
+                .put("freeBytes", runCatching { android.os.StatFs(app.filesDir.path).availableBytes }.getOrDefault(0L))
                 .put("downloadsBytes", app.library.downloadsBytes())
                 .put("downloadsCount", app.library.downloadedMeta().length())
                 .put("cacheBytes", app.audio.sizeBytes() + app.cacheBudget.sizeBytes())
@@ -189,7 +216,9 @@ class Bridge(
                     }
                     ar.await() to so.await()
                 }
-                val by = { t: Track -> norm(t.artist).let { it == target || it.contains(target) || target.contains(it) && it.length > 2 } }
+                // nome inteiro ou palavras inteiras ("Menos É Mais" ↔ "Grupo Menos É Mais"); "Ana" não pega "Mariana"
+                val within = { long: String, short: String -> short.length > 2 && " $long ".contains(" $short ") }
+                val by = { t: Track -> t.artists.ifEmpty { listOf(t.artist) }.map(norm).any { it == target || within(it, target) || within(target, it) } }
                 val songs = page.items.filter(by).toMutableList()
                 var next = page.nextPage
                 var pages = 0
@@ -229,7 +258,15 @@ class Bridge(
                 app.library.removeDownload(a.getString("id")); app.io.launch { app.reconcilePinnedCovers(); app.cacheBudget.trim() }
                 send("state", player.state()); send("library", JSONObject())
             }
-            "setSettings" -> { app.library.saveSettings(a); player.applySettings(a) }
+            // Configurações › Músicas baixadas › Remover todas (a interface pede confirmação antes)
+            "removeAllDownloads" -> {
+                app.library.downloadedMeta().keys().asSequence().toList().forEach(app.library::removeDownload)
+                app.io.launch { app.reconcilePinnedCovers(); app.cacheBudget.trim() }
+                send("state", player.state()); send("library", JSONObject())
+                send("storage", JSONObject(call("getStorage", "{}")))
+            }
+            "setSettings" -> { app.library.saveSettings(a); player.applySettings(a); app.applyStartTheme(a.optString("theme", "gradient"))
+                (web.context as? MainActivity)?.applyWindowTheme(a.optString("theme", "gradient")) }
             // atualizações
             "checkUpdate" -> app.updater.check()
             "installUpdate" -> app.updater.install()

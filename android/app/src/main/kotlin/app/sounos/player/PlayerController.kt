@@ -23,6 +23,7 @@ import app.sounos.extractor.QueuePrefetcher
 import app.sounos.extractor.ResolvedAudio
 import app.sounos.extractor.ResolvedTrack
 import app.sounos.extractor.Track
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -43,7 +44,7 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
     enum class Repeat { OFF, ALL, ONE }
 
     private val main = Handler(Looper.getMainLooper())
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate + CoroutineExceptionHandler { _, e -> android.util.Log.e("Sonus", "tarefa em segundo plano falhou", e) })
     val engine = AudioEngine(this)
 
     val queue = mutableListOf<Track>()
@@ -56,6 +57,7 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
     var current: ResolvedTrack? = null; private set
     var durationMs = 0L; private set
     var loading = false; private set
+    private var buffering = false      // motor esperando o áudio voltar após um seek (aparece como `loading` na tela)
     private var playWhenReady = false
     var colors = listOf("#2F6BFF", "#1D4ED8", "#60A5FA", "#60A5FA"); private set
     var lyrics: Lyrics.Result? = null; private set
@@ -107,7 +109,7 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
     fun state(): JSONObject = JSONObject()
         .put("queue", Json.tracks(queue)).put("index", index)
         .put("current", currentTrack?.let { Json.track(it) } ?: JSONObject.NULL)
-        .put("playing", engine.isPlaying).put("loading", loading).put("playWhenReady", playWhenReady)
+        .put("playing", engine.isPlaying).put("loading", loading || buffering).put("playWhenReady", playWhenReady)
         .put("repeat", repeat.name.lowercase()).put("shuffle", shuffle)
         .put("context", context).put("suggestions", Json.tracks(suggestions))
         .put("colors", JSONArray(colors)).put("durationMs", durationMs).put("positionMs", positionMs())
@@ -152,11 +154,12 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
         engine.play(); emitState(); ticker()
     }
 
-    fun pause() { playWhenReady = false; engine.pause(); emitState(); saveSession() }
+    fun pause() { playWhenReady = false; buffering = false; engine.pause(); emitState(); saveSession() }
 
-    fun next(auto: Boolean = false) {
+    /** afterError: a faixa não carregou — pula de verdade, mesmo com "repetir uma" (repetir uma faixa quebrada travava o player). */
+    fun next(auto: Boolean = false, afterError: Boolean = false) {
         if (index < 0) return
-        if (auto && repeat == Repeat.ONE) { engine.seekTo(0); engine.play(); renewSuggestions(); return }
+        if (auto && repeat == Repeat.ONE && !afterError) { engine.seekTo(0); engine.play(); renewSuggestions(); return }
         when {
             index + 1 < queue.size -> index++
             isRadio() && topUpRadio() -> index++
@@ -253,7 +256,7 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
         if (!online && !isAvailableOffline(t)) { skipUnavailableOffline(); return }
         app.audio.protectedIds = (upcoming().map { it.id } + t.id).toSet()
         val my = ++token
-        loading = true; playWhenReady = true; seekWhenReadyMs = -1; current = null; currentUsesCache = false; durationMs = t.durationSec * 1000
+        loading = true; buffering = false; playWhenReady = true; seekWhenReadyMs = -1; current = null; currentUsesCache = false; durationMs = t.durationSec * 1000
         fillJob?.cancel()
         engine.release()
         app.covers.local(t.id)?.let { colors = CoverColors.of(it) }
@@ -339,7 +342,7 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
                 playWhenReady = false
                 emit("error", JSONObject().put("message", e.message ?: "erro"))
                 emitState()
-                main.postDelayed({ if (my == token && queue.size > 1) next(auto = true) }, 1500)
+                main.postDelayed({ if (my == token && queue.size > 1) next(auto = true, afterError = true) }, 1500)
             }
         }
     }
@@ -364,20 +367,27 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
         loading = false; playWhenReady = engine.isPlaying; emitState(); ticker()
     }
 
+    override fun onBuffering(buffering: Boolean) {
+        if (this.buffering == buffering) return
+        this.buffering = buffering
+        emitState()
+    }
+
     override fun onEnded() {
+        buffering = false
         currentTrack?.let { t -> engine.measuredGainDb()?.let { app.library.setGain(t.id, it) } }
         next(auto = true)
     }
 
     private var errorsInARow = 0
     override fun onError(error: Throwable) {
-        loading = false
+        loading = false; buffering = false
         playWhenReady = false
         emit("error", JSONObject().put("message", error.message ?: "erro no áudio"))
         val my = token
         // 3 falhas seguidas (sem internet, por exemplo): para em vez de pular música atrás de música
         if (++errorsInARow >= 3 || queue.size <= 1) { errorsInARow = 0; engine.pause(); emitState(); return }
-        main.postDelayed({ if (my == token) next(auto = true) }, 1200)
+        main.postDelayed({ if (my == token) next(auto = true, afterError = true) }, 1200)
     }
 
     // ---------------- auxiliares ----------------
@@ -415,7 +425,7 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
             ++token
             fillJob?.cancel()
             engine.release()
-            loading = false
+            loading = false; buffering = false
             playWhenReady = false
             current = null
             currentUsesCache = false
@@ -542,7 +552,7 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
     }
 
     fun progress(): JSONObject = JSONObject().put("pos", positionMs() / 1000.0).put("dur", durationMs / 1000.0).put("playing", engine.isPlaying)
-        .put("loading", loading).put("playWhenReady", playWhenReady)
+        .put("loading", loading || buffering).put("playWhenReady", playWhenReady)
         .put("id", currentTrack?.id ?: JSONObject.NULL)   // a tela ignora progresso de outra música
 
     private var ticking = false

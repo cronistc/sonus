@@ -168,13 +168,15 @@ class AudioCache(
 
     private fun trimLocked() {
         val keep = protectedIds.map(::safe).toSet() + active.keys
-        val files = dir.listFiles { f -> f.name.endsWith(".audio") }?.sortedBy { it.lastModified() } ?: return
-        var total = files.sumOf { it.length() }
+        val listed = dir.listFiles { f -> f.name.endsWith(".audio") } ?: return
+        // Snapshot único (uso, tamanho): reler do disco durante o sort quebra o contrato do TimSort.
+        val files = listed.map { Triple(it, lastUsed(it.nameWithoutExtension, it), it.length()) }
+        var total = files.sumOf { it.third }
         val limite = EspacoLivre.limite(dir, maxTotalBytes, total)
-        for (f in files.sortedBy { lastUsed(it.nameWithoutExtension, it) }) {
+        for ((f, _, size) in files.sortedBy { it.second }) {
             if (total <= limite) break
             if (f.nameWithoutExtension in keep) continue
-            total -= f.length(); deleteEntry(f.nameWithoutExtension)
+            total -= size; deleteEntry(f.nameWithoutExtension)
         }
     }
 

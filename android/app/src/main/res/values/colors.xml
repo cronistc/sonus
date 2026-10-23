@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="sounos_bg">#0E0E10</color>
+    <!-- abertura do sistema na cor do tema: sem "night" = tema Claro; values-night = Escuro e Gradiente
+         (o app escolhe com UiModeManager.setApplicationNightMode, ver SounosApp.applyStartTheme) -->
+    <color name="sounos_bg">#F4F4F6</color>
+    <color name="sounos_fg">#111114</color>
     <color name="sounos_blue">#2F6BFF</color>
 </resources>

@@ -1,5 +1,6 @@
 package app.sounos.extractor
 
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
@@ -20,7 +21,7 @@ class StreamResolveCache(
     private val maxEntries: Int = 200,
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + CoroutineExceptionHandler { _, e -> System.err.println("Sonus: tarefa em segundo plano falhou: $e") })
     private val mutex = Mutex()
     private val entries = object : LinkedHashMap<String, ResolvedTrack>(64, .75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, ResolvedTrack>) = size > maxEntries

@@ -13,6 +13,7 @@ import app.sounos.extractor.NewPipeSource
 import app.sounos.extractor.Sounos
 import app.sounos.extractor.StreamResolveCache
 import app.sounos.player.PlayerController
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -34,7 +35,8 @@ class SounosApp : Application() {
     lateinit var lyrics: Lyrics; private set
     lateinit var player: PlayerController; private set
     lateinit var updater: app.sounos.update.Updater; private set
-    val io = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    // erro inesperado numa tarefa fica no log; nunca derruba o app (nem a música)
+    val io = CoroutineScope(SupervisorJob() + Dispatchers.IO + CoroutineExceptionHandler { _, e -> android.util.Log.e("Sonus", "tarefa em segundo plano falhou", e) })
 
     override fun onCreate() {
         super.onCreate()
@@ -45,6 +47,7 @@ class SounosApp : Application() {
         userData = app.sounos.data.UserData(File(filesDir, "userdata"))
         val downloadCheck = io.launch { runCatching { library.checkDownloads() } }
         val s = library.settings()
+        applyStartTheme(s.optString("theme", "gradient"))
         Sounos.init(language = s.optString("language", "pt-BR").substringBefore('-'), country = s.optString("country", "BR"))
         source = NewPipeSource()
         resolver = StreamResolveCache(source)
@@ -60,6 +63,8 @@ class SounosApp : Application() {
         }
         lyrics = Lyrics(File(filesDir, "lyrics"), Sounos.http)
         player = PlayerController(this)
+        // a sessão restaurada não emite estado: cria a MediaSession já pausada, para o play do fone/carro funcionar ao abrir
+        runCatching { app.sounos.player.MediaSessionHolder.sync(this) }
         io.launch {
             while (true) {
                 if (runCatching { audio.cleanExpiredAndTrim() }.getOrDefault(false)) player.notifyLibraryChanged()
@@ -67,6 +72,18 @@ class SounosApp : Application() {
             }
         }
         updater = app.sounos.update.Updater(this)
+        // regras de nome/capa melhoraram: corrige aos poucos o que já está salvo
+        app.sounos.data.MetadataRepair(this).start()
+    }
+
+    /**
+     * A abertura do sistema (antes de qualquer código do app) usa values/ ou values-night/: avisa o Android
+     * qual dos dois combina com o tema escolhido, para o app já abrir claro ou escuro, sem trocar no meio.
+     */
+    fun applyStartTheme(theme: String) {
+        if (android.os.Build.VERSION.SDK_INT < 31) return
+        val mode = if (theme == "light") android.app.UiModeManager.MODE_NIGHT_NO else android.app.UiModeManager.MODE_NIGHT_YES
+        runCatching { getSystemService(android.app.UiModeManager::class.java).setApplicationNightMode(mode) }
     }
 
     /** Mantém permanentemente só as capas de downloads e playlists atuais. */

@@ -16,9 +16,9 @@
 .add-grab i { display: block; width: 38px; height: 4px; border-radius: 2px; background: var(--line-strong, rgba(255,255,255,.25)); margin: 0 auto; }
 .add-head { display: flex; align-items: center; gap: 12px; padding: 8px 20px 14px; touch-action: none; }
 .add-head .cv { width: 52px; height: 52px; border-radius: 8px; flex-shrink: 0; display: grid; place-items: center;
-                font-weight: 800; font-size: 22px; color: rgba(255,255,255,.85); }
-.add-head .k { font-size: calc(var(--fs) * (12px)); color: var(--text-dim, #a1a1aa); font-weight: 600; }
-.add-head .t { font-size: calc(var(--fs) * (17px)); font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+                font-weight: 700; font-size: 22px; color: rgba(255,255,255,.85); }
+.add-head .k { font-size: calc(var(--fs) * (12px)); color: var(--text-dim, #a1a1aa); font-weight: 500; }
+.add-head .t { font-size: calc(var(--fs) * (17px)); font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .add-head .a { font-size: calc(var(--fs) * (13px)); color: var(--text-dim, #a1a1aa); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .add-head > div:last-child { min-width: 0; }
 .add-head .cv svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; }
@@ -31,7 +31,7 @@
 .add-row .cv { width: 52px; height: 52px; border-radius: 8px; flex-shrink: 0; overflow: hidden;
                display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
 .add-row .tx { flex: 1; min-width: 0; }
-.add-row .t { font-size: calc(var(--fs) * (15px)); font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.add-row .t { font-size: calc(var(--fs) * (15px)); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .add-row .a { font-size: calc(var(--fs) * (12.5px)); color: var(--text-dim, #a1a1aa); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .add-row .add-full-cover { grid-area: 1 / 1 / 3 / 3; background-size: cover; background-position: center; }
 /* entrada em cascata quando a janela abre */
@@ -53,7 +53,7 @@
 /* "Nova playlist": mantém o mesmo cartão e a mesma entrada usados nesta janela. */
 .add-new { margin: 0 20px 6px; border-radius: 12px; background: var(--chip-soft, rgba(255,255,255,.06)); overflow: hidden; }
 .add-new .open-btn { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 12px; background: none; border: 0;
-                     color: inherit; font: 700 calc(var(--fs) * 15px) system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; cursor: pointer; text-align: left; }
+                     color: inherit; font: 600 calc(var(--fs) * 15px) system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; cursor: pointer; text-align: left; }
 .add-new .plus { width: 40px; height: 40px; border-radius: 8px; display: grid; place-items: center; background: var(--chip, rgba(255,255,255,.1));
                  transition: transform .35s cubic-bezier(.2,.9,.25,1); }
 .add-new .plus svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; }
@@ -67,18 +67,18 @@
   font: 500 calc(var(--fs) * 15px) system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; transition: outline-color .2s; }
 .add-create-fields input:focus, .add-search input:focus { outline-color: var(--line-strong, rgba(255,255,255,.35)); }
 .cover-button { display: flex; align-items: center; gap: 12px; min-height: 54px; width: 100%; padding: 7px 10px; border-radius: 12px;
-  background: var(--chip-soft, rgba(255,255,255,.06)); color: inherit; font: 700 calc(var(--fs) * 14px) system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  background: var(--chip-soft, rgba(255,255,255,.06)); color: inherit; font: 600 calc(var(--fs) * 14px) system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
 .cover-preview { width: 40px; height: 40px; flex-shrink: 0; display: grid; place-items: center; border-radius: 8px; overflow: hidden;
   background-color: var(--chip, rgba(255,255,255,.1)); background-size: cover; background-position: center; }
 .cover-preview svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; }
-.add-section { padding: 12px 20px 6px; font-size: calc(var(--fs) * (14px)); font-weight: 800; }
+.add-section { padding: 12px 20px 6px; font-size: calc(var(--fs) * (14px)); font-weight: 700; }
 .add-search { padding: 0 20px; }
 .add-search input::-webkit-search-cancel-button { display: none; }
 .add-empty { padding: 16px 20px; color: var(--text-dim, #a1a1aa); font-size: calc(var(--fs) * (13px)); text-align: center; }
 
 .add-foot { padding: 10px 20px 18px; }
 .add-foot button { width: 100%; height: 48px; text-align: center; border-radius: 24px; border: 0; background: var(--text, #f5f5f7); color: var(--bg, #0e0e10);
-                   font: 800 calc(var(--fs) * 15px) system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; cursor: pointer; transition: transform .12s; }
+                   font: 700 calc(var(--fs) * 15px) system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; cursor: pointer; transition: transform .12s; }
 .add-foot button:active { transform: scale(.97); }
 .add-foot button[hidden] { display: none; }
 
@@ -86,3 +86,17 @@
   .add-sheet, .add-ov .dim { transition-duration: .01s; }
   .add-ov.open .add-row, .add-ov.open .add-new { animation: none; }
 }
+
+/* menu "⋮" das linhas de música */
+.tr-more { width: 36px; height: 40px; margin-right: -6px; flex-shrink: 0; display: grid; place-items: center; color: var(--text-dim, #a1a1aa); cursor: pointer; border-radius: 10px; -webkit-tap-highlight-color: transparent; }
+.tr-more svg { width: 22px; height: 22px; fill: currentColor; stroke: none; }
+/* tocar no ⋮ acende a linha inteira (o :active da linha), nunca um quadradinho só nos pontos */
+.tr-more:focus { outline: none; }
+.tr.tm-on, .s-row.tm-on { background: var(--chip-soft, rgba(255,255,255,.06)); }
+.s-row .tr-more { margin-right: -10px; }
+.tm-list { padding: 0 0 calc(14px + env(safe-area-inset-bottom, 0px)); }
+.tm-row { gap: 16px; padding: 14px 20px; }
+.tm-row svg { width: 22px; height: 22px; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.tm-row span { font-size: calc(var(--fs) * (15px)); font-weight: 500; }
+.tm-ov .add-head { padding-bottom: 10px; }
+.pg.editing .tr .tr-more { display: none; }

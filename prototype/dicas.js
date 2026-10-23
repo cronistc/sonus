@@ -26,26 +26,27 @@
   const TIP_GAP = 1400;                          // respiro entre uma dica e a próxima
   const EXIT_DURATION = 240;
   const parse = key => { try { return JSON.parse(localStorage.getItem(key)); } catch { return null; } };
+  // Dicas comparam pelo versionCode (só sobe), nunca pelo nome: a contagem do nome reinicia a cada versão grande
+  // (0.1.3 → 0.1.1.0 "Sunshine Beta 1.0"), e "0.1.2" antigo colidiria com "0.1.2.0" novo.
+  // Marcas antigas (nome) → código publicado. Dicas NOVAS devem usar o número do versionCode em `version`.
+  const LEGACY = { "0.0.0": 0, "0.1": 1, "0.1.0": 1, "0.1.1": 4, "0.1.2": 5, "0.1.3": 8 };
+  const versionParts = value => String(value || "0").split(/[.-]/).map(part => Number.parseInt(part, 10) || 0);
+  const toCode = v => {
+    if (typeof v === "number" && Number.isFinite(v)) return v;
+    const s = String(v ?? "");
+    if (s in LEGACY) return LEGACY[s];
+    // nome antigo fora da tabela (ex.: "0.1.2" − 1 = "0.1.1", "0.0.99"): encaixa pela ordem da contagem antiga
+    const [a, b, c] = versionParts(s);
+    if (a > 0 || b > 1) return 8;
+    if (b < 1) return 0;
+    return c >= 3 ? 8 : c === 2 ? 5 : 4;
+  };
   const readVersion = () => {
     const update = window.Sounos?.call("getUpdate");
-    return update?.current?.versionName || "0.1.3";
+    return Number(update?.current?.versionCode) || 8;
   };
-  const versionParts = value => String(value || "0").split(/[.-]/).map(part => Number.parseInt(part, 10) || 0);
-  const compareVersion = (a, b) => {
-    const x = versionParts(a), y = versionParts(b);
-    for (let i = 0; i < Math.max(x.length, y.length); i++) {
-      if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) < (y[i] || 0) ? -1 : 1;
-    }
-    return 0;
-  };
-  const previousVersion = value => {
-    const parts = versionParts(value);
-    while (parts.length < 3) parts.push(0);
-    if (parts[2] > 0) parts[2]--;
-    else if (parts[1] > 0) { parts[1]--; parts[2] = 99; }
-    else if (parts[0] > 0) { parts[0]--; parts[1] = 99; parts[2] = 99; }
-    return parts.join(".");
-  };
+  const compareVersion = (a, b) => Math.sign(toCode(a) - toCode(b));
+  const previousVersion = value => toCode(value) - 1;
   const hasOldLibrary = () => {
     const history = window.Sounos?.call("getHistory");
     const playlists = parse("sounos.playlists") || window.SounosData?.getPlaylists?.();
@@ -58,8 +59,9 @@
   if (!state || typeof state !== "object" || Array.isArray(state)) state = { seen: {}, newcomer: !hasOldLibrary() };
   state.seen = state.seen && typeof state.seen === "object" ? state.seen : {};
   const savedVersion = parse(VERSION_KEY);
-  if (typeof savedVersion?.version === "string") state.version = savedVersion.version;
-  else if (!state.version) state.version = state.newcomer ? "0.0.0" : previousVersion(readVersion());
+  if (savedVersion && savedVersion.version != null) state.version = toCode(savedVersion.version);   // aceita o formato antigo (nome)
+  else if (state.version == null) state.version = state.newcomer ? 0 : previousVersion(readVersion());
+  else state.version = toCode(state.version);
   hub.state = state;
   const currentVersion = readVersion();
 

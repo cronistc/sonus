@@ -43,6 +43,17 @@ class AccentColorSelectorTest {
         gerarProva(proofItems)
     }
 
+    @Test
+    fun garanteContrasteEmCapasSinteticas() {
+        // Capas de duas cores (fundo + miolo) em grade de matiz/luminosidade: o contraste vale para qualquer capa.
+        for (h in 0 until 360 step 40) for (l in 5..95 step 15) for (bg in intArrayOf(0x000000, 0xFFFFFF, 0x808080)) {
+            val core = Color.getHSBColor(h / 360f, .6f, l / 100f).rgb and 0xFFFFFF
+            val result = AccentColorSelector.select(64, 64) { x, y -> if (x in 16..47 && y in 16..47) core else bg }
+            val contrast = AccentColorSelector.minimumBackgroundContrast(result.color)
+            assertTrue("h=$h l=$l bg=%06X: contraste $contrast".format(bg), contrast >= AccentColorSelector.MIN_BACKGROUND_CONTRAST)
+        }
+    }
+
     private fun gerarProva(items: List<ProofItem>) {
         val columns = 5
         val cardWidth = 220

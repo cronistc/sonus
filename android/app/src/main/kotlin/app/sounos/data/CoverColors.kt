@@ -16,6 +16,9 @@ object CoverColors {
 
     fun of(file: File): List<String> = cache.getOrPut(file.path) { fromDisk(file) ?: compute(file).also { toDisk(file, it) } }
 
+    /** A capa desse arquivo foi trocada: esquece as cores calculadas. */
+    fun forget(file: File) { cache.remove(file.path); runCatching { diskFile(file).delete() } }
+
     // guardadas em disco (files/cores): a mesma capa nunca é analisada duas vezes, nem depois de reabrir o app.
     // Se a capa for trocada (arquivo mais novo), recalcula.
     private fun diskFile(file: File) = File(file.parentFile?.parentFile ?: file.parentFile, "cores2/" + Integer.toHexString(file.path.hashCode()) + ".txt")

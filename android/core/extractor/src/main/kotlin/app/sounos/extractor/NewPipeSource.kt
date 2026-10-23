@@ -65,7 +65,7 @@ class NewPipeSource(private val service: StreamingService = ServiceList.YouTube)
         if (target.isBlank()) return null
         return artists.asSequence()
             .filter { CoverStore.artistKey(it.name) == target }
-            .filter { it.thumbs.any { thumb -> thumb.url.isNotBlank() } }
+            .filter { it.thumbs.any { thumb -> thumb.url.isNotBlank() && !CoverStore.isPlaceholderPhoto(thumb.url) } }
             // SearchFilter.ARTISTS já limita os resultados a canais; inscritos e selo verificado
             // desempataram canais homônimos, e uma foto de perfil utilizável é obrigatória.
             .maxWithOrNull(compareBy<ArtistResult> { it.verified }
@@ -110,8 +110,8 @@ class NewPipeSource(private val service: StreamingService = ServiceList.YouTube)
         val audio = pickAudio(info.audioStreams, quality)
             ?: error("Nenhum áudio tocável para $url")
         val clean = TitleNormalizer.clean(info.name, info.uploaderName ?: "")
-        val artists = TitleNormalizer.mergeArtists(known?.artists.orEmpty(), clean.artists)
-        val primaryArtist = known?.artist?.takeIf { it.isNotBlank() } ?: clean.artist
+        val artists = TitleNormalizer.producersLast(TitleNormalizer.mergeArtists(known?.artists.orEmpty(), clean.artists))
+        val primaryArtist = artists.firstOrNull() ?: known?.artist?.takeIf { it.isNotBlank() } ?: clean.artist
         val track = Track(
             id = Track.idFor(info.url),
             url = info.url,
@@ -133,6 +133,13 @@ class NewPipeSource(private val service: StreamingService = ServiceList.YouTube)
         ResolvedTrack(track, audio, picks, System.currentTimeMillis(), later)
     }
 
+    /** Dados atuais de uma música salva, direto do YouTube Music (null se ele não conhece o vídeo). */
+    suspend fun current(videoId: String): Track? = withContext(Dispatchers.IO) {
+        val loc = org.schabi.newpipe.extractor.NewPipe.getPreferredLocalization()
+        val gl = org.schabi.newpipe.extractor.NewPipe.getPreferredContentCountry().countryCode
+        ytm.track(videoId, loc.languageCode, gl)
+    }
+
     private fun isSong(s: StreamInfoItem) = s.uploaderName.orEmpty().endsWith(" - Topic", ignoreCase = true)
     private val ytm by lazy { YtMusicRadio(Sounos.http) }
 
@@ -150,18 +157,27 @@ class NewPipeSource(private val service: StreamingService = ServiceList.YouTube)
 
     private fun toTrack(item: InfoItem): Track? {
         val s = item as? StreamInfoItem ?: return null
-        val clean = TitleNormalizer.clean(s.name, s.uploaderName ?: "")
+        val uploader = s.uploaderName ?: ""
+        val official = isOfficial(s.url, uploader)
+        // o YouTube Music junta os artistas da música num texto só ("Raça Negra, Péricles")
+        val credited = if (official) TitleNormalizer.splitList(TitleNormalizer.cleanArtist(uploader), loneAnd = false) else emptyList()
+        val clean = TitleNormalizer.clean(s.name, credited.firstOrNull() ?: uploader, official)
+        val artists = TitleNormalizer.producersLast(TitleNormalizer.mergeArtists(credited, clean.artists))
         return Track(
             id = Track.idFor(s.url),
             url = s.url,
             title = clean.title,
-            artist = clean.artist,
+            artist = artists.firstOrNull() ?: clean.artist,
             artistUrl = s.uploaderUrl,
             durationSec = s.duration,
             thumbs = s.thumbnails.map(::toThumb),
-            artists = clean.artists,
+            artists = artists,
         )
     }
+
+    /** Música do YouTube Music (link music.youtube.com ou canal "Topic"): o artista é oficial. */
+    private fun isOfficial(url: String, uploader: String) =
+        url.contains("music.youtube.com") || uploader.trim().endsWith(" - Topic", ignoreCase = true)
 
     private fun toThumb(i: Image) = Thumb(i.url, i.width.coerceAtLeast(0), i.height.coerceAtLeast(0))
 

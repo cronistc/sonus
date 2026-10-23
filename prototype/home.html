@@ -27,7 +27,7 @@
   }
   button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; text-align: left; }
   svg.lu { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
-  #gearBtn svg.lu { stroke-width: 1.4; }      /* a engrenagem tem muitos traços: mais fina para pesar igual à lupa e à clave */
+  #gearBtn svg.lu, #searchBtn svg.lu { stroke-width: 1.4; }      /* engrenagem e lupa finas, no mesmo peso da clave */
   svg.lu.solid { fill: currentColor; }
 
   /* Moldura de celular (só no desktop) */
@@ -52,8 +52,34 @@
   .head { display: flex; align-items: center; justify-content: space-between; padding: 0 12px; height: 48px; }
   .icon-btn { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; color: var(--text); }
   .icon-btn:active { background: var(--chip-soft); }
-  .offline-mark { color: var(--text-dim); font-size: calc(var(--fs) * (12px)); font-weight: 600; white-space: nowrap; }
+  .offline-mark { color: var(--text-dim); font-size: calc(var(--fs) * (12px)); font-weight: 500; white-space: nowrap; }
   .brand-letter[hidden], .offline-mark[hidden] { display: none; }
+  /* clave avisa atualização (clave-atualizacao.js) */
+  .cv-head { position: relative; z-index: 5; }   /* o balão passa por cima das seções (que têm animação própria) */
+  .brand-letter { transition: transform .5s cubic-bezier(.2,.85,.25,1), opacity .45s ease, color .4s; }
+  .brand-letter.cv-glow { color: #fff; animation: cvPulse 1.8s ease-in-out infinite; }
+  @keyframes cvPulse { 0%, 100% { filter: drop-shadow(0 0 2px rgba(255,255,255,.35)); opacity: .75; } 50% { filter: drop-shadow(0 0 12px rgba(255,255,255,1)) drop-shadow(0 0 4px rgba(255,255,255,.9)); opacity: 1; } }
+  .cv-head.cv-open .brand-letter { transform: translateX(var(--cv-shift, 0)); }
+  .cv-txt { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); white-space: nowrap; pointer-events: none;
+            font-size: calc(var(--fs) * 15px); font-weight: 600; color: #fff; opacity: 0; clip-path: inset(0 100% 0 0);
+            transition: opacity .35s ease, clip-path .5s cubic-bezier(.2,.85,.25,1), transform .5s cubic-bezier(.2,.85,.25,1); }
+  .cv-head.cv-open .cv-txt { opacity: 1; clip-path: inset(0 0 0 0); transform: translate(calc(-50% + var(--cv-txt-x, 0px)), -50%); }
+  .cv-head.cv-loop .brand-letter, .cv-head.cv-loop .cv-txt { transition: opacity .6s ease, transform .6s ease, clip-path 0s; }
+  .cv-head.cv-loop .cv-txt { clip-path: none; }
+  .cv-head.cv-loop.cv-alt .brand-letter { opacity: 0; transform: scale(.6); }
+  .cv-head.cv-loop.cv-alt .cv-txt { opacity: 1; }
+  /* o balão é o próprio botão azul, com a setinha apontando para a clave */
+  .cv-bubble { position: absolute; left: 50%; top: calc(100% + 4px); z-index: 30; transform: translate(-50%, -6px); opacity: 0; transition: opacity .25s, transform .25s;
+               max-width: calc(100% - 32px); padding: 9px 16px; border-radius: 18px; border: 0; background: var(--brand); color: #fff; white-space: nowrap;
+               box-shadow: 0 8px 22px rgba(47,107,255,.35); font: 600 calc(var(--fs) * 13px) "SonusFont", system-ui, sans-serif; cursor: pointer; }
+  .cv-bubble::before { content: ""; position: absolute; top: -5px; left: 50%; width: 11px; height: 11px; background: inherit; transform: translateX(-50%) rotate(45deg); border-radius: 2px; }
+  .cv-bubble.on { opacity: 1; transform: translate(-50%, 0); }
+  .cv-bubble .sun-glow { --sun-a: #ffe08a; --sun-b: #fff; filter: none; }
+  /* no tema claro o branco some: pisca em preto */
+  [data-theme="light"] .brand-letter.cv-glow { color: #000; animation-name: cvPulseDark; }
+  @keyframes cvPulseDark { 0%, 100% { filter: drop-shadow(0 0 2px rgba(0,0,0,.25)); opacity: .55; } 50% { filter: drop-shadow(0 0 10px rgba(0,0,0,.75)); opacity: 1; } }
+  [data-theme="light"] .cv-txt { color: #111114; }
+  @media (prefers-reduced-motion: reduce) { .brand-letter.cv-glow { animation: none; filter: drop-shadow(0 0 6px rgba(255,255,255,.8)); } }
 
   /* Seções */
   section { margin-top: 18px; }
@@ -66,8 +92,8 @@
   @media (prefers-reduced-motion: reduce) { .intro * { animation: none !important; } }
   section:first-of-type { margin-top: 4px; }
   .sec-head { display: flex; align-items: baseline; justify-content: space-between; padding: 0 20px; margin-bottom: 10px; }
-  .sec-head h2 { font-size: calc(var(--fs) * (18px)); font-weight: 800; letter-spacing: -.01em; }
-  .sec-head button { font-size: calc(var(--fs) * (13px)); font-weight: 600; color: var(--text-dim); }
+  .sec-head h2 { font-size: calc(var(--fs) * (18px)); font-weight: 700; letter-spacing: -.01em; }
+  .sec-head button { font-size: calc(var(--fs) * (13px)); font-weight: 500; color: var(--text-dim); }
   .row { display: flex; gap: 10px; overflow-x: auto; padding: 12px 20px 20px; margin: -8px 0 -16px; scrollbar-width: none;
          scroll-snap-type: x proximity; scroll-padding: 0 20px; }
   .row::-webkit-scrollbar { display: none; }
@@ -82,28 +108,28 @@
          box-shadow: var(--tile-shadow); }
   .blk.big { --s0: 176px; --s: var(--rec); }
   .blk .ini { position: absolute; inset: 0; display: grid; place-items: center; padding-bottom: 28px;
-              font-size: calc(var(--s) * .3); font-weight: 800; color: rgba(255,255,255,.5); }
+              font-size: calc(var(--s) * .3); font-weight: 700; color: rgba(255,255,255,.5); }
   .blk .mosaic { position: absolute; inset: 0; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
   .blk .face { position: absolute; left: 50%; top: 42%; width: 54%; aspect-ratio: 1; transform: translate(-50%, -50%);
-               border-radius: 50%; display: grid; place-items: center; font-size: calc(var(--s) * .22); font-weight: 800;
+               border-radius: 50%; display: grid; place-items: center; font-size: calc(var(--s) * .22); font-weight: 700;
                color: rgba(255,255,255,.9); box-shadow: 0 6px 18px rgba(0,0,0,.35); }
   .blk .meta { color: #fff; position: absolute; left: 0; right: 0; bottom: 0; padding: 22px 9px 8px;
                background: linear-gradient(transparent, rgba(0,0,0,.7)); }
-  .blk .t { font-size: calc(var(--fs) * (calc(13px + (var(--s) - var(--s0)) * .03))); font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .blk .t { font-size: calc(var(--fs) * (calc(13px + (var(--s) - var(--s0)) * .03))); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .blk .a { font-size: calc(var(--fs) * (calc(11px + (var(--s) - var(--s0)) * .025))); color: rgba(255,255,255,.75); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .blk .kind { color: #fff; position: absolute; top: 8px; left: 8px; height: 22px; padding: 0 8px; border-radius: 11px;
-               background: rgba(0,0,0,.45); font-size: calc(var(--fs) * (10.5px)); font-weight: 700; display: flex; align-items: center; gap: 4px; }
+               background: rgba(0,0,0,.45); font-size: calc(var(--fs) * (10.5px)); font-weight: 600; display: flex; align-items: center; gap: 4px; }
   .blk .kind svg { width: 12px; height: 12px; stroke-width: 2.6; }
   .blk.new { background: var(--surface); box-shadow: none; border: 1.5px dashed var(--line-strong);
              display: grid; place-items: center; }
-  .blk.new .in { display: grid; justify-items: center; gap: 8px; color: var(--text-dim); font-size: calc(var(--fs) * (13px)); font-weight: 600; }
+  .blk.new .in { display: grid; justify-items: center; gap: 8px; color: var(--text-dim); font-size: calc(var(--fs) * (13px)); font-weight: 500; }
   .blk.new svg { width: 30px; height: 30px; }
 
   /* Artistas seguidos (na conta do app) */
   .ar { width: var(--art); text-align: center; }
   .ar .pic { width: var(--art); height: var(--art); border-radius: 50%; display: grid; place-items: center;
-             font-size: calc(var(--art) * .37); font-weight: 800; color: rgba(255,255,255,.85); box-shadow: var(--tile-shadow); }
-  .ar .n { font-size: calc(var(--fs) * (12.5px)); font-weight: 700; margin-top: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+             font-size: calc(var(--art) * .37); font-weight: 700; color: rgba(255,255,255,.85); box-shadow: var(--tile-shadow); }
+  .ar .n { font-size: calc(var(--fs) * (12.5px)); font-weight: 600; margin-top: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
   /* Mini-player fixo embaixo: abre o player completo */
   .mini { position: absolute; left: 10px; right: 10px; bottom: 12px; height: 64px; border-radius: 14px;
@@ -115,7 +141,7 @@
   .mini .add-btn svg { width: 22px; height: 22px; fill: currentColor; }
   .mini .add-btn[hidden] { display: none; }
   .mini .cv { width: 48px; height: 48px; border-radius: 8px; flex-shrink: 0; display: grid; place-items: center;
-              font-weight: 800; font-size: 20px; color: rgba(255,255,255,.85);
+              font-weight: 700; font-size: 20px; color: rgba(255,255,255,.85);
               background: linear-gradient(135deg, var(--c1), var(--c2) 60%, var(--c3)); }
   .mini .tx { flex: 1; min-width: 0; align-self: stretch; display: flex; flex-direction: column; justify-content: center; }
   .mini { touch-action: none; }
@@ -128,7 +154,7 @@
   #miniT { view-transition-name: track-title; width: fit-content; max-width: 100%; }
   #miniA { view-transition-name: track-artist; width: fit-content; max-width: 100%; }
   .mini.dragging { transition: none; }
-  .mini .t { font-size: calc(var(--fs) * (14px)); font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mini .t { font-size: calc(var(--fs) * (14px)); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .mini .a { font-size: calc(var(--fs) * (12px)); color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .native .mini:not(.has-track) { display: none; }      /* no app: sem música, sem mini-player */
   .mini .ctrl { display: flex; align-items: center; gap: 2px; }
@@ -150,7 +176,7 @@
      contínua mantinha o compositor desenhando a cada vsync (~120 quadros/s) o tempo todo */
   .mini.scrub .bar { transition: height .2s, transform .12s linear; }
   /* modo scrub: segurar o play e arrastar para o lado */
-  .mini .time { display: none; font-size: calc(var(--fs) * (20px)); font-weight: 900; font-variant-numeric: tabular-nums; }
+  .mini .time { display: none; font-size: calc(var(--fs) * (20px)); font-weight: 800; font-variant-numeric: tabular-nums; }
   .mini.scrub .time { display: block; }
   .mini.scrub .t, .mini.scrub .a { display: none; }
   .mini.scrub .bar { height: 6px; }
@@ -163,6 +189,7 @@
 <script src="native.js"></script>
 <script src="data.js"></script>
 <script src="add.js"></script>
+<script src="track-menu.js"></script>
 <link rel="stylesheet" href="settings.css">
 <link rel="stylesheet" href="theme.css">
 <link rel="stylesheet" href="dicas.css">
@@ -422,6 +449,7 @@ window.addEventListener("pointermove", e => {
 
 // O "+" abre a janela compartilhada de adicionar à playlist.
 const add = SounosAdd.attach($("phone"), { onChange: list => { playlists = list; renderPlaylists(); } });
+window.__sounosAdd = add;   // o menu "⋮" das linhas abre a mesma janela do "+"
 let currentForAdd = () => order[cur];
 $("miniAdd").onclick = () => {
   if (sw.dragged) return;
@@ -607,6 +635,7 @@ homeClockChanged();
 loadMini();
 </script>
 <script src="home-native.js"></script>
+<script src="clave-atualizacao.js"></script>
 <script src="search.js"></script>
 <script>
 window.homeSearch = SounosSearch.attach(document.getElementById("searchBtn"), document.getElementById("phone"));

@@ -28,8 +28,8 @@
   --tile-shadow: 0 6px 16px rgba(0,0,0,.38);
   color-scheme: dark;
 }
-html[data-theme="dark"], .phone[data-theme="dark"], .set-panel[data-theme="dark"],
-html[data-theme="gradient"], .phone[data-theme="gradient"], .set-panel[data-theme="gradient"] {
+html[data-theme="dark"], .phone[data-theme="dark"], .set-panel[data-theme="dark"], .upd[data-theme="dark"],
+html[data-theme="gradient"], .phone[data-theme="gradient"], .set-panel[data-theme="gradient"], .upd[data-theme="gradient"] {
   --bg: #0e0e10;
   --surface: #1a1a1e;
   --surface-2: #232328;
@@ -49,7 +49,7 @@ html[data-theme="gradient"], .phone[data-theme="gradient"], .set-panel[data-them
   --tile-shadow: 0 6px 16px rgba(0,0,0,.38);
   color-scheme: dark;
 }
-html[data-theme="light"], .phone[data-theme="light"], .set-panel[data-theme="light"] {
+html[data-theme="light"], .phone[data-theme="light"], .set-panel[data-theme="light"], .upd[data-theme="light"] {
   --bg: #f4f4f6;
   --surface: #ffffff;
   --surface-2: #e9e9ee;
@@ -69,7 +69,7 @@ html[data-theme="light"], .phone[data-theme="light"], .set-panel[data-theme="lig
   --tile-shadow: 0 4px 12px rgba(17,17,20,.10), 0 1px 3px rgba(17,17,20,.08);
   color-scheme: light;
 }
-html[data-theme="gradient"], .phone[data-theme="gradient"], .set-panel[data-theme="gradient"] {
+html[data-theme="gradient"], .phone[data-theme="gradient"], .set-panel[data-theme="gradient"], .upd[data-theme="gradient"] {
   --bg: color-mix(in srgb, var(--c1) 18%, #0b0b0d);
   --surface: rgba(255,255,255,.09);
   --surface-2: rgba(255,255,255,.13);
@@ -115,3 +115,5 @@ body.sonus-opening #brandLetter { opacity: 0; }
 .mq-on { text-overflow: clip !important; }
 .sonus-opening-layer .sonus-opening-bg { position: absolute; inset: 0; }
 .sonus-opening-layer canvas { position: absolute; inset: 0; }
+/* negrito padrão do navegador (700) fica um passo mais fino, como o resto do app */
+b, strong { font-weight: 600; }

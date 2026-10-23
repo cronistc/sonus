@@ -10,15 +10,10 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ServiceInfo
-import android.graphics.BitmapFactory
 import android.graphics.drawable.Icon
 import android.media.AudioManager
-import android.media.MediaMetadata
-import android.media.session.MediaSession
-import android.media.session.PlaybackState
 import android.os.Build
 import android.os.IBinder
-import app.sounos.MainActivity
 import app.sounos.R
 import app.sounos.SounosApp
 
@@ -28,7 +23,7 @@ import app.sounos.SounosApp
  */
 class PlaybackService : Service() {
 
-    private lateinit var session: MediaSession
+    private val session get() = MediaSessionHolder.session(this)
     private val player get() = SounosApp.instance.player
 
     private val noisy = object : BroadcastReceiver() {
@@ -39,18 +34,6 @@ class PlaybackService : Service() {
         super.onCreate()
         val nm = getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(NotificationChannel(CHANNEL, "Tocando agora", NotificationManager.IMPORTANCE_LOW).apply { setShowBadge(false) })
-        session = MediaSession(this, "Sonus").apply {
-            setCallback(object : MediaSession.Callback() {
-                override fun onPlay() = player.play()
-                override fun onPause() = player.pause()
-                override fun onSkipToNext() = player.next()
-                override fun onSkipToPrevious() = player.prev()
-                override fun onSeekTo(pos: Long) = player.seek(pos)
-                override fun onStop() = player.pause()
-            })
-            setSessionActivity(PendingIntent.getActivity(this@PlaybackService, 0, Intent(this@PlaybackService, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE))
-            isActive = true
-        }
         registerReceiver(noisy, IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY))
     }
 
@@ -64,36 +47,17 @@ class PlaybackService : Service() {
         return START_NOT_STICKY
     }
 
-    // capa da notificação: decodificada uma vez por música e reduzida (antes: imagem inteira, várias vezes por troca)
-    private var coverId: String? = null
-    private var coverBmp: android.graphics.Bitmap? = null
-    private fun coverFor(id: String): android.graphics.Bitmap? {
-        if (id == coverId && coverBmp != null) return coverBmp
-        val f = SounosApp.instance.covers.local(id) ?: return null
-        val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }; BitmapFactory.decodeFile(f.path, o)
-        var sample = 1; while (maxOf(o.outWidth, o.outHeight) / (sample * 2) >= 512) sample *= 2
-        coverBmp = BitmapFactory.decodeFile(f.path, BitmapFactory.Options().apply { inSampleSize = sample })
-        coverId = id.takeIf { coverBmp != null }
-        return coverBmp
+    private fun refresh() {
+        try { doRefresh() } catch (e: Exception) { android.util.Log.w("Sonus", "refresh da notificação falhou", e) }
     }
 
-    private fun refresh() {
+    private fun doRefresh() {
         val t = player.currentTrack
         if (t == null) { stopForeground(STOP_FOREGROUND_REMOVE); stopSelf(); return }
         val playing = player.isPlaying
         val artistLine = t.artists.ifEmpty { listOf(t.artist) }.joinToString(", ")
-        val cover = coverFor(t.id)
-        session.setMetadata(MediaMetadata.Builder()
-            .putString(MediaMetadata.METADATA_KEY_TITLE, t.title)
-            .putString(MediaMetadata.METADATA_KEY_ARTIST, artistLine)
-            .putLong(MediaMetadata.METADATA_KEY_DURATION, player.durationMs)
-            .apply { if (cover != null) putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, cover) }
-            .build())
-        session.setPlaybackState(PlaybackState.Builder()
-            .setActions(PlaybackState.ACTION_PLAY or PlaybackState.ACTION_PAUSE or PlaybackState.ACTION_PLAY_PAUSE or
-                PlaybackState.ACTION_SKIP_TO_NEXT or PlaybackState.ACTION_SKIP_TO_PREVIOUS or PlaybackState.ACTION_SEEK_TO)
-            .setState(if (playing) PlaybackState.STATE_PLAYING else PlaybackState.STATE_PAUSED, player.positionMs(), if (playing) 1f else 0f)
-            .build())
+        val cover = MediaSessionHolder.coverFor(t.id)
+        MediaSessionHolder.sync(this)
 
         fun action(icon: Int, title: String, act: String) = Notification.Action.Builder(
             Icon.createWithResource(this, icon), title,
@@ -113,13 +77,19 @@ class PlaybackService : Service() {
             .build()
 
         // Mantém o serviço em primeiro plano durante a pausa e a troca de faixa.
-        if (Build.VERSION.SDK_INT >= 29) startForeground(ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
-        else startForeground(ID, n)
+        // Android 12+ lança ForegroundServiceStartNotAllowedException (IllegalStateException) se o app está em segundo plano sem permissão.
+        try {
+            if (Build.VERSION.SDK_INT >= 29) startForeground(ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
+            else startForeground(ID, n)
+        } catch (e: IllegalStateException) {
+            android.util.Log.w("Sonus", "startForeground não permitido; só atualizando a notificação", e)
+            getSystemService(NotificationManager::class.java).notify(ID, n)
+        }
     }
 
     override fun onDestroy() {
         runCatching { unregisterReceiver(noisy) }
-        session.release()
+        // a MediaSession é do processo (MediaSessionHolder): não é liberada aqui
         super.onDestroy()
     }
 
@@ -137,6 +107,8 @@ class PlaybackService : Service() {
         fun update(ctx: Context) {
             val p = SounosApp.instance.player
             if (p.currentTrack == null) return
+            // sessão ativa (e pausada) já com o app aberto, para o play do fone/carro funcionar antes do primeiro play
+            runCatching { MediaSessionHolder.sync(ctx) }
             if (!started && !p.isPlaying) return
             started = true
             runCatching { ctx.startForegroundService(Intent(ctx, PlaybackService::class.java)) }

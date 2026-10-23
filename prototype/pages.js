@@ -7,7 +7,10 @@ window.SounosPages = (() => {
   const handle = n => (window.Sounos?.handle || D.toHandle)(n);
   const artistLine = t => window.Sounos?.artistLine?.(t) || t?.artist || "";
   const cover = (t, pin = false) => `url('${Sounos.coverUrl(t, pin)}'), linear-gradient(135deg,${Sounos.hashColors(t.id).join(",")})`;
-  const key = s => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  const key = n => { const f = String(n || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/ø/g, "o").replace(/æ/g, "ae").replace(/œ/g, "oe").replace(/ß/g, "ss").replace(/đ/g, "d").replace(/ł/g, "l").replace(/þ/g, "th");
+    const a = f.replace(/[^a-z0-9]/g, ""); if (a) return a;
+    // nome sem letras latinas (아이유, 宇多田ヒカル): código das letras, senão todos viram o mesmo artista
+    const h = [...f].filter(c => /[\p{L}\p{N}]/u.test(c)).map(c => c.codePointAt(0).toString(16)).join("").slice(0, 80); return h ? "u" + h : ""; };
   const canonicalUrl = raw => {
     try { const u = new URL(String(raw), location.href); u.hash = ""; u.hostname = u.hostname.toLowerCase(); u.searchParams.sort(); return u.href; }
     catch { return String(raw || "").trim(); }
@@ -129,9 +132,9 @@ window.SounosPages = (() => {
     if (state.matches) return Sounos.call(state.playing ? "pause" : "play");
     return playFrom(list, 0, context);
   }
-  const rowHtml = (t, i, extra = "", pin = false) => `<div class="tr" data-i="${i}" data-id="${esc(t.id)}">
+  const rowHtml = (t, i, extra = "", pin = false, artist = true) => `<div class="tr" data-i="${i}" data-id="${esc(t.id)}">
       <div class="cv" style="background-image:${cover(t, pin)}"></div>
-      <div class="tx"><div class="t">${esc(t.title)}</div><div class="a">${handle(artistLine(t))}</div></div>${extra}</div>`;
+      <div class="tx"><div class="t">${esc(t.title)}</div><div class="a">${handle(artistLine(t))}</div></div>${extra}${window.SounosTrackMenu?.btn(t, { artist }) || ""}</div>`;
 
   // ---------- playlist ----------
   function openPlaylist(id, o = {}) {
@@ -422,7 +425,7 @@ window.SounosPages = (() => {
         <button class="big" data-a="play" aria-label="Tocar" disabled>${I.play}</button>
         <button class="ab" data-a="shuffle" aria-label="Aleatório">${I.shuffle}</button>
       </div>
-      <div class="list">${mine.length ? `<div class="sec">Você ouviu</div>` + mine.slice(0, 5).map((t, i) => rowHtml(t, "m" + i)).join("") : ""}
+      <div class="list">${mine.length ? `<div class="sec">Você ouviu</div>` + mine.slice(0, 5).map((t, i) => rowHtml(t, "m" + i, "", false, false)).join("") : ""}
         <div class="albums"></div>
         <div class="sec">Músicas</div><div class="songs">${'<div class="sk"></div>'.repeat(6)}</div></div>`;
     const $ = s => el.querySelector(s);
@@ -435,7 +438,7 @@ window.SounosPages = (() => {
       $(".name").textContent = handle(String(r.name || name || "Artista").trim() || "Artista");
       $(".sub").textContent = songs.length ? `Artista · ${count(songs.length)}` : "Artista";
       $("[data-a=play]").disabled = !(songs.length || mine.length);
-      $(".songs").innerHTML = songs.length ? songs.map((t, i) => rowHtml(t, i)).join("") : `<div class="note">Nenhuma música encontrada.</div>`;
+      $(".songs").innerHTML = songs.length ? songs.map((t, i) => rowHtml(t, i, "", false, false)).join("") : `<div class="note">Nenhuma música encontrada.</div>`;
       markNow();
     };
     const applyAlbums = r => {

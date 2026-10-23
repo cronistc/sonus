@@ -24,6 +24,10 @@
 
   const ICON = {
     back: '<svg class="lu" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>',
+    light: '<svg class="lu" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.2M12 19.3v2.2M4.6 4.6l1.6 1.6M17.8 17.8l1.6 1.6M2.5 12h2.2M19.3 12h2.2M4.6 19.4l1.6-1.6M17.8 6.2l1.6-1.6"/></svg>',
+    dark: '<svg class="lu" viewBox="0 0 24 24"><path d="M20.5 14.6A8.5 8.5 0 0 1 9.4 3.5a8.5 8.5 0 1 0 11.1 11.1z"/></svg>',
+    // gradiente: uma gota de cor que passa de um tom para outro (cores fixas: as da capa podem ser cinza)
+    gradient: '<svg class="lu" viewBox="0 0 24 24"><defs><linearGradient id="setGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" style="stop-color:#8b5cf6"/><stop offset=".55" style="stop-color:#ec4899"/><stop offset="1" style="stop-color:#f59e0b"/></linearGradient></defs><path d="M12 2.8c3.6 4.3 6.6 7.9 6.6 11.3a6.6 6.6 0 0 1-13.2 0c0-3.4 3-7 6.6-11.3z" style="fill:url(#setGrad);stroke:none"/></svg>',
   };
   const COUNTRIES = [["BR", "Brasil"], ["PT", "Portugal"], ["US", "Estados Unidos"]];
   const LANGS = [["pt-BR", "Português (Brasil)"], ["pt-PT", "Português (Portugal)"], ["en", "English"]];
@@ -43,6 +47,7 @@
       themeTimer = setTimeout(() => {
         if (isOpen) return;
         phone.dataset.theme = s.theme;
+        phone.querySelectorAll(".upd").forEach(u => delete u.dataset.theme);   // volta a herdar do celular
         pendingTheme = false;
       }, 520);
     }
@@ -58,8 +63,8 @@
           <div class="set-head"><button class="close" aria-label="Voltar">${ICON.back}</button><h2>Configurações</h2></div>
           <div class="set-body">
             <section class="set-sec" style="--i:0"><h3>Aparência</h3><div class="set-card">
-              <div class="themes">${[["gradient", "Gradiente"], ["dark", "Escuro"], ["light", "Claro"]].map(([v, l]) => `
-                <button class="theme ${s.theme === v ? "on" : ""}" data-v="${v}"><div class="pv"><i class="c"></i><i class="l1"></i><i class="l2"></i></div><span>${l}</span></button>`).join("")}
+              <div class="themes">${[["light", "Claro"], ["dark", "Escuro"], ["gradient", "Gradiente"]].map(([v, l]) => `
+                <button class="theme ${s.theme === v ? "on" : ""}" data-v="${v}" aria-pressed="${s.theme === v}"><div class="ic">${ICON[v]}</div><span>${l}</span></button>`).join("")}
               </div></div>
               <p class="set-foot" style="text-align:left;padding:8px 4px 0">No Gradiente, o fundo acompanha as cores da capa que está tocando.</p>
             </section>
@@ -72,7 +77,7 @@
                 <div class="d">Deixa todas as músicas no mesmo volume.</div></div>${sw("normalize")}</div>
               <div class="set-row"><div class="tx"><div class="t">Pular silêncio</div>
                 <div class="d">Corta o silêncio do começo e do fim: a próxima música entra na hora.</div></div>${sw("skipSilence")}</div>
-              ${window.Sounos?.native ? `
+              ${window.Sounos?.native && !Sounos.call("getBatteryOptimization").enabled ? `
               <button class="set-row" data-act="battery-allow"><div class="tx"><div class="t">Tocar sem interrupções</div>
                 <div class="d" data-battery-desc></div></div><span class="pill" data-battery-state></span></button>` : ""}
               ${window.Sounos?.native ? "" : /* ainda não existe no player do app: não aparece lá */ `
@@ -83,12 +88,12 @@
 
             <section class="set-sec" style="--i:2"><h3>Armazenamento</h3><div class="set-card">
               <div class="set-row stack"><div class="tx" style="display:flex;justify-content:space-between;align-items:baseline">
-                <div class="t">Usado pelo Sonus</div><div class="val" data-out="storage-total"></div></div>
-                <div class="store-bar"><i class="dl" data-bar="dl"></i><i class="ch" data-bar="cache"></i></div>
-                <div class="store-legend"><span><i class="dl"></i>Músicas baixadas</span><span><i class="ch"></i>Cache</span></div></div>
-              <div class="set-row"><div class="tx"><div class="t">Músicas baixadas</div>
-                <div class="d" data-out="downloads"></div></div><div class="val" data-out="downloads-size"></div></div>
-              <div class="set-row"><div class="tx"><div class="t">Cache</div>
+                <div class="t">Armazenamento do celular</div><div class="val" data-out="storage-free"></div></div>
+                <div class="store-bar"><i class="sy" data-bar="sys"></i><i class="dl" data-bar="dl"></i><i class="ch" data-bar="cache"></i></div>
+                <div class="store-legend"><span><i class="sy"></i>Sistema e outros apps</span><span><i class="dl"></i>Músicas baixadas</span><span><i class="ch"></i>Cache</span><span><i class="fr"></i>Livre</span></div></div>
+              <div class="set-row"><div class="tx"><div class="t">Músicas baixadas <span class="val" data-out="downloads-size"></span></div>
+                <div class="d" data-out="downloads"></div></div><button class="pill" data-act="remove-all" hidden>Remover todas</button></div>
+              <div class="set-row"><div class="tx"><div class="t">Cache <span class="val" data-out="cache-size"></span></div>
                 <div class="d" data-cache>Trechos e capas de músicas que você só viu na busca. As das suas músicas ficam.</div></div>
                 <button class="pill" data-act="clear-cache">Limpar</button></div>
               <div class="set-row"><div class="tx"><div class="t">Baixar só no Wi-Fi</div>
@@ -116,7 +121,7 @@
 
             <section class="set-sec" style="--i:6">
               <img src="logo.svg" alt="" style="display:block;margin:0 auto 10px;width:44px;height:44px;border-radius:12px">
-              <p class="set-foot">Sonus <span data-upd="cur">0.1.2</span><br>Músicas via NewPipe Extractor v0.26.5 · Licença GPLv3</p>
+              <p class="set-foot">Sonus <span data-upd="cur">${SounosVersao.label("0.1.1.0")}</span><br>Músicas via NewPipe Extractor v0.26.5 · Licença GPLv3</p>
             </section>
           </div>
         </div>`;
@@ -134,15 +139,13 @@
       refreshBattery();
     }
 
+    // "Tocar sem interrupções" só existe enquanto não foi permitido; permitiu, some na hora
     function refreshBattery() {
       const row = ov.querySelector('[data-act="battery-allow"]');
       if (!row || !window.Sounos?.native) return;
-      const allowed = !!Sounos.call("getBatteryOptimization").enabled;
-      row.querySelector("[data-battery-desc]").textContent = allowed
-        ? "O Sonus pode continuar tocando em segundo plano."
-        : "Permita que o Sonus continue tocando em segundo plano.";
-      row.querySelector("[data-battery-state]").textContent = allowed ? "Ativo" : "Permitir";
-      row.dataset.enabled = String(allowed);
+      if (Sounos.call("getBatteryOptimization").enabled) return row.remove();
+      row.querySelector("[data-battery-desc]").textContent = "Permita que o Sonus continue tocando em segundo plano.";
+      row.querySelector("[data-battery-state]").textContent = "Permitir";
     }
 
     // ---------- Atualizações ----------
@@ -150,8 +153,7 @@
     const updUi = SounosUpdate.attach(ov.parentElement, () => upd);
     // Telas que abrem sozinhas, uma de cada vez, depois da abertura, da tela "Antes de começar" e longe do player:
     //  · acabou de atualizar → "Nesta versão" (uma vez; continua em Configurações › Atualizações)
-    //  · tem versão nova → "O que há de novo" + "Atualizar agora" (toda vez que o app abre, enquanto houver versão nova).
-    //    Sem o toque da pessoa, nada é instalado.
+    //  · tem versão nova → quem avisa é a clave do topo (clave-atualizacao.js). Sem o toque da pessoa, nada é instalado.
     // Enquanto alguma espera ou está aberta, as dicas aguardam (__sonusNovidades).
     let aguardando = 0;
     const livre = () => window.__sonusAberturaFim !== undefined && !document.body.classList.contains("sonus-opening")
@@ -171,16 +173,6 @@
       window.__sonusTelaInicial = () => { jaAbriu = true; updUi.open(true); };
       automatica(() => { if (!jaAbriu) updUi.open(); });
     }
-    const AVISO = "sounos.updAviso";
-    let avisou = false;
-    function avisaVersaoNova() {
-      const nv = upd?.update; if (avisou || !nv || !["available", "downloading", "ready"].includes(upd.status)) return;
-      let ultimo = {}; try { ultimo = JSON.parse(localStorage.getItem(AVISO) || "{}"); } catch {}
-      avisou = true;
-      automatica(() => { try { localStorage.setItem(AVISO, JSON.stringify({ code: nv.versionCode, em: Date.now() })); } catch {} updUi.open(); });
-    }
-    avisaVersaoNova();
-    if (window.Sounos?.native) Sounos.on("update", () => avisaVersaoNova());
     const supUi = window.SounosSupport?.attach(ov.parentElement);
     const showSup = () => ov.querySelectorAll("[data-sup]").forEach(s => s.hidden = !window.SounosSupport?.available());
     window.SounosSupport?.onChange(showSup);
@@ -188,13 +180,13 @@
     function renderUpd() {
       if (!upd || !upd.current) return;
       const q = sel => ov.querySelectorAll(sel);
-      q('[data-upd="cur"]').forEach(el => el.textContent = upd.current.versionName);
+      q('[data-upd="cur"]').forEach(el => el.textContent = SounosVersao.label(upd.current.versionName));
       const d = q('[data-upd="desc"]')[0], p = q('[data-upd="pill"]')[0]; if (!d) return;
-      const nv = upd.update?.versionName, pct = Math.round((upd.progress || 0) * 100);
+      const nv = SounosVersao.label(upd.update?.versionName), jl = SounosVersao.label(upd.justUpdated), pct = Math.round((upd.progress || 0) * 100);
       const txt = {
         idle: ["Toque para procurar atualizações.", "Buscar"],
         checking: ["Procurando…", "…"],
-        uptodate: [upd.justUpdated ? `Atualizado para a ${upd.justUpdated}.` : "Você está na versão mais recente.", "Buscar"],
+        uptodate: [upd.justUpdated ? `Atualizado para a ${jl}.` : "Você está na versão mais recente.", "Buscar"],
         available: [`Nova versão ${nv} disponível.`, "Ver"],
         downloading: [`Baixando a ${nv}… ${pct}%`, `${pct}%`],
         ready: [`A ${nv} está pronta. Toque para atualizar.`, "Ver"],
@@ -219,23 +211,32 @@
     document.addEventListener("visibilitychange", () => { if (!document.hidden && window.Sounos?.native) { upd = Sounos.call("getUpdate"); renderUpd(); updUi.render(); refreshBattery(); } });
     window.addEventListener("sounos:resume", refreshBattery);
     // Armazenamento (no protótipo os tamanhos são estimados; no app vêm dos arquivos reais)
+    // Barra = o celular inteiro: sistema e outros apps (tudo fora do Sonus), músicas baixadas, cache e o que está livre.
+    // No protótipo os tamanhos são de exemplo; no app vêm dos arquivos reais.
     let cacheMB = 86;
     function renderStorage() {
-      let n = Object.keys(window.SounosData?.getDownloads?.() || {}).length, dlMB = n * 3.6;
-      if (window.Sounos?.native) {                       // números reais dos arquivos no celular
+      let n = Object.keys(window.SounosData?.getDownloads?.() || {}).length, dlMB = n * 3.6, deviceMB = 128 * 1024, freeMB = 41 * 1024;
+      if (window.Sounos?.native) {
         const st = Sounos.call("getStorage");
         n = st.downloadsCount || 0; dlMB = (st.downloadsBytes || 0) / 1048576; cacheMB = (st.cacheBytes || 0) / 1048576;
+        deviceMB = (st.deviceBytes || 0) / 1048576; freeMB = (st.freeBytes || 0) / 1048576;
       }
-      const total = dlMB + cacheMB, fmt = mb => mb >= 1000 ? (mb / 1024).toFixed(1) + " GB" : Math.round(mb) + " MB";
+      const fmt = mb => mb >= 1000 ? (mb / 1024).toFixed(1).replace(".", ",") + " GB" : Math.round(mb) + " MB";
       const q = sel => ov.querySelector(sel);
       if (!q('[data-out="downloads"]')) return;
       q('[data-out="downloads"]').textContent = n ? `${n} ${n === 1 ? "música" : "músicas"} · tocam sem internet` : "Nenhuma ainda. Toque em ↓ no player.";
-      q('[data-out="downloads-size"]').textContent = fmt(dlMB);
-      q('[data-out="storage-total"]').textContent = fmt(total);
-      const scale = Math.max(total, 1);
-      q('[data-bar="dl"]').style.width = (dlMB / scale * 100) + "%";
-      q('[data-bar="cache"]').style.width = (cacheMB / scale * 100) + "%";
+      q('[data-out="downloads-size"]').textContent = n ? fmt(dlMB) : "";
+      q('[data-out="cache-size"]').textContent = fmt(cacheMB);
+      const rm = q('[data-act="remove-all"]'); if (rm) rm.hidden = !n;
+      const scale = Math.max(deviceMB, dlMB + cacheMB + freeMB, 1), sysMB = Math.max(0, scale - freeMB - dlMB - cacheMB);
+      q('[data-out="storage-free"]').textContent = `${fmt(freeMB)} livres`;
+      // um fio mínimo para o que existe, senão some na barra de 128 GB
+      const w = mb => mb > 0 ? Math.max(mb / scale * 100, 1.2) + "%" : "0%";
+      q('[data-bar="sys"]').style.width = w(sysMB);
+      q('[data-bar="dl"]').style.width = w(dlMB);
+      q('[data-bar="cache"]').style.width = w(cacheMB);
     }
+    if (window.Sounos?.native) Sounos.on("storage", () => isOpen && renderStorage());
     function placeKnob(segEl) {
       const on = segEl.querySelector("button.on"), k = segEl.querySelector(".knob");
       if (!on) return;
@@ -252,6 +253,9 @@
       if (th) {
         ov.querySelectorAll(".theme").forEach(b => b.classList.toggle("on", b === th));
         ov.querySelector(".set-panel").dataset.theme = th.dataset.v;
+        phone.dataset.theme = th.dataset.v;          // já troca por trás do painel: ao fechar, nada pisca
+        // a tela de atualização abre por cima das configurações: segue o tema escolhido na hora
+        ov.parentElement.querySelectorAll(".upd").forEach(u => u.dataset.theme = th.dataset.v);
         pendingTheme = true;
         return set("theme", th.dataset.v, false);
       }
@@ -264,6 +268,20 @@
         const k = cy.dataset.cycle, list = k === "country" ? COUNTRIES : LANGS;
         const next = list[(list.findIndex(x => x[0] === s[k]) + 1) % list.length];
         cy.querySelector(".val").textContent = next[1]; return set(k, next[0]);
+      }
+      const rm = e.target.closest('[data-act="remove-all"]');
+      if (rm) {
+        // dois toques: o primeiro pede confirmação (sem janela do sistema), o segundo apaga
+        if (!rm.classList.contains("confirm")) {
+          rm.classList.add("confirm"); rm.textContent = "Tocar de novo para remover";
+          clearTimeout(rm._t); rm._t = setTimeout(() => { rm.classList.remove("confirm"); rm.textContent = "Remover todas"; }, 3500);
+          return;
+        }
+        clearTimeout(rm._t); rm.classList.remove("confirm"); rm.textContent = "Remover todas";
+        if (window.Sounos?.native) Sounos.call("removeAllDownloads");
+        else { try { localStorage.setItem("sounos.downloads", "{}"); } catch {} }
+        setTimeout(renderStorage, 400);
+        return;
       }
       if (e.target.closest('[data-act="clear-cache"]')) {
         cacheMB = 0; if (window.Sounos?.native) Sounos.call("clearCache"); else renderStorage();

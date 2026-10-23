@@ -158,7 +158,13 @@
     b.querySelector(".dl-prog").style.strokeDasharray = `${loading ? Math.max(18, Math.round(p * 100)) : 0} 100`;
     syncDlMark(b, done, t.id);
     b.setAttribute("aria-label", done ? "Baixada" : loading ? "Baixando" : "Baixar música");
+    // "Baixar só no Wi-Fi" nos dados móveis: não oferece baixar (a baixada continua aparecendo)
+    b.hidden = !done && !loading && metered && wifiOnly();
   };
+  var metered = !!Sounos.call("getNetwork").metered;
+  function wifiOnly() { try { return !!JSON.parse(localStorage.getItem("sounos.settings") || "{}").wifiOnlyDownloads; } catch { return false; } }
+  Sounos.on("network", n => { metered = !!n.metered; renderDl(); });
+  addEventListener("storage", e => { if (e.key === "sounos.settings") renderDl(); });
   $("dlBtn").onclick = () => {
     const t = track(); if (!t) return;
     const done = !!S?.downloaded || dls[t.id] === 1;

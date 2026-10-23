@@ -1,4 +1,22 @@
 {
+  "0.1.1.0": [
+    "## Novidades",
+    "Quando sai versão nova, a clave do topo brilha; toque nela para atualizar",
+    "Configurações renovadas: tema com ícones, armazenamento do celular inteiro e \"Remover todas\" nas baixadas",
+    "Play no fone, no carro ou no relógio funciona assim que você abre o Sonus",
+    "Nova forma de mostrar a versão: Sunshine Beta 1.0",
+    "## Ajustes",
+    "O Sonus gasta bem menos bateria tocando música",
+    "Pular para outro trecho ficou mais rápido, e mostra que está carregando",
+    "Letras um pouco mais finas em todo o app",
+    "Com \"Baixar só no Wi-Fi\" ligado, o botão de baixar some nos dados móveis",
+    "## Correções",
+    "Nomes de artistas e capas corrigidos, inclusive no que você já tinha ouvido e baixado",
+    "A música não para mais do nada nem fecha o app",
+    "Pular para o finalzinho da música não trava mais a reprodução",
+    "Nome comprido de artista no player não passa mais por baixo dos botões",
+    "O Sonus não fecha mais quando o Android limita apps em segundo plano"
+  ],
   "0.1.3": [
     "## Novidades",
     "Nova abertura: o nome Sonus se transforma na clave de sol",

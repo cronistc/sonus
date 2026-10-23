@@ -64,7 +64,9 @@ object AccentColorSelector {
 
         // Nada colorido que sirva: a cor de contraste vem da PRÓPRIA capa (nunca inventada) — a cor dela que mais
         // se afasta da borda (ex.: capa preto e branco → branco).
-        val chosen = candidates.maxByOrNull { it.score }?.color ?: ownContrast(center.values + border.values, edgeLab)
+        // A cor própria também precisa passar no contraste com os dois temas: se não passar, ajusta a luminosidade.
+        val chosen = candidates.maxByOrNull { it.score }?.color
+            ?: fallbackColor(center.values + border.values, edgeLab)
         return Result(chosen, borderDominant, deltaE(toOklab(chosen), edgeLab))
     }
 
@@ -72,6 +74,58 @@ object AccentColorSelector {
         val colors = buckets.filter { it.count >= 2 }.map { it.color() }.ifEmpty { buckets.map { it.color() } }
         val noSkin = colors.filterNot(::isSkin).ifEmpty { colors }
         return noSkin.maxByOrNull { deltaE(toOklab(it), edge) } ?: 0xFFFFFF
+    }
+
+    /**
+     * Fallback com contraste garantido, sempre priorizando cores da PRÓPRIA capa. Ordem: (a) a cor do fallback com a
+     * luminosidade ajustada no mesmo matiz; (b) as demais cores da capa, também ajustadas; (c) relaxa o ΔE da borda
+     * (18 → 12 → 8) antes de abandonar a capa; (d) neutro discreto no matiz médio da capa (croma baixo).
+     */
+    private fun fallbackColor(buckets: Collection<Bucket>, edge: Lab): Int {
+        val first = ownContrast(buckets, edge)
+        if (minimumBackgroundContrast(first) >= MIN_BACKGROUND_CONTRAST) return first
+        val colors = buckets.filter { it.count >= 2 }.map { it.color() }.ifEmpty { buckets.map { it.color() } }
+        val ordered = listOf(first) + colors.filterNot(::isSkin).distinct().sortedByDescending { deltaE(toOklab(it), edge) }
+        for (minDelta in doubleArrayOf(MIN_BORDER_DELTA_E, 12.0, 8.0)) {
+            for (color in ordered) adjustLightness(color, edge, minDelta)?.let { return it }
+        }
+        // Neutro discreto: matiz médio da capa com croma o menor possível (se o matiz cair no filtro de pele, gira o matiz aos poucos).
+        val labs = colors.map(::toOklab)
+        val meanA = labs.sumOf { it.a }
+        val meanB = labs.sumOf { it.b }
+        val hue = if (sqrt(meanA * meanA + meanB * meanB) > 1e-9) atan2(meanB, meanA) else 0.0
+        for (minDelta in doubleArrayOf(MIN_BORDER_DELTA_E, 12.0, 8.0, 0.0)) {
+            for (chroma in doubleArrayOf(.03, .05, .08, .12)) {
+                for (turn in intArrayOf(0, 30, -30, 60, -60, 90, -90, 120, -120, 150, -150, 180)) {
+                    val angle = hue + turn * PI / 180.0
+                    val base = fromOklab(Lab(.6, cos(angle) * chroma, sin(angle) * chroma)) ?: continue
+                    adjustLightness(base, edge, minDelta)?.let { return it }
+                }
+            }
+        }
+        return 0x5F7595
+    }
+
+    /** Varre a luminosidade (OKLab) nos dois sentidos mantendo o matiz; reduz o croma se sair da gama. */
+    private fun adjustLightness(color: Int, edge: Lab, minDelta: Double): Int? {
+        val lab = toOklab(color)
+        var best: Int? = null
+        var bestDistance = Double.MAX_VALUE
+        for (step in 0..100) {
+            for (sign in intArrayOf(-1, 1)) {
+                val l = lab.l + sign * step * .01
+                if (l !in 0.0..1.0) continue
+                for (scale in doubleArrayOf(1.0, .8, .6, .4, .2, 0.0)) {
+                    val rgb = fromOklab(Lab(l, lab.a * scale, lab.b * scale)) ?: continue
+                    if (isSkin(rgb) || minimumBackgroundContrast(rgb) < MIN_BACKGROUND_CONTRAST || deltaE(toOklab(rgb), edge) < minDelta) continue
+                    val distance = deltaE(toOklab(rgb), lab)
+                    if (distance < bestDistance) { best = rgb; bestDistance = distance }
+                    break
+                }
+            }
+            if (best != null) break
+        }
+        return best
     }
 
     fun isSkin(color: Int): Boolean {

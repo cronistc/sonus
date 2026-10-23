@@ -24,12 +24,16 @@ class GrowingFileSource(
         if (size == 0) return 0
         val total = totalSize()
         if (total in 1..position) return -1
-        val deadline = System.currentTimeMillis() + 25_000
+        val start = System.currentTimeMillis()
+        val deadline = start + 25_000
         while (file.length() <= position) {
             if (closed) return -1
             if (failed()) throw IOException("o download da música parou")
             if (finished() && file.length() <= position) return -1
-            if (System.currentTimeMillis() > deadline) throw IOException("áudio não chegou a tempo")
+            val now = System.currentTimeMillis()
+            if (now > deadline) throw IOException("áudio não chegou a tempo")
+            // nenhum byte da música chegou ainda: link que não entrega nada não merece 25 s de silêncio
+            if (file.length() == 0L && now - start > 12_000) throw IOException("a música não começou a chegar")
             Thread.sleep(15)
         }
         val r = raf ?: RandomAccessFile(file, "r").also { raf = it }

@@ -12,6 +12,21 @@ import java.io.File
 class CacheTests {
     private fun tempDir(prefix: String) = java.nio.file.Files.createTempDirectory(prefix).toFile()
 
+    @Test fun `trim nao falha quando mtimes mudam e arquivos somem durante a poda`() {
+        val root = tempDir("sonus-trim-race-")
+        try {
+            val dir = File(root, "covers").apply { mkdirs() }
+            val files = (0 until 600).map { File(dir, "f$it.img").apply { writeBytes(ByteArray(1)); setLastModified(1_000L + it) } }
+            val budget = DiskCacheBudget(listOf(dir), maxBytes = 1)
+            val stop = java.util.concurrent.atomic.AtomicBoolean(false)
+            val mexe = Thread {
+                var n = 0L
+                while (!stop.get()) { files.forEach { it.setLastModified(1_000L + (n++ * 7919) % 100_000) } }
+            }.apply { start() }
+            try { repeat(20) { files.forEach { f -> f.writeBytes(ByteArray(1)) }; budget.trim() } } finally { stop.set(true); mexe.join() }
+        } finally { root.deleteRecursively() }
+    }
+
     @Test fun `LRU compartilhado remove o arquivo mais antigo entre imagens e metadados`() {
         val root = tempDir("sonus-lru-")
         try {

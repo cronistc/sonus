@@ -24,15 +24,18 @@ window.SounosUpdate = (() => {
     el.className = "upd";
     el.innerHTML = `<div class="upd-head"><button class="close" aria-label="Voltar">${back}</button></div>
       <div class="upd-body">
-        <img class="upd-icon" src="logo.svg" alt="">
-        <div class="upd-name">Sonus</div>
-        <div class="upd-ver"></div>
-        <div class="upd-status"></div>
+        <div class="upd-top">
+          <img class="upd-icon" src="logo.svg" alt="">
+          <div class="upd-id">
+            <div class="upd-ver"></div>
+            <div class="upd-status"></div>
+            <p class="upd-hint"></p>
+          </div>
+        </div>
         <div class="upd-notes"></div>
       </div>
       <div class="upd-foot">
         <button class="upd-btn"><i class="fill"></i><span></span></button>
-        <p class="upd-hint"></p>
       </div>`;
     phone.appendChild(el);
     const $ = s => el.querySelector(s);
@@ -40,10 +43,12 @@ window.SounosUpdate = (() => {
 
     function render() {
       const u = get(); if (!u || !u.current) return;
-      if (u.justUpdated) lastJust = u.justUpdated;     // continua dizendo "Atualizado para…" mesmo depois de marcado como visto
-      const nv = u.update, cur = u.current.versionName, pct = Math.round((u.progress || 0) * 100);
+      if (u.justUpdated) lastJust = SounosVersao.label(u.justUpdated);     // continua dizendo "Atualizado para…" mesmo depois de marcado como visto
+      const nv = u.update, cur = SounosVersao.label(u.current.versionName), nvl = nv ? SounosVersao.label(nv.versionName) : "", pct = Math.round((u.progress || 0) * 100);
       const has = !!nv && ["available", "downloading", "ready", "installing", "error"].includes(u.status);
-      $(".upd-ver").innerHTML = has ? `<span class="old">${esc(cur)}</span><span class="arrow">→</span><b>${esc(nv.versionName)}</b>` : `<b>${esc(cur)}</b>`;
+      const curH = SounosVersao.html(u.current.versionName), nvH = nv ? SounosVersao.html(nv.versionName) : "";
+      // ícone à esquerda; à direita o nome da versão (o "Sunshine" brilha só aqui), a situação e, menor, como as atualizações funcionam
+      $(".upd-ver").innerHTML = has ? `<b>${nvH}</b><span class="old">você tem a ${esc(cur)}</span>` : `<b>${curH}</b>`;
       const status = {
         uptodate: lastJust ? `Atualizado para a ${lastJust}` : "Você está na versão mais recente",
         idle: lastJust ? `Atualizado para a ${lastJust}` : "Você está na versão mais recente",
@@ -57,7 +62,7 @@ window.SounosUpdate = (() => {
       $(".upd-status").textContent = status;
       $(".upd-status").dataset.s = u.status;
       const meta = has ? [mb(nv.size), day(nv.date)].filter(Boolean).join(" · ") : "";
-      const notes = (has ? nv.notes : (changelog[cur] || u.current.notes)) || [];
+      const notes = (has ? nv.notes : (changelog[u.current.versionName] || u.current.notes)) || [];
       $(".upd-notes").innerHTML = notes.length
         ? `<h3>${has ? "O que há de novo" : "Nesta versão"}</h3>${meta ? `<div class="meta">${esc(meta)}</div>` : ""}${notesHtml(notes)}`
         : (meta ? `<div class="meta">${esc(meta)}</div>` : "");

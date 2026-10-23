@@ -127,7 +127,7 @@ open(sys.argv[4], "w").write(f'''<?xml version="1.0" encoding="utf-8"?>
 <!-- Gerado por tools/abertura/gera.py: "Sonus" caligráfico — splash do sistema e palavra nativa da abertura -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="288dp" android:height="288dp" android:viewportWidth="288" android:viewportHeight="288">
-    <path android:fillColor="#F5F5F7" android:pathData="{path_texto(144, 144)}" />
+    <path android:fillColor="@color/sounos_fg" android:pathData="{path_texto(144, 144)}" />
 </vector>
 ''')
 print("contornos:", [(p["l"], p["f"], p.get("g", 0)) for p in pares], "texto", r(tw), r(th), "clave", r(cw), r(ch))

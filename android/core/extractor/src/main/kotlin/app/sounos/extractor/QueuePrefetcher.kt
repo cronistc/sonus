@@ -1,5 +1,6 @@
 package app.sounos.extractor
 
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -22,7 +23,7 @@ class QueuePrefetcher(
     private val onNextReady: (ResolvedTrack) -> Unit = {},
     private val onCacheChanged: () -> Unit = {},
 ) {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + CoroutineExceptionHandler { _, e -> System.err.println("Sonus: tarefa em segundo plano falhou: $e") })
     private var job: Job? = null
 
     /** keep = a música que está tocando: nunca sai do cache ("Limpar cache" e limite de tamanho). */

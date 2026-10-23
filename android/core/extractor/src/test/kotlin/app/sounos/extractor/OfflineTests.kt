@@ -66,6 +66,69 @@ class OfflineTests {
         assertEquals(listOf("Menos É Mais", "Camisa 10"), radio.artistsFromRuns(json.getArray("runs")))
     }
 
+    @Test fun `participacoes com e e virgula viram nomes separados`() {
+        assertEquals(listOf("Major Lazer", "Justin Bieber", "MØ"), TitleNormalizer.clean("Cold Water (part. Justin Bieber e MØ)", "Major Lazer", official = true).artists)
+        assertEquals(listOf("LSD", "Sia", "Diplo", "Labrinth"), TitleNormalizer.clean("Genius (feat. Sia, Diplo & Labrinth)", "LSD - Topic").artists)
+        assertEquals(listOf("Zezé Di Camargo & Luciano"), TitleNormalizer.splitList("Zezé Di Camargo & Luciano"))
+        assertEquals(listOf("Raça Negra", "Péricles"), TitleNormalizer.splitList("Raça Negra, Péricles", loneAnd = false))
+        assertEquals(listOf("Earth, Wind & Fire", "Ramsey Lewis"), TitleNormalizer.splitList("Earth, Wind & Fire, Ramsey Lewis", loneAnd = false))
+        assertEquals(listOf("Kendrick Lamar", "Tyler, The Creator"), TitleNormalizer.splitList("Kendrick Lamar e Tyler, The Creator"))
+        assertEquals(listOf("Kid Abelha e Os Abóboras Selvagens"), TitleNormalizer.splitList("Kid Abelha e Os Abóboras Selvagens", loneAnd = false))
+    }
+
+    @Test fun `musica salva com artistas juntos e corrigida sem internet`() {
+        assertEquals("Cold Water" to listOf("Major Lazer", "Justin Bieber", "MØ"),
+            TitleNormalizer.repairSaved("Cold Water", listOf("Major Lazer", "Justin Bieber e MØ")))
+        assertEquals("É Tarde Demais" to listOf("Raça Negra", "Péricles"), TitleNormalizer.repairSaved("É Tarde Demais", listOf("Raça Negra, Péricles")))
+        assertEquals("Ela ké Leitada" to listOf("Mc Gw", "Prod.Nifour"), TitleNormalizer.repairSaved("Ela ké Leitada", listOf("Prod.Nifour", "Mc Gw")))
+        assertEquals("Mary Jane" to listOf("VMZ"), TitleNormalizer.repairSaved("Mary Jane | Lyric Vídeo", listOf("VMZ")))
+        assertEquals("X" to listOf("Kid Abelha e Os Abóboras Selvagens"), TitleNormalizer.repairSaved("X", listOf("Kid Abelha e Os Abóboras Selvagens")))
+    }
+
+    @Test fun `com solto faz parte do nome da musica`() {
+        val c = TitleNormalizer.clean("Gin Com Suco De Laranja", "Ebony - Topic")
+        assertEquals("Gin Com Suco De Laranja", c.title)
+        assertEquals(listOf("Ebony"), c.artists)
+    }
+
+    @Test fun `musica oficial com traco nao vira artista`() {
+        val c = TitleNormalizer.clean("Evidências - Ao Vivo", "Chitãozinho & Xororó - Topic")
+        assertEquals("Chitãozinho & Xororó", c.artist)
+        assertEquals("Evidências - Ao Vivo", c.title)
+    }
+
+    @Test fun `ruido depois de barra sai do titulo`() {
+        assertEquals("Mary Jane", TitleNormalizer.clean("Mary Jane | Lyric Vídeo", "VMZ").title)
+        assertEquals("Lois Lane | Versão Guia", TitleNormalizer.clean("Lois Lane | Versão Guia", "VMZ").title)
+    }
+
+    @Test fun `produtor vai para o fim da lista`() {
+        assertEquals(listOf("Mc Gw", "Prod.Nifour"), TitleNormalizer.producersLast(listOf("Prod.Nifour", "Mc Gw")))
+        assertEquals(listOf("Prod.Nifour"), TitleNormalizer.producersLast(listOf("Prod.Nifour")))
+    }
+
+    @Test fun `chave de artista nao junta nomes diferentes`() {
+        assertEquals("mo", CoverStore.artistKey("MØ"))
+        assertEquals("galcosta", CoverStore.artistKey("Gal Costa"))
+        val iu = CoverStore.artistKey("아이유")
+        assertTrue(iu.startsWith("u") && iu.length > 1)
+        assertTrue(iu != CoverStore.artistKey("宇多田ヒカル"))
+        assertTrue(CoverStore.validId("artist:$iu"))
+        assertTrue(CoverStore.isPlaceholderPhoto("https://lh3.googleusercontent.com/25G_BXEqKPiyGZRRRGdIHaGUsVpAxwB7K0IIMkRpURNnPZ_So48IK5xLKCoF6gZ6tGRt2zRW4D61kBQ=w544-h544"))
+    }
+
+    @Test fun `foto do Deezer so vale com nome igual e sem placeholder`() {
+        val json = """{"data":[
+          {"name":"Belchior Cover","picture_xl":"https://cdn-images.dzcdn.net/images/artist/aaa/1000x1000-000000-80-0-0.jpg"},
+          {"name":"Belchior","nb_fan":5,"picture_xl":"https://cdn-images.dzcdn.net/images/artist//1000x1000-000000-80-0-0.jpg","picture_big":"https://cdn-images.dzcdn.net/images/artist//500x500-000000-80-0-0.jpg"},
+          {"name":"BELCHIOR","nb_fan":900,"picture_xl":"https://cdn-images.dzcdn.net/images/artist/bbb/1000x1000-000000-80-0-0.jpg"}]}"""
+        assertEquals("https://cdn-images.dzcdn.net/images/artist/bbb/1000x1000-000000-80-0-0.jpg", DeezerArtist.pick(json, "Belchior"))
+        assertEquals(null, DeezerArtist.pick(json, "Outro"))
+        assertEquals(null, DeezerArtist.pick("""{"data":[{"name":"X","picture_xl":"https://evil.example/a.jpg"}]}""", "X"))
+        assertTrue(CoverStore.allowedUrl("https://cdn-images.dzcdn.net/images/artist/bbb/1000x1000.jpg"))
+        assertTrue(!CoverStore.allowedUrl("http://cdn-images.dzcdn.net/a.jpg"))
+    }
+
     @Test fun `chave de deduplicacao ignora acento e pontuacao`() {
         assertEquals(TitleNormalizer.key("Maré Alta", "Coletivo-Demo!"), TitleNormalizer.key("mare alta", "coletivo demo"))
     }

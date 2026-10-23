@@ -424,7 +424,10 @@
     let cacheRefreshOff = [], suggestionCacheOff = null;
     const realCover = t => `<div class="ic" style="background:url('${Sounos.coverUrl(t)}') center/cover no-repeat, ${grad(Sounos.hashColors(t.id))}"></div>`;
     // foto de artista também passa pelo app (fica guardada; antes vinha da internet a cada busca)
-    const artistKey = n => String(n || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
+    const artistKey = n => { const f = String(n || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/ø/g, "o").replace(/æ/g, "ae").replace(/œ/g, "oe").replace(/ß/g, "ss").replace(/đ/g, "d").replace(/ł/g, "l").replace(/þ/g, "th");
+      const a = f.replace(/[^a-z0-9]/g, ""); if (a) return a;
+      // nome sem letras latinas (아이유, 宇多田ヒカル): código das letras, senão todos viram o mesmo artista
+      const h = [...f].filter(c => /[\p{L}\p{N}]/u.test(c)).map(c => c.codePointAt(0).toString(16)).join("").slice(0, 80); return h ? "u" + h : ""; };
     const artistPic = a => a.thumb ? Sounos.coverUrl({ id: "artist:" + (artistKey(a.name) || "x"), name: a.name, thumb: a.thumb }).replace(/'/g, "%27") : "";
     const realArtist = a => `<div class="ic round" style="background:${a.thumb ? `url('${artistPic(a)}') center/cover no-repeat,` : ""} ${grad(Sounos.hashColors(a.name))}"></div>`;
     // gosto: quanto você ouve cada artista e cada música (histórico do app, mais recente pesa mais).
@@ -589,7 +592,7 @@
             look: `<div class="cv" style="background:${topAlbum.thumb ? `url('${Sounos.coverUrl({ id: "album:" + (artistKey(topAlbum.name) || "x"), thumb: topAlbum.thumb }).replace(/'/g, "%27")}') center/cover,` : ""} ${grad(Sounos.hashColors(topAlbum.name))}"></div>` };
         const songRows = (from, to = resultTracks.length) => resultTracks.slice(from, to).map((t, i) => `
             <button class="s-row" data-pick="nt" data-id="${from + i}">${realCover(t)}
-              <div class="tx"><div class="t">${esc(t.title)}</div><div class="a">${artistLine(t)} · ${fmtDur(t.dur)}</div></div></button>`).join("");
+              <div class="tx"><div class="t">${esc(t.title)}</div><div class="a">${artistLine(t)} · ${fmtDur(t.dur)}</div></div>${window.SounosTrackMenu?.btn(t) || ""}</button>`).join("");
         setPanel(`
           <div class="s-head"><h3>Melhor resultado</h3></div>
           <button class="s-best" data-pick="${best.type}" data-id="${best.i}">${best.look}

@@ -23,7 +23,40 @@ class YtMusicRadio(private val client: OkHttpClient) {
     private fun version(): String = clientVersion ?: runCatching { YoutubeParsingHelper.getYoutubeMusicClientVersion() }
         .getOrDefault(FALLBACK_VERSION).also { clientVersion = it }
 
-    fun radio(videoId: String, hl: String = "pt", gl: String = "BR"): List<Track> {
+    fun radio(videoId: String, hl: String = "pt", gl: String = "BR"): List<Track> =
+        queue(videoId, hl, gl).mapNotNull { o ->
+            val it = o as? JsonObject ?: return@mapNotNull null
+            when {
+                it.has("playlistPanelVideoRenderer") -> it.getObject("playlistPanelVideoRenderer").takeIf(::isSong)
+                it.has("playlistPanelVideoWrapperRenderer") -> it.getObject("playlistPanelVideoWrapperRenderer").let { w ->
+                    w.path("primaryRenderer", "playlistPanelVideoRenderer").takeIf(::isSong)
+                        ?: w.getArray("counterpart").getObject(0).path("counterpartRenderer", "playlistPanelVideoRenderer").takeIf(::isSong)
+                }
+                else -> null
+            }?.let { r -> toTrack(r) }
+        }
+
+    /**
+     * Dados atuais de UMA música, como o YouTube Music mostra (usado para corrigir o que já está salvo).
+     * Clipe continua sendo o clipe (mesmo id), mas ganha a capa quadrada da versão em música, se houver.
+     */
+    fun track(videoId: String, hl: String = "pt", gl: String = "BR"): Track? {
+        val first = queue(videoId, hl, gl).firstOrNull() as? JsonObject ?: return null
+        val (main, song) = when {
+            first.has("playlistPanelVideoRenderer") -> first.getObject("playlistPanelVideoRenderer") to null
+            first.has("playlistPanelVideoWrapperRenderer") -> first.getObject("playlistPanelVideoWrapperRenderer").let { w ->
+                w.path("primaryRenderer", "playlistPanelVideoRenderer") to
+                    w.getArray("counterpart").getObject(0).path("counterpartRenderer", "playlistPanelVideoRenderer").takeIf(::isSong)
+            }
+            else -> return null
+        }
+        if (main.getString("videoId") != videoId) return null
+        val t = toTrack(main, official = isSong(main)) ?: return null
+        val square = song?.let(::thumbs).orEmpty()
+        return if (square.isEmpty()) t else t.copy(thumbs = square + t.thumbs)
+    }
+
+    private fun queue(videoId: String, hl: String, gl: String): JsonArray {
         val body = JsonWriter.string().`object`()
             .`object`("context").`object`("client")
                 .value("clientName", "WEB_REMIX").value("clientVersion", version()).value("hl", hl).value("gl", gl)
@@ -38,38 +71,31 @@ class YtMusicRadio(private val client: OkHttpClient) {
             check(r.isSuccessful) { "YouTube Music: HTTP ${r.code}" }
             r.body!!.string()
         }
-        val items = JsonParser.`object`().from(txt).path("contents", "singleColumnMusicWatchNextResultsRenderer", "tabbedRenderer",
+        return JsonParser.`object`().from(txt).path("contents", "singleColumnMusicWatchNextResultsRenderer", "tabbedRenderer",
             "watchNextTabbedResultsRenderer").getArray("tabs").getObject(0)
             .path("tabRenderer", "content", "musicQueueRenderer", "content", "playlistPanelRenderer").getArray("contents")
-        return items.mapNotNull { o ->
-            val it = o as? JsonObject ?: return@mapNotNull null
-            when {
-                it.has("playlistPanelVideoRenderer") -> it.getObject("playlistPanelVideoRenderer").takeIf(::isSong)
-                it.has("playlistPanelVideoWrapperRenderer") -> it.getObject("playlistPanelVideoWrapperRenderer").let { w ->
-                    w.path("primaryRenderer", "playlistPanelVideoRenderer").takeIf(::isSong)
-                        ?: w.getArray("counterpart").getObject(0).path("counterpartRenderer", "playlistPanelVideoRenderer").takeIf(::isSong)
-                }
-                else -> null
-            }?.let(::toTrack)
-        }
     }
 
     private fun isSong(r: JsonObject) = r.has("videoId") &&
         r.path("navigationEndpoint", "watchEndpoint", "watchEndpointMusicSupportedConfigs", "watchEndpointMusicConfig")
             .getString("musicVideoType") == "MUSIC_VIDEO_TYPE_ATV"
 
-    private fun toTrack(r: JsonObject): Track? {
+    private fun thumbs(r: JsonObject) = r.getObject("thumbnail").getArray("thumbnails").mapNotNull { t ->
+        (t as? JsonObject)?.let { Thumb(it.getString("url") ?: return@let null, it.getInt("width"), it.getInt("height")) }
+    }
+
+    private fun toTrack(r: JsonObject, official: Boolean = true): Track? {
         val id = r.getString("videoId") ?: return null
         val title = r.getObject("title").getArray("runs").text() ?: return null
         val bylineRuns = r.getObject("longBylineText").getArray("runs")
         val bylineArtists = artistsFromRuns(bylineRuns)
         val firstRun = (bylineRuns.firstOrNull() as? JsonObject)?.getString("text") ?: ""
-        val clean = TitleNormalizer.clean(title, bylineArtists.firstOrNull() ?: firstRun)
-        val artists = TitleNormalizer.mergeArtists(bylineArtists, clean.artists)
-        val artist = bylineArtists.firstOrNull() ?: clean.artist
-        val thumbs = r.getObject("thumbnail").getArray("thumbnails").mapNotNull { t ->
-            (t as? JsonObject)?.let { Thumb(it.getString("url") ?: return@let null, it.getInt("width"), it.getInt("height")) }
-        }
+        // sem link de artista, o primeiro trecho pode ser vários nomes num texto só ("Raça Negra, Péricles")
+        val credited = bylineArtists.ifEmpty { TitleNormalizer.splitList(firstRun, loneAnd = false) }
+        val clean = TitleNormalizer.clean(title, credited.firstOrNull() ?: firstRun, official)
+        val artists = TitleNormalizer.producersLast(TitleNormalizer.mergeArtists(credited, clean.artists))
+        val artist = artists.firstOrNull() ?: clean.artist
+        val thumbs = thumbs(r)
         val url = "https://www.youtube.com/watch?v=$id"
         return Track(Track.idFor(url), url, clean.title, artist, null, duration(r.getObject("lengthText").getArray("runs").text()), thumbs, artists)
     }

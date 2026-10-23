@@ -37,6 +37,7 @@ class CoverStore(
     private var aliasesLoaded = false
     private val artistLookupMisses = java.util.concurrent.ConcurrentHashMap<String, Long>()
 
+    fun artistNeedsRecheck(name: String): Boolean = needsArtistRecheck(artistKey(name))
     private fun needsArtistRecheck(key: String): Boolean = synchronized(artistIndexLock) {
         loadArtistIndexLocked()
         artistUrls.getProperty("_recheck.$key") == "true"
@@ -191,6 +192,13 @@ class CoverStore(
         artistUrls.stringPropertyNames().filterNot { it.startsWith("_recheck.") }.sorted()
     }
 
+    /** Regras de nome/foto mudaram: toda foto de artista é conferida de novo quando aparecer (a antiga fica até a nova chegar). */
+    fun recheckAllArtists() = synchronized(artistIndexLock) {
+        loadArtistIndexLocked()
+        artistUrls.stringPropertyNames().filterNot { it.startsWith("_recheck.") }.forEach { artistUrls.setProperty("_recheck.$it", "true") }
+        persistArtistIndexLocked()
+    }
+
     /** Resolve e persiste a URL pelo nome; o perfil e a rota de imagem compartilham esta busca. */
     suspend fun resolveArtistPhoto(
         name: String,
@@ -219,8 +227,8 @@ class CoverStore(
             var found: ArtistResult? = null
             var searched = false
             // Uma entrada marcada para revisão não pode ser validada por uma pista antiga da UI.
-            val hint = hintUrl?.takeIf { !recheck && allowedUrl(it) }?.let(::artistImageUrl)
-            val url = indexed?.takeIf { allowedUrl(it) }?.let(::artistImageUrl) ?: hint ?: run {
+            val hint = hintUrl?.takeIf { !recheck && allowedUrl(it) && !isPlaceholderPhoto(it) }?.let(::artistImageUrl)
+            val url = indexed?.takeIf { allowedUrl(it) && !isPlaceholderPhoto(it) }?.let(::artistImageUrl) ?: hint ?: run {
                 val missUntil = artistLookupMisses[key] ?: 0L
                 if (missUntil > System.currentTimeMillis()) {
                     trace("chave=$key etapa=searchArtists_ms=0 resultado=negativo_em_cache")
@@ -229,12 +237,13 @@ class CoverStore(
                     searched = true
                     val searchStarted = System.nanoTime()
                     found = runCatching { lookup(name) }.getOrNull()
-                        ?.takeIf { artistKey(it.name) == key && it.thumbs.any { thumb -> thumb.url.isNotBlank() } }
+                        ?.takeIf { artistKey(it.name) == key && it.thumbs.any { thumb -> thumb.url.isNotBlank() && !isPlaceholderPhoto(thumb.url) } }
                     trace("chave=$key etapa=searchArtists_ms=${elapsedMs(searchStarted)} encontrado=${found != null}")
                     matchedName = found?.name?.ifBlank { name } ?: name
                     channelUrl = found?.url
                     found?.thumbs?.maxByOrNull { it.width * it.height }?.url?.let(::artistImageUrl)
                         ?.takeIf { allowedUrl(it) }
+                        ?: DeezerArtist(client).photo(name).also { trace("chave=$key etapa=deezer encontrado=${it != null}") }   // reserva: sem foto no YouTube Music
                 }
             }
 
@@ -298,8 +307,10 @@ class CoverStore(
                 hintUrl?.let { rememberAlias(it, target, large = false) }
                 if (recheck) clearArtistRecheck(key)
                 val trimStarted = System.nanoTime()
-                val trim = budget.trim()
-                trace("chave=$key etapa=lru_ms=${elapsedMs(trimStarted)} removidos_bytes=${trim.removedBytes}")
+                // Falha ao podar o cache não pode invalidar a capa já baixada.
+                runCatching { budget.trim() }
+                    .onSuccess { trace("chave=$key etapa=lru_ms=${elapsedMs(trimStarted)} removidos_bytes=${it.removedBytes}") }
+                    .onFailure { trace("chave=$key etapa=lru_falhou erro=${it}") }
             } else staged.delete()
             trace("chave=$key etapa=download_ms=${elapsedMs(downloadStarted)} bytes=${if (installed) target.length() else 0} ok=$installed")
             photo.copy(file = target.takeIf { installed })
@@ -351,6 +362,12 @@ class CoverStore(
         var changed = false
         artistUrls.stringPropertyNames().filterNot { it.startsWith("_recheck.") }.forEach { key ->
             val old = artistUrls.getProperty(key) ?: return@forEach
+            // boneco cinza salvo como foto: apaga para a tela mostrar a inicial do artista
+            if (isPlaceholderPhoto(old)) {
+                artistUrls.remove(key); artistUrls.remove("_recheck.$key"); changed = true
+                browseFile("artist:$key").delete(); pinnedFile("artist:$key").delete()
+                return@forEach
+            }
             val normalized = artistImageUrl(old)
             val path = runCatching { java.net.URI(old).rawPath.orEmpty() }.getOrDefault("")
             val repeatedSize = Regex("(?:=[^/?&#=]*){2,}$").containsMatchIn(path)
@@ -403,8 +420,10 @@ class CoverStore(
                     hint?.let { rememberAlias(it, target, large) }
                     if (!pin) {
                         val trimStarted = System.nanoTime()
-                        val trim = budget.trim()
-                        trace("id=${track.id} etapa=lru_ms=${elapsedMs(trimStarted)} removidos_bytes=${trim.removedBytes}")
+                        // Falha ao podar o cache não pode invalidar a capa já baixada.
+                        runCatching { budget.trim() }
+                            .onSuccess { trace("id=${track.id} etapa=lru_ms=${elapsedMs(trimStarted)} removidos_bytes=${it.removedBytes}") }
+                            .onFailure { trace("id=${track.id} etapa=lru_falhou erro=${it}") }
                     }
                     trace("id=${track.id} etapa=download_ms=${elapsedMs(downloadStarted)} bytes=${target.length()} ok=true")
                     return@withLock target
@@ -413,6 +432,26 @@ class CoverStore(
             }
             null
         }.also { trace("id=${track.id} etapa=total_ms=${elapsedMs(totalStarted)} origem=${if (it == null) "vazio" else "disco_ou_rede"}") }
+    }
+
+    /**
+     * Troca a capa salva de uma música (metadados corrigidos trouxeram capa melhor). Baixa primeiro;
+     * só apaga a antiga se a nova chegou. Devolve os arquivos trocados (para esquecer as cores antigas).
+     */
+    suspend fun replace(track: Track): List<File> = withContext(Dispatchers.IO) {
+        if (!validId(track.id)) return@withContext emptyList()
+        lockFor(track.id).withLock {
+            val staged = File(browseDir, name(track.id) + ".new")
+            if (candidates(track).none { download(it, staged) }) { staged.delete(); return@withLock emptyList() }
+            val pinned = pinnedFile(track.id)
+            val changed = listOf(pinned, browseFile(track.id), largeBrowseFile(track.id)).filter { it.length() > 0 }
+            if (pinned.length() > 0) staged.copyTo(pinned, overwrite = true)
+            browseFile(track.id).delete()
+            val large = largeBrowseFile(track.id)
+            large.delete()
+            if (pinned.length() == 0L) staged.renameTo(large) else staged.delete()
+            changed
+        }
     }
 
     private val locks = java.util.concurrent.ConcurrentHashMap<String, kotlinx.coroutines.sync.Mutex>()
@@ -461,11 +500,11 @@ class CoverStore(
         private const val MAX_BYTES = 6L * 1024 * 1024
         /** Só ids de música/artista do app (sem "../" nem caminhos). */
         fun validId(id: String) = id.length in 3..96 && Regex("""[A-Za-z0-9:_\-.]+""").matches(id) && ".." !in id
-        /** Só baixa capa dos servidores de imagem do YouTube/Google, por HTTPS. */
+        /** Só baixa capa dos servidores de imagem do YouTube/Google (e do Deezer, para foto de artista), por HTTPS. */
         fun allowedUrl(u: String): Boolean {
             val url = runCatching { java.net.URI(u) }.getOrNull() ?: return false
             val h = url.host?.lowercase() ?: return false
-            return url.scheme == "https" && (h == "i.ytimg.com" || h.endsWith(".ytimg.com") || h.endsWith(".googleusercontent.com") || h.endsWith(".ggpht.com"))
+            return url.scheme == "https" && (h == "i.ytimg.com" || h.endsWith(".ytimg.com") || h.endsWith(".googleusercontent.com") || h.endsWith(".ggpht.com") || h.endsWith(".dzcdn.net"))
         }
 
         /** Mesma imagem com URLs de tamanhos diferentes compartilha uma chave de disco. */
@@ -481,8 +520,21 @@ class CoverStore(
         }
 
         /** Chave estável para foto e índice, igual à normalização usada pela interface. */
-        fun artistKey(name: String): String = Normalizer.normalize(name, Normalizer.Form.NFD)
-            .replace(Regex("\\p{M}"), "").lowercase(Locale.ROOT).replace(Regex("[^a-z0-9]"), "")
+        fun artistKey(name: String): String {
+            val folded = Normalizer.normalize(name, Normalizer.Form.NFD).replace(Regex("\\p{M}"), "").lowercase(Locale.ROOT)
+                .replace("ø", "o").replace("æ", "ae").replace("œ", "oe").replace("ß", "ss")
+                .replace("đ", "d").replace("ł", "l").replace("þ", "th")
+            val ascii = folded.replace(Regex("[^a-z0-9]"), "")
+            if (ascii.isNotEmpty()) return ascii
+            // nome sem letras latinas (아이유, 宇多田ヒカル): código das letras, senão todos viram o mesmo artista
+            val hex = folded.codePoints().filter(Character::isLetterOrDigit).toArray()
+                .joinToString("") { Integer.toHexString(it) }.take(80)
+            return if (hex.isEmpty()) "" else "u$hex"
+        }
+
+        /** Foto genérica (boneco cinza) que o YouTube Music usa para artista sem foto: não é foto. */
+        private val PLACEHOLDER_PHOTOS = listOf("25G_BXEqKPiyGZRRRGdIHaGUsVpAxwB7K0IIMkRpURNnPZ_So48IK5xLKCoF6gZ6tGRt2zRW4D61kBQ")
+        fun isPlaceholderPhoto(url: String?): Boolean = url != null && PLACEHOLDER_PHOTOS.any { it in url }
 
         /** Pede avatares de canais no tamanho que a tela inicial e o perfil realmente exibem. */
         fun artistImageUrl(raw: String): String {

@@ -17,13 +17,16 @@ class DiskCacheBudget(
     @Synchronized
     fun trim(): Trim {
         val files = roots.flatMap { root -> root.walkTopDown().filter { it.isFile && !it.name.endsWith(".tmp") && !it.name.endsWith(".up") }.toList() }
-        val before = files.sumOf(File::length)
+        // Snapshot único de mtime/tamanho: ler do disco a cada comparação quebra o contrato do TimSort
+        // quando outras threads tocam ou apagam arquivos durante a ordenação.
+        val snapshot = files.map { Triple(it, it.lastModified(), it.length()) }
+        val before = snapshot.sumOf { it.third }
         var total = before
         var removed = 0
         val limite = roots.firstOrNull()?.let { EspacoLivre.limite(it, maxBytes, before) } ?: maxBytes
-        for (file in files.sortedBy(File::lastModified)) {
+        for ((file, _, size) in snapshot.sortedBy { it.second }) {
             if (total <= limite) break
-            val size = file.length()
+            // Arquivo apagado por outra thread (delete falha / tamanho 0) não é erro.
             if (file.delete()) { total -= size; removed++ }
         }
         return Trim(before, total, removed)

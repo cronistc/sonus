@@ -9,7 +9,7 @@
 .bv-tela.visivel { transform: none; }
 .bv-tela.saindo { transform: translateX(100%); pointer-events: none; }
 .bv-head { min-height: 56px; padding: 0 16px; display: flex; align-items: center; flex-shrink: 0; }
-.bv-head h1 { font-size: calc(var(--fs) * 20px); font-weight: 800; }
+.bv-head h1 { font-size: calc(var(--fs) * 20px); font-weight: 700; }
 .bv-body { flex: 1; overflow-y: auto; scrollbar-width: none; padding: 12px 0 24px; }
 .bv-body::-webkit-scrollbar { display: none; }
 .bv-intro { margin: 0 20px 16px; color: var(--text-dim); font-size: calc(var(--fs) * 12.5px); line-height: 1.4; }
