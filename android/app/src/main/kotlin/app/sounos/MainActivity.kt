@@ -220,7 +220,7 @@ class MainActivity : Activity() {
             val path = url.path.orEmpty().trimStart('/').ifEmpty { "home.html" }
             if (path.startsWith("cover/")) return cover(
                 path.removePrefix("cover/"), url.getQueryParameter("u"),
-                url.getQueryParameter("pin") == "1", url.getQueryParameter("large") == "1", url.getQueryParameter("n"),
+                url.getQueryParameter("pin") == "1", url.getQueryParameter("large") == "1", url.getQueryParameter("n"), url.getQueryParameter("a"),
             )
             return try {
                 WebResourceResponse(mimeOf(path), "utf-8", assets.open(path))
@@ -230,16 +230,17 @@ class MainActivity : Activity() {
     }
 
     /** A resposta da rota nunca espera rede: usa disco ou agenda o preenchimento em segundo plano. */
-    private fun cover(id: String, hint: String?, pin: Boolean, large: Boolean, artistName: String?): WebResourceResponse {
+    private fun cover(id: String, hint: String?, pin: Boolean, large: Boolean, name: String?, albumArtist: String?): WebResourceResponse {
         val app = SounosApp.instance
         if (!CoverStore.validId(id)) return notFound()
         val started = System.nanoTime()
-        if (id.startsWith("artist:")) return artistCover(id, hint, artistName)
+        if (id.startsWith("artist:")) return artistCover(id, hint, name)
         val diskStarted = System.nanoTime()
         val file = app.covers.local(id, hint, large)
         android.util.Log.i("Sonus", "cover rota etapa=disco_ms=${(System.nanoTime() - diskStarted) / 1_000_000} imagem=${file != null} pin=$pin grande=$large")
         val videoId = id.removePrefix("yt:").takeIf { id.startsWith("yt:") }
-        val track = Track(id, videoId?.let { "https://www.youtube.com/watch?v=$it" } ?: "", "", "", null, 0,
+        val album = id.startsWith("album:")
+        val track = Track(id, videoId?.let { "https://www.youtube.com/watch?v=$it" } ?: "", if (album) name.orEmpty() else "", if (album) albumArtist.orEmpty() else "", null, 0,
             listOfNotNull(hint?.let { Thumb(it, 0, 0) }))
         if (file == null) {
             app.io.launch {
@@ -253,17 +254,18 @@ class MainActivity : Activity() {
             android.util.Log.i("Sonus", "cover rota etapa=total_ms=${(System.nanoTime() - started) / 1_000_000} origem=ausente_agendada")
             return notFound()
         }
-        if (pin || large || !app.covers.isSmall(file)) app.io.launch {
+        val beforeResolution = app.covers.resolution(file)
+        if (pin || large || !app.covers.meetsMinimum(file, large)) app.io.launch {
             val beforeLength = file.length()
             val beforeModified = file.lastModified()
-            val beforeSmall = app.covers.isSmall(file)
             val fillStarted = System.nanoTime()
             val result = runCatching {
                 app.covers.get(track, pin, large) { android.util.Log.i("Sonus", "cover $it") }
             }.onFailure { android.util.Log.w("Sonus", "cover atualizacao falhou id=$id", it) }.getOrNull()
             android.util.Log.i("Sonus", "cover rota etapa=upgrade_ms=${(System.nanoTime() - fillStarted) / 1_000_000} id=$id cache=${result != null}")
-            val replaced = result != null && (result.absolutePath != file.absolutePath || result.length() != beforeLength || result.lastModified() != beforeModified)
-            if (replaced && (large || (!beforeSmall && result?.let(app.covers::isSmall) == true))) notifyCoverReady(id, large)
+            val improved = result != null && app.covers.resolution(result) > beforeResolution
+            if (improved) android.util.Log.i("Sonus", "cover rota qualidade id=$id antes=$beforeResolution depois=${app.covers.resolution(result!!)} bytes_antes=$beforeLength bytes_depois=${result.length()} alterado=${result.lastModified() != beforeModified}")
+            if (improved) notifyCoverReady(id, large)
         }
         val responseStarted = System.nanoTime()
         val response = imageResponse(file)
@@ -278,10 +280,14 @@ class MainActivity : Activity() {
         val app = SounosApp.instance
         val lookupStarted = System.nanoTime()
         val local = app.covers.local(id, hint, large = false)
+        val beforeResolution = local?.let(app.covers::resolution) ?: 0
+        val beforeLength = local?.length() ?: 0
+        val beforeModified = local?.lastModified() ?: 0
         android.util.Log.i("Sonus", "cover artista etapa=disco_ms=${(System.nanoTime() - lookupStarted) / 1_000_000} imagem=${local != null}")
         // foto marcada para conferir (regras novas): mostra a atual e confere em segundo plano
         val recheck = local != null && app.covers.artistNeedsRecheck(key)
-        if (local == null || recheck) {
+        val needsUpgrade = local != null && beforeResolution < 226
+        if (local == null || recheck || needsUpgrade) {
             app.io.launch {
                 val fetchStarted = System.nanoTime()
                 val photo = runCatching {
@@ -293,7 +299,10 @@ class MainActivity : Activity() {
                 )
                 }.onFailure { android.util.Log.w("Sonus", "foto artista falhou nome=$key", it) }.getOrNull()
                 android.util.Log.i("Sonus", "cover artista etapa=preload_ms=${(System.nanoTime() - fetchStarted) / 1_000_000} cache=${photo?.file != null}")
-                if (photo?.file != null) notifyCoverReady(id)
+                val updated = photo?.file
+                val changed = updated != null && app.covers.resolution(updated) >= 226 &&
+                    (app.covers.resolution(updated) > beforeResolution || updated.length() != beforeLength || updated.lastModified() != beforeModified)
+                if (changed) notifyCoverReady(id)
             }
             if (local == null) {
                 android.util.Log.i("Sonus", "cover artista etapa=total_ms=${(System.nanoTime() - started) / 1_000_000} origem=ausente_agendada")
@@ -304,13 +313,8 @@ class MainActivity : Activity() {
         return imageResponse(local)
     }
 
-    // cada capa avisa a tela no máximo uma vez por sessão (avisar sempre virava um laço: a tela recarregava,
-    // pedia de novo, a capa "mudava" de novo… e piscava sem parar). Pequena e grande contam separado: se a
-    // pequena já avisou, a grande do player (pedida antes de baixar) ainda precisa avisar, senão fica o fundo de reserva.
-    private val coverNotified = java.util.Collections.newSetFromMap(java.util.concurrent.ConcurrentHashMap<String, Boolean>())
-
     private fun notifyCoverReady(id: String, large: Boolean = false) {
-        if (!::web.isInitialized || isFinishing || !coverNotified.add(if (large) "$id|grande" else id)) return
+        if (!::web.isInitialized || isFinishing) return
         web.post { web.evaluateJavascript("window.__sounos&&window.__sounos.emit('coverReady',{id:${JSONObject.quote(id)},large:$large})", null) }
     }
 
@@ -322,7 +326,9 @@ class MainActivity : Activity() {
             String(head, 8, 4) == "WEBP" -> "image/webp"
             else -> "image/*"
         }
-        return WebResourceResponse(mime, null, 200, "OK", mapOf("Cache-Control" to "public, max-age=31536000, immutable"), file.inputStream())
+        // A rota serve arquivos que podem ser atualizados em segundo plano. Não deixa o WebView
+        // manter uma miniatura antiga sob a mesma URL por um ano.
+        return WebResourceResponse(mime, null, 200, "OK", mapOf("Cache-Control" to "no-cache, must-revalidate"), file.inputStream())
     }
 
     private fun notFound() = WebResourceResponse("text/plain", "utf-8", 404, "Not Found", emptyMap(), "".byteInputStream())

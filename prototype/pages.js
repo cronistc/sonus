@@ -39,6 +39,7 @@ window.SounosPages = (() => {
   };
 
   let phone, opts = {}, stack = [], latestState = null; // páginas abertas (uma por cima da outra)
+  let playRequest = 0;
 
   function attach(ph, o = {}) {
     phone = ph; opts = o;
@@ -103,11 +104,27 @@ window.SounosPages = (() => {
   }
   function playFrom(list, i, ctx, shuffle) {
     if (!list.length) return;
-    if (shuffle) Sounos.call("setShuffle", { on: true });     // sem pedir aleatório, o modo da pessoa fica como está
-    const index = shuffle ? Math.floor(Math.random() * list.length) : i;
-    remember({ type: "t", track: list[index] });
-    Sounos.call("playQueue", { tracks: list, index, context: ctx });
+    const activeShuffle = shuffle === true || (shuffle !== false && !!playerState().shuffle);
+    let tracks = [...list], index = i;
+    if (shuffle === true) {
+      for (let n = tracks.length - 1; n > 0; n--) { const j = Math.floor(Math.random() * (n + 1)); [tracks[n], tracks[j]] = [tracks[j], tracks[n]]; }
+      index = 0;
+    } else if (activeShuffle) {
+      const head = tracks.slice(0, index + 1), rest = tracks.slice(index + 1);
+      for (let n = rest.length - 1; n > 0; n--) { const j = Math.floor(Math.random() * (n + 1)); [rest[n], rest[j]] = [rest[j], rest[n]]; }
+      tracks = head.concat(rest);
+    }
+    remember({ type: "t", track: tracks[index] });
+    const shuffleMode = shuffle === true ? true : shuffle === false ? false : null;
+    window.__playerShell?.prepareQueue?.(tracks, index, ctx, activeShuffle, shuffleMode);
     window.openPlayer?.();
+    const request = ++playRequest;
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (request !== playRequest) return;
+      const args = { tracks, index, context: ctx, shufflePrepared: activeShuffle };
+      if (shuffleMode !== null) args.shuffleMode = shuffleMode;
+      Sounos.call("playQueue", args);
+    }));
   }
   const st = () => { try { return Sounos.call("getState") || {}; } catch { return {}; } };
   const playerState = () => {
@@ -325,7 +342,7 @@ window.SounosPages = (() => {
     const page = mount("album");
     const el = page.el;
     let songs = [];
-    const albumCover = (n, t) => t ? `url('${Sounos.coverUrl({ id: "album:" + (key(n) || "x"), thumb: t })}')` : `linear-gradient(135deg,${Sounos.hashColors(n).join(",")})`;
+    const albumCover = (n, t) => t ? `url('${Sounos.coverUrl({ id: "album:" + (key(n) || "x"), name: n, artist, thumb: t }, false, true)}')` : `linear-gradient(135deg,${Sounos.hashColors(n).join(",")})`;
     el.innerHTML = `<div class="hero"><div class="img" style="background-image:${albumCover(name, thumb)}"></div></div>
       <div class="ph"><div class="name"></div><div class="sub"></div></div>
       <div class="acts"><button class="big" data-a="play" aria-label="Tocar" disabled>${I.play}</button>
@@ -355,18 +372,15 @@ window.SounosPages = (() => {
     el.addEventListener("click", e => {
       const a = e.target.closest("[data-a]")?.dataset.a;
       const ctx = { type: "album", name };
-      // play/aleatório da capa: só as músicas do álbum (sai do "repetir uma" para a fila do álbum aparecer)
+      // Play/aleatório da capa usa só as músicas do álbum; o repetir selecionado continua valendo.
       if (a === "play") {
         if (!songs.length) return;
         const state = syncPagePlayback(page, "album", name);
         if (state.matches) return Sounos.call(state.playing ? "pause" : "play");
-        if (st().repeat === "one") Sounos.call("setRepeat", { mode: "off" });
-        Sounos.call("setShuffle", { on: false });
-        return playFrom(songs, 0, ctx);
+        return playFrom(songs, 0, ctx, false);
       }
       if (a === "shuffle") {
         if (!songs.length) return;
-        if (st().repeat === "one") Sounos.call("setRepeat", { mode: "off" });
         return playFrom(songs, 0, ctx, true);
       }
       // música específica: com repetir (álbum ou faixa) fica no álbum; no aleatório vira rádio a partir dela
@@ -458,7 +472,7 @@ window.SounosPages = (() => {
       if (!albums.length) { $(".albums").innerHTML = ""; return; }
       setTimeout(() => { if (!page.closing) window.SounosTips?.offer("artist-albums"); }, 450);
       $(".albums").innerHTML = `<div class="sec">Álbuns</div><div class="s-hrow">` + albums.map((a, i) => {
-        const u = a.thumb ? Sounos.coverUrl({ id: "album:" + (key(a.name) || "x"), thumb: a.thumb }).replace(/'/g, "%27") : "";
+        const u = a.thumb ? Sounos.coverUrl({ id: "album:" + (key(a.name) || "x"), name: a.name, artist: a.artist, thumb: a.thumb }).replace(/'/g, "%27") : "";
         return `<button class="s-album" data-album="${i}"><div class="pic" style="background:${u ? `url('${u}') center/cover,` : ""} linear-gradient(135deg,${Sounos.hashColors(a.name).join(",")})"></div><div class="n">${esc(a.name)}</div><div class="a">${handle(a.artist)}</div></button>`;
       }).join("") + `</div>`;
     };

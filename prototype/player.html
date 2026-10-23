@@ -466,8 +466,8 @@ $("phone").classList.toggle("player-hidden", !playerVisible);
 document.documentElement.classList.toggle("page-hidden", !playerPageActive || document.hidden);
 const fmt = s => `${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,"0")}`;
 const track = () => tracks[nowT];
-// "repetir faixa" mostra as sugeridas; enquanto elas ainda não chegaram, mostra a fila normal (nunca fica vazio)
-const queueMode = () => repeat === "one" && sugg.length ? "sugg" : "base";
+// Repetir muda somente o comportamento ao fim da faixa; o carrossel sempre mostra a fila atual.
+const queueMode = () => "base";
 const shownList = () => queueMode() === "sugg" ? sugg : base.order;
 function shuffled(arr) {
   const a = [...arr];

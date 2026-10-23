@@ -121,11 +121,12 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
         .put("pending", lyricsPending)
 
     // ---------------- comandos ----------------
-    fun playQueue(list: List<Track>, start: Int, ctx: JSONObject) {
+    fun playQueue(list: List<Track>, start: Int, ctx: JSONObject, shufflePrepared: Boolean = false, shuffleMode: Boolean? = null) {
         if (list.isEmpty()) return
+        shuffleMode?.let { shuffle = it }
         queue.clear(); queue.addAll(list); original = list.toList()
         index = start.coerceIn(0, list.lastIndex); context = ctx; resumeAtMs = 0
-        if (shuffle) shuffleRest()
+        if (shuffle && !shufflePrepared) shuffleRest()
         startCurrent()
     }
 
@@ -159,11 +160,12 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
     /** afterError: a faixa não carregou — pula de verdade, mesmo com "repetir uma" (repetir uma faixa quebrada travava o player). */
     fun next(auto: Boolean = false, afterError: Boolean = false) {
         if (index < 0) return
-        if (auto && repeat == Repeat.ONE && !afterError) { engine.seekTo(0); engine.play(); renewSuggestions(); return }
+        if (auto && repeat == Repeat.ONE && !afterError) { engine.seekTo(0); engine.play(); return }
         when {
             index + 1 < queue.size -> index++
+            repeat == Repeat.ALL -> index = 0
             isRadio() && topUpRadio() -> index++
-            repeat == Repeat.ALL || !auto -> index = 0
+            !auto -> index = 0
             else -> { engine.pause(); engine.seekTo(0); emitState(); return }
         }
         resumeAtMs = 0
@@ -187,15 +189,16 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
 
     fun setRepeat(r: Repeat) {
         repeat = r
-        if (r == Repeat.ONE) computeSuggestions()
         updatePrefetch(); emitState(); saveSession()
     }
 
     fun setShuffle(on: Boolean) {
+        val changed = shuffle != on
         shuffle = on
-        val cur = currentTrack
-        if (on) shuffleRest()
-        else if (cur != null) { queue.clear(); queue.addAll(original); index = queue.indexOfFirst { it.id == cur.id }.coerceAtLeast(0) }
+        if (changed && on) {
+            shuffleRest()
+            if (isRadio()) refreshRadioQueueForShuffle()
+        }
         updatePrefetch(); emitState(); saveSession()
     }
 
@@ -488,7 +491,7 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
 
     private fun computeSuggestions() {
         val source = current?.related?.takeIf { it.isNotEmpty() } ?: if (online) emptyList() else offlineTracks()
-        suggestions = albumPicks() ?: MusicPicks.clean(source, exclude = listOfNotNull(currentTrack)).take(12)
+        suggestions = MusicPicks.clean(source, exclude = listOfNotNull(currentTrack)).take(12)
     }
 
     private fun radioCacheKey(track: Track) = "radio:${track.videoId ?: track.id.removePrefix("yt:")}"
@@ -520,19 +523,32 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
         }
     }
 
-    // álbum em "repetir uma": as sugestões embaixo são as outras músicas do próprio álbum
-    private fun albumPicks(): List<Track>? =
-        if (repeat == Repeat.ONE && context.optString("type") == "album") original.filter { it.id != currentTrack?.id }.take(12) else null
-
-    private fun renewSuggestions() {
-        val source = if (online) current?.related.orEmpty() else offlineTracks()
-        suggestions = albumPicks() ?: MusicPicks.clean(source, exclude = listOfNotNull(currentTrack)).shuffled().take(12)
-        emit("suggestionsRenewed", JSONObject()); emitState()
+    private fun shuffleRest() {
+        val head = queue.take(index + 1)
+        val oldRest = queue.drop(index + 1)
+        var rest = oldRest.shuffled()
+        if (rest.size > 1 && rest.map { it.id } == oldRest.map { it.id }) rest = rest.drop(1) + rest.first()
+        queue.clear(); queue.addAll(head + rest)
     }
 
-    private fun shuffleRest() {
-        val head = queue.take(index + 1); val rest = queue.drop(index + 1).shuffled()
-        queue.clear(); queue.addAll(head + rest)
+    /** O rádio recebe opções novas ao ligar o aleatório; a faixa atual e o que já tocou ficam fixos. */
+    private fun refreshRadioQueueForShuffle() {
+        val track = currentTrack ?: return
+        val videoId = track.videoId ?: return
+        val my = token
+        scope.launch {
+            val fresh = runCatching { withContext(Dispatchers.IO) { app.source.radio(videoId) } }.getOrDefault(emptyList())
+            if (my != token || !shuffle || !isRadio() || currentTrack?.id != track.id || fresh.isEmpty()) return@launch
+            val head = queue.take(index + 1)
+            val seen = head.mapTo(hashSetOf()) { it.id }
+            val existing = queue.drop(index + 1).filter { seen.add(it.id) }
+            val incoming = MusicPicks.clean(fresh, exclude = head).filter { seen.add(it.id) }
+            val candidates = (existing + incoming).shuffled().take(12)
+            if (candidates.map { it.id } == queue.drop(index + 1).map { it.id }) return@launch
+            queue.clear(); queue.addAll(head + candidates)
+            current = current?.copy(related = fresh)
+            computeSuggestions(); updatePrefetch(); emitState(); saveSession()
+        }
     }
 
     private fun upcoming(): List<Track> = when {

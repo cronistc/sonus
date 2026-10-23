@@ -145,14 +145,11 @@ window.Sounos = (() => {
       if (el instanceof HTMLImageElement && el.src.includes("/cover/")) el.src = rewrite(`url("${el.src}")`).slice(5, -2);
     });
   };
-  // capa nova chegou: troca só depois de carregada (nunca mostra o fundo de reserva no meio) e no máximo
-  // uma vez por minuto por capa (evita laço que fazia a capa piscar)
-  const lastCoverRefresh = {};
+  // Capa nova ou melhor: só troca a URL da tela depois que a resposta atualizada carregou.
+  // O app emite o evento apenas quando a resolução do arquivo aumentou ou a foto foi validada.
   (listeners.coverReady ||= []).push(ev => {
     if (!ev?.id) return;
-    const now = Date.now(), k = ev.large ? ev.id + "|grande" : ev.id;    // pequena e grande têm limites separados
-    if (now - (+lastCoverRefresh[k] || 0) < 60000) return;
-    lastCoverRefresh[k] = now;
+    const now = Date.now();
     const revision = String(now);
     coverRevision[ev.id] = revision;
     const probe = new Image();
@@ -195,9 +192,12 @@ window.Sounos = (() => {
     /** capa servida pelo app (do disco quando já guardada) */
     coverUrl(t, pin = false, large = false) {
       if (!t) return "";
-      const artist = String(t.id).startsWith("artist:") ? (t.name || t.artist || "") : "";
+      const id = String(t.id);
+      const isArtist = id.startsWith("artist:"), isAlbum = id.startsWith("album:");
+      const name = isArtist ? (t.name || t.artist || "") : isAlbum ? (t.name || t.album || t.title || "") : "";
+      const albumArtist = isAlbum ? (t.albumArtist || t.artist || "") : "";
       const revision = coverRevision[t.id];
-      return `/cover/${encodeURIComponent(t.id)}?u=${encodeURIComponent(t.thumb || "")}${artist ? `&n=${encodeURIComponent(artist)}` : ""}${pin ? "&pin=1" : ""}${large ? "&large=1" : ""}${revision ? `&v=${revision}` : ""}`;
+      return `/cover/${encodeURIComponent(id)}?u=${encodeURIComponent(t.thumb || "")}${name ? `&n=${encodeURIComponent(name)}` : ""}${albumArtist ? `&a=${encodeURIComponent(albumArtist)}` : ""}${pin ? "&pin=1" : ""}${large ? "&large=1" : ""}${revision ? `&v=${revision}` : ""}`;
     },
     /** cores provisórias (até a capa chegar): derivadas do id, sempre as mesmas para a mesma música */
     hashColors(id) { const h = hash(id || "x") % 360; return [`hsl(${h} 65% 42%)`, `hsl(${(h + 40) % 360} 70% 50%)`, `hsl(${(h + 80) % 360} 80% 58%)`]; },

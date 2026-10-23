@@ -238,7 +238,12 @@ class Bridge(
             }
             "suggest" -> cachedAsync(a, "suggest", a.getString("q")) { JSONObject().put("items", JSONArray(app.source.suggestions(a.getString("q")).take(6))) }
             "prefetch" -> app.resolver.prefetch(Json.tracks(a.optJSONArray("tracks")))
-            "playQueue" -> { requestBatteryOptimization(false); player.playQueue(Json.tracks(a.getJSONArray("tracks")), a.optInt("index"), a.optJSONObject("context") ?: JSONObject().put("type", "playlist")) }
+            "playQueue" -> {
+                requestBatteryOptimization(false)
+                val shuffleMode = if (a.has("shuffleMode")) a.optBoolean("shuffleMode") else null
+                player.playQueue(Json.tracks(a.getJSONArray("tracks")), a.optInt("index"),
+                    a.optJSONObject("context") ?: JSONObject().put("type", "playlist"), a.optBoolean("shufflePrepared"), shuffleMode)
+            }
             "playSingle" -> { requestBatteryOptimization(false); player.playQueue(listOf(Json.track(a.getJSONObject("track"))), 0, a.optJSONObject("context") ?: JSONObject().put("type", "radio")) }
             "playIndex" -> { requestBatteryOptimization(false); player.playIndex(a.getInt("index")) }
             "playSuggestion" -> { requestBatteryOptimization(false); player.playSuggestion(Json.track(a.getJSONObject("track"))) }

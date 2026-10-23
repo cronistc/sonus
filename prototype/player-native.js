@@ -6,11 +6,54 @@
   const lyricsById = {};
   const root = document.documentElement.style;
 
+  // A faixa selecionada já está na fila nativa. Atualiza texto e capa no mesmo ciclo do toque;
+  // o evento de estado confirma a troca sem redesenhar a mesma faixa uma segunda vez.
+  let optimisticId = null;
+  const baseSwapIn = swapIn;
+  swapIn = function (el, from, ms) {
+    if (["cover", "title", "artist"].includes(el.id)) {
+      el.getAnimations?.().forEach(animation => animation.cancel());
+      el.style.opacity = ""; el.style.transform = "";
+      return;
+    }
+    return baseSwapIn(el, from, ms);
+  };
+  function selectImmediately(i) {
+    if (i < 0 || i >= base.order.length) return false;
+    base.cur = i; nowT = base.order[i]; pos = 0;
+    const t = tracks[nowT];
+    if (!t) return false;
+    t.previewCover = t.cover;
+    t.cover = Sounos.coverUrl(t.raw || t, false, true);
+    optimisticId = t.id;
+    loadCurrent(); render(); renderPlayIcon(); syncPlayerClock();
+    return true;
+  }
+
   const toLocal = t => ({ id: t.id, title: t.title || "—", artist: Sounos.artistLine(t), dur: Math.max(1, t.dur || 1),
                           c: Sounos.hashColors(t.id), lrc: lyricsById[t.id] ? lyricsById[t.id].lrc : undefined, plain: !!(lyricsById[t.id] && lyricsById[t.id].plain),
                           cover: Sounos.coverUrl(t), thumb: t.thumb || t.thumbs?.[0]?.url || "", raw: t });
-  const thumbLayer = () => "";   // a capa vem só pela rota local (/cover), que já busca e guarda; nada de baixar duas vezes
-  const coverBg = t => `url('${t.cover}') center/cover no-repeat, ${thumbLayer(t)}linear-gradient(135deg,${t.c[0]},${t.c[1]} 60%,${t.c[2]})`;
+  window.__preparePlayerQueue = function (list, index, ctx, shufflePrepared, shuffleMode) {
+    if (!Array.isArray(list) || !list.length) return false;
+    tracks.splice(0, tracks.length, ...list.map(toLocal));
+    base.order = tracks.map((_, i) => i);
+    base.cur = Math.max(0, Math.min(index | 0, tracks.length - 1));
+    sugg = [];
+    nowT = base.order[base.cur]; pos = 0;
+    context = ctx?.type === "radio" ? "radio" : "playlist";
+    if (S) repeat = S.repeat;
+    shuffle = shuffleMode == null ? (!!S?.shuffle || !!shufflePrepared) : !!shuffleMode;
+    const current = tracks[nowT];
+    current.previewCover = current.cover;
+    current.cover = Sounos.coverUrl(current.raw || current, false, true);
+    optimisticId = current.id;
+    $("phone").classList.remove("loading");
+    loadCurrent(); buildQueue(); centerQueue(false);
+    playing = true; render(); renderPlayIcon(); syncPlayerClock();
+    return true;
+  };
+  // A miniatura já visível no carrossel fica por baixo até a rota local entregar a capa grande.
+  const coverBg = t => `url('${t.cover}') center/cover no-repeat, ${t.previewCover && t.previewCover !== t.cover ? `url('${t.previewCover}') center/cover no-repeat,` : ""}linear-gradient(135deg,${t.c[0]},${t.c[1]} 60%,${t.c[2]})`;
 
   const offerPlayerTips = () => {
     SounosTips?.offer("player");
@@ -35,6 +78,7 @@
     context = st.context?.type === "radio" ? "radio" : "playlist";
     const cur = tracks[nowT];
     if (cur) {
+      cur.previewCover = cur.cover;
       cur.cover = Sounos.coverUrl(st.current || st.queue[nowT], false, true);
       cur.c = st.colors;
       if (st.durationMs > 0) cur.dur = st.durationMs / 1000;
@@ -44,8 +88,14 @@
 
     const queueChanged = first || ids(prev?.queue) !== ids(st.queue) || modeBefore !== queueMode() ||
                          (queueMode() === "sugg" && ids(prev?.suggestions) !== ids(st.suggestions));
-    if (queueChanged && !holdQueue) refreshQueue(!first); else if (!holdQueue) markQueue();
-    if (first || prev?.current?.id !== st.current?.id) { const keep = pos; loadCurrent(); pos = keep; }
+    const currentChanged = first || prev?.current?.id !== st.current?.id;
+    const optimisticMatch = optimisticId != null && optimisticId === st.current?.id;
+    if (currentChanged && !optimisticMatch) {
+      const keep = pos; loadCurrent(); pos = keep;
+      if (queueChanged && !holdQueue) { buildQueue(); centerQueue(true); }
+    } else if (queueChanged && !holdQueue) refreshQueue(false);
+    else if (!holdQueue) markQueue();
+    if (optimisticMatch) optimisticId = null;
     $("phone").classList.toggle("loading", !!st.loading);
     renderDl(); render();
     syncPlayerClock();
@@ -100,7 +150,10 @@
   prev = function () { Sounos.call("prev"); };
   $("prev").onclick = () => prev();
   $("next").onclick = () => next();
-  playBase = function (i) { Sounos.call("playIndex", { index: i }); };
+  playBase = function (i) {
+    selectImmediately(i);
+    Sounos.call("playIndex", { index: i });
+  };
   playSuggestion = function (ti) { Sounos.call("playSuggestion", { track: tracks[ti].raw }); };
   endQueueGesture = (orig => function (tap) {
     // toque num bloco: troca de música (o app já começa tocando)

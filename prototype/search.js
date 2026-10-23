@@ -290,7 +290,7 @@
             const x = D.getPlaylists().find(p => p.id === h.id) || playlists[h.i] || h;
             ic = cover("p", x); t = esc(x.name || h.name || "Playlist"); a = "Playlist";
           } else if (h.type === "album") {
-            const url = h.thumb ? Sounos.coverUrl({ id: "album:" + (h.id || norm(h.name) || "x"), thumb: h.thumb }) : "";
+            const url = h.thumb ? Sounos.coverUrl({ id: "album:" + (h.id || norm(h.name) || "x"), name: h.name, artist: h.artist, thumb: h.thumb }) : "";
             ic = `<div class="ic" style="${url ? `background:url('${url.replace(/'/g, "%27")}') center/cover no-repeat` : ""}">♪</div>`;
             t = esc(h.name || "Álbum"); a = "Álbum";
           } else { ic = cover("q"); t = esc(h.name || ""); a = "Pesquisa"; }
@@ -589,7 +589,7 @@
           : resultTracks.length ? { type: "nt", i: 0, title: esc(resultTracks[0].title), sub: "Música · " + artistLine(resultTracks[0]),
             look: realCover(resultTracks[0]).replace('class="ic"', 'class="cv"') }
           : { type: "nal", i: 0, title: esc(topAlbum.name), sub: "Álbum · " + toHandle(topAlbum.artist),
-            look: `<div class="cv" style="background:${topAlbum.thumb ? `url('${Sounos.coverUrl({ id: "album:" + (artistKey(topAlbum.name) || "x"), thumb: topAlbum.thumb }).replace(/'/g, "%27")}') center/cover,` : ""} ${grad(Sounos.hashColors(topAlbum.name))}"></div>` };
+            look: `<div class="cv" style="background:${topAlbum.thumb ? `url('${Sounos.coverUrl({ id: "album:" + (artistKey(topAlbum.name) || "x"), name: topAlbum.name, artist: topAlbum.artist, thumb: topAlbum.thumb }).replace(/'/g, "%27")}') center/cover,` : ""} ${grad(Sounos.hashColors(topAlbum.name))}"></div>` };
         const songRows = (from, to = resultTracks.length) => resultTracks.slice(from, to).map((t, i) => `
             <button class="s-row" data-pick="nt" data-id="${from + i}">${realCover(t)}
               <div class="tx"><div class="t">${esc(t.title)}</div><div class="a">${artistLine(t)} · ${fmtDur(t.dur)}</div></div>${window.SounosTrackMenu?.btn(t) || ""}</button>`).join("");
@@ -602,7 +602,7 @@
             <button class="s-art" data-pick="na" data-id="${i}"><div class="pic" style="background:${a.thumb ? `url('${artistPic(a)}') center/cover,` : ""} ${grad(Sounos.hashColors(a.name))}"></div>
               <div class="n">${toHandle(a.name)}</div></button>`).join("") + `</div>` : "") +
           (resultAlbums.length ? `<div class="s-head"><h3>Álbuns</h3></div><div class="s-hrow">` + resultAlbums.map((a, i) => `
-            <button class="s-album" data-pick="nal" data-id="${i}"><div class="pic" style="background:${a.thumb ? `url('${Sounos.coverUrl({ id: "album:" + (artistKey(a.name) || "x"), thumb: a.thumb }).replace(/'/g, "%27")}') center/cover,` : ""} ${grad(Sounos.hashColors(a.name))}"></div>
+            <button class="s-album" data-pick="nal" data-id="${i}"><div class="pic" style="background:${a.thumb ? `url('${Sounos.coverUrl({ id: "album:" + (artistKey(a.name) || "x"), name: a.name, artist: a.artist, thumb: a.thumb }).replace(/'/g, "%27")}') center/cover,` : ""} ${grad(Sounos.hashColors(a.name))}"></div>
               <div class="n">${esc(a.name)}</div><div class="a">${toHandle(a.artist)}</div></button>`).join("") + `</div>` : "") +
           songRows(Math.min(4, resultTracks.length)) +
           (moreLoading ? `<div class="sk" aria-label="Carregando músicas"></div>` : ""), "res");

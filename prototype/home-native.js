@@ -264,6 +264,10 @@
     anim.onfinish = () => { anim = null; done?.(); };
   }
   const shell = window.__playerShell = {
+    prepareQueue(list, index, context, shufflePrepared, shuffleMode) {
+      if (!loaded) return false;
+      return !!win().__preparePlayerQueue?.(list, index, context, shufflePrepared, shuffleMode);
+    },
     open(opts = {}) {
       if (!cur()) return;
       if (!loaded) { onLoad = () => shell.open(opts); return; }

@@ -25,7 +25,13 @@ class CoverStore(
 ) {
     init { pinnedDir.mkdirs(); browseDir.mkdirs() }
 
-    data class ArtistPhoto(val name: String, val url: String?, val file: File?, val channelUrl: String? = null)
+    data class ArtistPhoto(
+        val name: String,
+        val url: String?,
+        val file: File?,
+        val channelUrl: String? = null,
+        val alternatives: List<String> = listOfNotNull(url),
+    )
 
     private val artistIndexFile = File(browseDir, "artist-urls.properties")
     private val artistIndexLock = Any()
@@ -48,27 +54,27 @@ class CoverStore(
     fun browseFile(trackId: String) = File(browseDir, name(trackId))
     fun largeBrowseFile(trackId: String) = File(browseDir, name(trackId) + ".large")
 
-    /** Capa local. O modo de lista prefere a versão pequena; não acessa a rede. */
+    /** Capa local. Prefere arquivos que atendem ao tamanho pedido; nunca escolhe um alias menor se há um bom. */
     fun local(trackId: String, hint: String? = null, large: Boolean = false): File? {
         val pinned = pinnedFile(trackId)
         val browse = browseFile(trackId)
         val largeBrowse = largeBrowseFile(trackId)
-        val direct = if (large) {
-            largeBrowse.takeIf { it.length() > 0 && !isSmall(it) }
-                ?: pinned.takeIf { it.length() > 0 && !isSmall(it) }
-                ?: aliasFor(hint, true)
-                ?: browse.takeIf { it.length() > 0 }
-                ?: pinned.takeIf { it.length() > 0 }
-        } else {
-            browse.takeIf { it.length() > 0 && isSmall(it) }?.also(::touch)
-                ?: pinned.takeIf { it.length() > 0 && isSmall(it) }
-                ?: aliasFor(hint, false)
-                ?: browse.takeIf { it.length() > 0 }?.also(::touch)
-                ?: pinned.takeIf { it.length() > 0 }
-        }
-        if (direct != null) return direct.also(::touch)
-        return null
+        val aliases = listOfNotNull(aliasFor(hint, large), aliasFor(hint, !large))
+        val ordered = if (large) listOf(largeBrowse, pinned) + aliases + listOf(browse)
+            else listOf(browse, pinned) + aliases + listOf(largeBrowse)
+        val files = ordered.distinct().filter { it.isFile && it.length() > 0 }
+        val minPixels = minPixels(large)
+        val sized = files.map { it to resolution(it) }.filter { it.second > 0 }
+        return (sized.filter { it.second >= minPixels }.maxByOrNull { it.second }?.first
+            ?: sized.maxByOrNull { it.second }?.first)?.also(::touch)
     }
+
+    /** Menor lado em pixels; serve para comparar qualidade sem abrir a imagem toda. */
+    fun resolution(file: File): Int = imageSize(file)?.let { minOf(it.first, it.second) } ?: 0
+
+    fun meetsMinimum(file: File, large: Boolean): Boolean = resolution(file) >= minPixels(large)
+
+    private fun minPixels(large: Boolean) = if (large) LARGE_MIN_PIXELS else LIST_MIN_PIXELS
 
     /** Atualiza o LRU somente para arquivos da área descartável. */
     fun touch(file: File) {
@@ -78,8 +84,10 @@ class CoverStore(
     /** Fixa no armazenamento permanente somente se a capa já estiver no cache. */
     fun pinLocal(trackId: String, hint: String? = null): File? {
         val existing = local(trackId, hint, large = false) ?: return null
-        if (existing.parentFile == pinnedDir) return existing
-        return promoteFile(existing, pinnedFile(trackId))
+        val target = pinnedFile(trackId)
+        if (existing == target) return existing
+        if (target.isFile && resolution(target) >= resolution(existing)) return target
+        return copyBetter(existing, target)
     }
 
     /** Move capas antigas da área permanente para o LRU, preservando downloads e playlists. */
@@ -157,7 +165,7 @@ class CoverStore(
 
     private fun preserveLegacyLarge(trackId: String, from: File) {
         val to = largeBrowseFile(trackId)
-        if (to.length() > 0 || !from.isFile || isSmall(from)) return
+        if (to.length() > 0 || !from.isFile || resolution(from) < LARGE_MIN_PIXELS) return
         if (!runCatching { from.copyTo(to, overwrite = false) }.isSuccess) return
         val oldRef = "b:${from.name}"
         val newRef = "b:${to.name}"
@@ -217,8 +225,8 @@ class CoverStore(
             val recheck = needsArtistRecheck(key)
             val indexed = readArtistUrl(key)
             val cached = if (recheck) null else {
-                browseFile(id).takeIf { it.length() > 0 }?.also(::touch)
-                    ?: pinnedFile(id).takeIf { it.length() > 0 }
+                browseFile(id).takeIf { it.length() > 0 && resolution(it) >= ARTIST_MIN_PIXELS }?.also(::touch)
+                    ?: pinnedFile(id).takeIf { it.length() > 0 && resolution(it) >= ARTIST_MIN_PIXELS }
             }
             trace("chave=$key etapa=disco_indice_ms=${elapsedMs(indexStarted)} imagem=${cached != null} url=${indexed != null}")
 
@@ -228,6 +236,7 @@ class CoverStore(
             var searched = false
             // Uma entrada marcada para revisão não pode ser validada por uma pista antiga da UI.
             val hint = hintUrl?.takeIf { !recheck && allowedUrl(it) && !isPlaceholderPhoto(it) }?.let(::artistImageUrl)
+            val youtubeUrls = mutableListOf<String>()
             val url = indexed?.takeIf { allowedUrl(it) && !isPlaceholderPhoto(it) }?.let(::artistImageUrl) ?: hint ?: run {
                 val missUntil = artistLookupMisses[key] ?: 0L
                 if (missUntil > System.currentTimeMillis()) {
@@ -241,8 +250,10 @@ class CoverStore(
                     trace("chave=$key etapa=searchArtists_ms=${elapsedMs(searchStarted)} encontrado=${found != null}")
                     matchedName = found?.name?.ifBlank { name } ?: name
                     channelUrl = found?.url
-                    found?.thumbs?.maxByOrNull { it.width * it.height }?.url?.let(::artistImageUrl)
-                        ?.takeIf { allowedUrl(it) }
+                    found?.thumbs.orEmpty().sortedByDescending { it.width * it.height }
+                        .map { artistImageUrl(it.url) }
+                        .filter { allowedUrl(it) && !isPlaceholderPhoto(it) }
+                        .distinct().also(youtubeUrls::addAll).firstOrNull()
                         ?: DeezerArtist(client).photo(name).also { trace("chave=$key etapa=deezer encontrado=${it != null}") }   // reserva: sem foto no YouTube Music
                 }
             }
@@ -258,7 +269,8 @@ class CoverStore(
                 artistLookupMisses[key] = System.currentTimeMillis() + 5 * 60 * 1000L
             }
             trace("chave=$key etapa=resolver_ms=${elapsedMs(started)} origem=${when { indexed != null -> "indice"; hintUrl != null -> "pista"; url != null -> "busca"; else -> "vazio" }}")
-            ArtistPhoto(matchedName, url, cached, channelUrl)
+            val alternatives = (youtubeUrls + listOfNotNull(url)).distinct()
+            ArtistPhoto(matchedName, url, cached, channelUrl, alternatives)
         }
     }
 
@@ -285,7 +297,7 @@ class CoverStore(
             trace("chave=$key etapa=download_lock_ms=${elapsedMs(lockStarted)}")
             val target = browseFile(id)
             val recheck = needsArtistRecheck(key)
-            if (target.length() > 0 && !recheck) {
+            if (target.length() > 0 && resolution(target) >= ARTIST_MIN_PIXELS && !recheck) {
                 touch(target)
                 sharedCache = true
                 return@withLock photo.copy(file = target)
@@ -293,8 +305,34 @@ class CoverStore(
             val downloadStarted = System.nanoTime()
             val staged = File(browseDir, target.name + ".refresh")
             staged.delete()
-            val ok = download(photo.url, staged)
-            val oldPhoto = listOf(target, pinnedFile(id)).firstOrNull { it.isFile && it.length() > 0 }
+            val oldPhoto = listOf(target, pinnedFile(id)).filter { it.isFile && it.length() > 0 }.maxByOrNull(::resolution)
+            val sources = linkedSetOf<String>().apply {
+                addAll(photo.alternatives)
+                add(photo.url)
+            }
+            // Um URL salvo pode ter expirado. Reconsulta o YouTube Music e guarda todas as fotos
+            // utilizáveis para tentar as alternativas antes de recorrer ao Deezer.
+            if (sources.size < 2 || sources.all { runCatching { java.net.URI(it).host.orEmpty().endsWith("dzcdn.net") }.getOrDefault(false) }) {
+                runCatching { lookup(name) }.getOrNull()
+                    ?.takeIf { artistKey(it.name) == key }
+                    ?.thumbs.orEmpty().sortedByDescending { it.width * it.height }
+                    .map { artistImageUrl(it.url) }
+                    .filter { allowedUrl(it) && !isPlaceholderPhoto(it) }
+                    .forEach(sources::add)
+            }
+            // Deezer também é reserva quando o YouTube tinha uma foto, mas o arquivo falhou.
+            runCatching { DeezerArtist(client).photo(name) }.getOrNull()?.let(sources::add)
+            var ok = false
+            var installedUrl: String? = null
+            for (source in sources) {
+                for (candidate in imageCandidates(source, ARTIST_MIN_PIXELS)) {
+                    if (download(candidate, staged, ARTIST_MIN_PIXELS)) { ok = true; installedUrl = source; break }
+                }
+                if (ok) break
+            }
+            val stagedResolution = if (ok) resolution(staged) else 0
+            val oldResolution = oldPhoto?.let(::resolution) ?: 0
+            if (ok && oldPhoto != null && stagedResolution < oldResolution) ok = false
             val preserved = if (ok && recheck && oldPhoto != null) {
                 val backup = File(pinnedDir, target.name + ".unverified")
                 backup.isFile || runCatching { oldPhoto.copyTo(backup, overwrite = false) }.isSuccess
@@ -303,7 +341,7 @@ class CoverStore(
                 staged.copyTo(target, overwrite = true); staged.delete(); true
             }.getOrDefault(false))
             if (installed) {
-                rememberAlias(photo.url, target, large = false)
+                installedUrl?.let { saveArtistUrl(key, it); rememberAlias(it, target, large = false) }
                 hintUrl?.let { rememberAlias(it, target, large = false) }
                 if (recheck) clearArtistRecheck(key)
                 val trimStarted = System.nanoTime()
@@ -313,7 +351,7 @@ class CoverStore(
                     .onFailure { trace("chave=$key etapa=lru_falhou erro=${it}") }
             } else staged.delete()
             trace("chave=$key etapa=download_ms=${elapsedMs(downloadStarted)} bytes=${if (installed) target.length() else 0} ok=$installed")
-            photo.copy(file = target.takeIf { installed })
+            photo.copy(file = target.takeIf { installed } ?: oldPhoto)
         }.also {
             val origin = when { it.file == null -> "falha"; sharedCache -> "disco_compartilhado"; else -> "rede" }
             trace("chave=$key etapa=total_ms=${elapsedMs(totalStarted)} origem=$origin")
@@ -399,38 +437,45 @@ class CoverStore(
             val hint = track.thumbs.maxByOrNull { it.width * it.height }?.url
             val target = if (large && !pin) largeBrowseFile(track.id) else if (pin) pinnedFile(track.id) else browseFile(track.id)
             val cached = local(track.id, hint, large)
-            trace("id=${track.id} etapa=disco_ms=${elapsedMs(diskStarted)} imagem=${cached != null} grande=${cached?.let { !isSmall(it) } ?: false}")
+            trace("id=${track.id} etapa=disco_ms=${elapsedMs(diskStarted)} imagem=${cached != null} pixels=${cached?.let(::resolution) ?: 0} alvo=${minPixels(large)}")
             if (cached != null) {
-                if (pin && cached.parentFile == browseDir && !large) {
-                    val promoted = promoteFile(cached, target)
-                    if (promoted != null) return@withLock promoted
-                }
-                val fits = if (large) !isSmall(cached) else isSmall(cached)
-                if (fits && (!pin || cached == target || target.length() > 0L)) {
+                if (meetsMinimum(cached, large)) {
+                    if (pin && cached != target && resolution(cached) > resolution(target)) {
+                        val promoted = copyBetter(cached, target)
+                        if (promoted != null) return@withLock promoted
+                    }
                     if (!pin) touch(cached)
                     return@withLock cached
                 }
-                if (!large && cached == target && !isSmall(cached)) preserveLegacyLarge(track.id, cached)
             }
-            // Listas: miniaturas de aproximadamente 400 px. A capa grande só é pedida no player.
-            for (url in candidates(track, browse = !large)) {
+            // Listas pedem ao menos 226 px; player/álbum tentam 544 px ou mais antes de usar o cache menor.
+            fun install(url: String): Boolean {
                 val downloadStarted = System.nanoTime()
-                if (download(url, target)) {
-                    rememberAlias(url, target, large)
-                    hint?.let { rememberAlias(it, target, large) }
-                    if (!pin) {
-                        val trimStarted = System.nanoTime()
-                        // Falha ao podar o cache não pode invalidar a capa já baixada.
-                        runCatching { budget.trim() }
-                            .onSuccess { trace("id=${track.id} etapa=lru_ms=${elapsedMs(trimStarted)} removidos_bytes=${it.removedBytes}") }
-                            .onFailure { trace("id=${track.id} etapa=lru_falhou erro=${it}") }
-                    }
-                    trace("id=${track.id} etapa=download_ms=${elapsedMs(downloadStarted)} bytes=${target.length()} ok=true")
-                    return@withLock target
+                if (!download(url, target, minPixels(large))) {
+                    trace("id=${track.id} etapa=download_ms=${elapsedMs(downloadStarted)} bytes=0 ok=false")
+                    return false
                 }
-                trace("id=${track.id} etapa=download_ms=${elapsedMs(downloadStarted)} bytes=0 ok=false")
+                rememberAlias(url, target, large)
+                hint?.let { rememberAlias(it, target, large) }
+                if (!pin) {
+                    val trimStarted = System.nanoTime()
+                    // Falha ao podar o cache não pode invalidar a capa já baixada.
+                    runCatching { budget.trim() }
+                        .onSuccess { trace("id=${track.id} etapa=lru_ms=${elapsedMs(trimStarted)} removidos_bytes=${it.removedBytes}") }
+                        .onFailure { trace("id=${track.id} etapa=lru_falhou erro=${it}") }
+                }
+                trace("id=${track.id} etapa=download_ms=${elapsedMs(downloadStarted)} bytes=${target.length()} pixels=${resolution(target)} ok=true")
+                return true
             }
-            null
+            for (url in candidates(track, browse = !large)) if (install(url)) return@withLock target
+            if (track.id.startsWith("album:") && track.title.isNotBlank()) {
+                val alternatives = runCatching { DeezerAlbum(client).covers(track.title, track.artist) }.getOrDefault(emptyList())
+                    .flatMap { imageCandidates(it, minPixels(large)) }
+                trace("id=${track.id} etapa=deezer_album_urls=${alternatives.size}")
+                for (url in alternatives) if (install(url)) return@withLock target
+            }
+            // Mantém a imagem antiga disponível se nenhuma fonte conseguiu uma resolução melhor.
+            cached
         }.also { trace("id=${track.id} etapa=total_ms=${elapsedMs(totalStarted)} origem=${if (it == null) "vazio" else "disco_ou_rede"}") }
     }
 
@@ -442,9 +487,14 @@ class CoverStore(
         if (!validId(track.id)) return@withContext emptyList()
         lockFor(track.id).withLock {
             val staged = File(browseDir, name(track.id) + ".new")
-            if (candidates(track).none { download(it, staged) }) { staged.delete(); return@withLock emptyList() }
+            val downloaded = candidates(track).any { download(it, staged, LIST_MIN_PIXELS) }
+            if (!downloaded) { staged.delete(); return@withLock emptyList() }
             val pinned = pinnedFile(track.id)
             val changed = listOf(pinned, browseFile(track.id), largeBrowseFile(track.id)).filter { it.length() > 0 }
+            if (changed.maxOfOrNull(::resolution)?.let { it > resolution(staged) } == true) {
+                staged.delete()
+                return@withLock emptyList()
+            }
             if (pinned.length() > 0) staged.copyTo(pinned, overwrite = true)
             browseFile(track.id).delete()
             val large = largeBrowseFile(track.id)
@@ -472,6 +522,26 @@ class CoverStore(
         return to
     }
 
+    /** Substitui um arquivo de menor resolução atomicamente e restaura o anterior se falhar. */
+    private fun copyBetter(from: File, to: File): File? {
+        if (!from.isFile || from.length() == 0L) return null
+        if (to.isFile && resolution(to) > resolution(from)) return to
+        val staged = File(to.parentFile, to.name + ".upgrade")
+        val backup = File(to.parentFile, to.name + ".previous")
+        staged.delete(); backup.delete()
+        if (!runCatching { from.copyTo(staged, overwrite = false) }.isSuccess) return null
+        if (resolution(staged) < resolution(from)) { staged.delete(); return null }
+        val hadTarget = to.isFile
+        if (hadTarget && !to.renameTo(backup)) { staged.delete(); return null }
+        if (!staged.renameTo(to)) {
+            if (hadTarget) backup.renameTo(to)
+            staged.delete()
+            return null
+        }
+        backup.delete()
+        return to
+    }
+
     /** Limpar cache (configurações): só a área de navegação. As fixadas ficam. */
     fun clearBrowse(): Long {
         var freed = 0L
@@ -479,25 +549,39 @@ class CoverStore(
         return freed
     }
 
-    private fun download(url: String, target: File): Boolean {
+    private fun download(url: String, target: File, minDimension: Int): Boolean {
         if (!allowedUrl(url)) return false
         val tmp = File(target.parentFile, target.name + "." + Thread.currentThread().id + ".tmp")
         return runCatching {
-            client.newCall(Request.Builder().url(url).header("User-Agent", OkHttpDownloader.USER_AGENT).build()).execute().use { r ->
+            val fetched = client.newCall(Request.Builder().url(url).header("User-Agent", OkHttpDownloader.USER_AGENT).build()).execute().use { r ->
                 val type = r.header("Content-Type").orEmpty()
-                if (!r.isSuccessful || !type.startsWith("image/") || !allowedUrl(r.request.url.toString())) return false
-                if (r.body!!.contentLength() > MAX_BYTES) return false
-                val bytes = r.body!!.source().let { src -> src.request(MAX_BYTES + 1); if (src.buffer.size > MAX_BYTES) return false; src.readByteArray() }
-                // as "capas" vazias/cinzas do YouTube têm poucos KB: não troca uma capa boa por uma ruim
-                if (bytes.size < 1024) return false
+                if (!r.isSuccessful || !type.startsWith("image/") || !allowedUrl(r.request.url.toString())) return@use false
+                val body = r.body ?: return@use false
+                if (body.contentLength() > MAX_BYTES) return@use false
+                val bytes = body.source().let { src ->
+                    src.request(MAX_BYTES + 1)
+                    if (src.buffer.size > MAX_BYTES) return@use false
+                    src.readByteArray()
+                }
+                // Não guarda respostas vazias, placeholders nem uma miniatura abaixo do tamanho solicitado.
+                if (bytes.size < 1024) return@use false
                 tmp.writeBytes(bytes)
+                true
             }
+            if (!fetched) return@runCatching false
+            val candidatePixels = resolution(tmp)
+            if (candidatePixels < minDimension) return@runCatching false
+            val existingPixels = if (target.isFile) resolution(target) else 0
+            if (candidatePixels < existingPixels || candidatePixels == existingPixels && tmp.length() < target.length()) return@runCatching false
             tmp.renameTo(target) || run { tmp.delete(); false }
-        }.getOrElse { tmp.delete(); false }
+        }.getOrElse { false }.also { if (!it) tmp.delete() }
     }
 
     companion object {
         private const val MAX_BYTES = 6L * 1024 * 1024
+        private const val LIST_MIN_PIXELS = 226
+        private const val LARGE_MIN_PIXELS = 544
+        private const val ARTIST_MIN_PIXELS = 226
         /** Só ids de música/artista do app (sem "../" nem caminhos). */
         fun validId(id: String) = id.length in 3..96 && Regex("""[A-Za-z0-9:_\-.]+""").matches(id) && ".." !in id
         /** Só baixa capa dos servidores de imagem do YouTube/Google (e do Deezer, para foto de artista), por HTTPS. */
@@ -586,7 +670,38 @@ class CoverStore(
             }
         }.getOrNull()
 
-        private val GOOGLE_SIZE = Regex("""=w\d+-h\d+[^&/]*$""")
+        private val GOOGLE_SUFFIXES = Regex("""(=[^/?&#=]*)+$""")
+
+        /** URLs do mesmo retrato/capa em tamanhos sucessivamente maiores, preservando a origem. */
+        private fun imageCandidates(raw: String, minDimension: Int): List<String> {
+            if (!allowedUrl(raw)) return emptyList()
+            val uri = runCatching { java.net.URI(raw) }.getOrNull() ?: return listOf(raw)
+            val host = uri.host.orEmpty().lowercase(Locale.ROOT)
+            val path = uri.rawPath.orEmpty()
+            val query = uri.rawQuery?.let { "?$it" }.orEmpty()
+            val sizes = if (minDimension >= LARGE_MIN_PIXELS) listOf(1200, 800, 640, LARGE_MIN_PIXELS)
+                else listOf(400, 300, 256, LIST_MIN_PIXELS)
+            val resized = when {
+                host.endsWith(".googleusercontent.com") -> {
+                    val base = path.replace(GOOGLE_SUFFIXES, "")
+                    sizes.map { "$base=w$it-h$it-l90-rj$query" }
+                }
+                host.endsWith(".ggpht.com") -> {
+                    val base = path.replace(GOOGLE_SUFFIXES, "")
+                    sizes.map { "$base=s$it-c$query" }
+                }
+                host.endsWith(".dzcdn.net") -> {
+                    sizes.map { size ->
+                        val replacement = if (minDimension >= LARGE_MIN_PIXELS) size else when (size) {
+                            400 -> 500; 300 -> 400; 256 -> 250; else -> size
+                        }
+                        path.replace(Regex("\\d+x\\d+"), "${replacement}x$replacement") + query
+                    }
+                }
+                else -> emptyList()
+            }
+            return (resized + raw).distinct()
+        }
 
         /**
          * Ordem de tentativa, da melhor para a pior:
@@ -595,33 +710,16 @@ class CoverStore(
          *  3. URLs montadas pelo ID do vídeo (nunca expiram): maxresdefault → hqdefault
          */
         fun candidates(track: Track, browse: Boolean = false): List<String> {
-            if (browse) {
-                // Listas e busca: cerca de 400 px; evita baixar capas grandes para cartões pequenos.
-                val square = { t: Thumb -> t.width > 0 && kotlin.math.abs(t.width - t.height) <= 2 }
-                val thumbs = track.thumbs.sortedByDescending { it.width * it.height }
-                val resized = thumbs.mapNotNull { thumb ->
-                    val url = thumb.url
-                    when {
-                        "googleusercontent.com" in url && GOOGLE_SIZE.containsMatchIn(url) -> GOOGLE_SIZE.replace(url, "=w400-h400-l90-rj")
-                        thumb.width in 1..480 && thumb.height in 1..480 -> url
-                        else -> null
-                    }
-                }
-                val video = track.videoId?.let { listOf("https://i.ytimg.com/vi/$it/mqdefault.jpg") }.orEmpty()
-                val squareThumbs = thumbs.filter { square(it) && it.width in 1..480 }.map { it.url }
-                return (squareThumbs + resized + video).distinct()
-            }
-            // quadradas (capa de álbum) antes das 16:9 (miniatura de vídeo); dentro de cada grupo, a maior primeiro
             val square = { t: Thumb -> t.width > 0 && kotlin.math.abs(t.width - t.height) <= 2 }
-            val sorted = track.thumbs.sortedWith(compareByDescending<Thumb> { square(it) }.thenByDescending { it.width * it.height }).map { it.url }
-            val upscaled = sorted.filter { "googleusercontent.com" in it && GOOGLE_SIZE.containsMatchIn(it) }
-                .map { GOOGLE_SIZE.replace(it, "=w1200-h1200-l90-rj") }
-            // sem capa quadrada: a miniatura grande do vídeo (1280×720; recortada no centro vira a capa em 720×720)
-            // vem antes das pequenas que a lista traz (168–336 px, que ficavam borradas nos blocos da fila)
-            val squares = sorted.filter { u -> track.thumbs.any { it.url == u && square(it) } }
-            val big = track.videoId?.let { listOf("https://i.ytimg.com/vi/$it/maxresdefault.jpg", "https://i.ytimg.com/vi/$it/hq720.jpg", "https://i.ytimg.com/vi/$it/sddefault.jpg") }.orEmpty()
-            val small = track.videoId?.let { listOf("https://i.ytimg.com/vi/$it/hqdefault.jpg") }.orEmpty()
-            return (upscaled + squares + big + sorted + small).distinct()
+            val sorted = track.thumbs.sortedWith(compareByDescending<Thumb> { square(it) }.thenByDescending { it.width * it.height })
+            val minDimension = if (browse) LIST_MIN_PIXELS else LARGE_MIN_PIXELS
+            val thumbs = sorted.flatMap { imageCandidates(it.url, minDimension) }
+            val video = track.videoId?.let { id ->
+                listOf("maxresdefault.jpg", "hq720.jpg", "sddefault.jpg", "hqdefault.jpg")
+                    .map { "https://i.ytimg.com/vi/$id/$it" }
+            }.orEmpty()
+            // Não pede mqdefault: o menor lado é 180 px e ficava borrado nas listas.
+            return (thumbs + video).distinct()
         }
     }
 }
