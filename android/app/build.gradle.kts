@@ -55,6 +55,7 @@ android {
 
 dependencies {
     implementation(project(":core:extractor"))
+    implementation(libs.androidx.core)
     implementation(libs.coroutines.android)
     coreLibraryDesugaring(libs.desugar)
 }

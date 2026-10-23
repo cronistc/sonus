@@ -27,6 +27,7 @@
   function renderHome() {
     const hist = Sounos.call("getHistory");
     const list = (Array.isArray(hist) ? hist : []).filter(e => Sounos.isSong(e.track));      // vídeos ouvidos antes não aparecem
+    window.__sounosHistoryTracks = list.map(e => e.track);
     const mineData = Sounos.call("getMineTracks");
     const downloaded = Array.isArray(mineData.downloaded) ? mineData.downloaded : [];
     downloadedTracks = downloaded;

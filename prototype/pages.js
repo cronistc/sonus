@@ -20,25 +20,38 @@ window.SounosPages = (() => {
     catch { return canonicalUrl(raw); }
   };
   const ARTIST_PAGE_CACHE = "sounos.artistPageCache";
+  const compactArtistPageCache = cache => {
+    let changed = false;
+    for (const [id, item] of Object.entries(cache)) if (Array.isArray(item?.items)) {
+      const items = item.items.map(t => {
+        if (!Object.hasOwn(t, "thumbs")) return t;
+        changed = true;
+        const { thumbs, ...track } = t;
+        return track;
+      });
+      if (changed) cache[id] = { ...item, items };
+    }
+    return changed;
+  };
+  let artistPageCache = {};
+  try {
+    artistPageCache = JSON.parse(localStorage.getItem(ARTIST_PAGE_CACHE) || "{}");
+    if (!artistPageCache || Array.isArray(artistPageCache) || typeof artistPageCache !== "object") artistPageCache = {};
+    if (compactArtistPageCache(artistPageCache)) localStorage.setItem(ARTIST_PAGE_CACHE, JSON.stringify(artistPageCache));
+  } catch { artistPageCache = {}; }
   const readArtistPageCache = name => {
-    try {
-      const saved = JSON.parse(localStorage.getItem(ARTIST_PAGE_CACHE) || "{}");
-      const item = saved[key(name)];
-      return item && Array.isArray(item.items) ? { ...item, isCached: true, fromLocalCache: true } : null;
-    } catch { return null; }
+    const item = artistPageCache[key(name)];
+    return item && Array.isArray(item.items) ? { ...item, isCached: true, fromLocalCache: true } : null;
   };
   const saveArtistPageCache = (name, result) => {
     if (!Array.isArray(result?.items)) return;
     try {
-      const saved = JSON.parse(localStorage.getItem(ARTIST_PAGE_CACHE) || "{}");
       const id = key(name);
-      const compact = items => items.map(t => {
-        const { thumbs, ...track } = t;
-        return track;
-      });
-      saved[id] = { name: result.name || name, thumb: result.thumb || "", items: compact(result.items), at: Date.now() };
-      const keep = Object.fromEntries(Object.entries(saved).sort((a, b) => (b[1]?.at || 0) - (a[1]?.at || 0)).slice(0, 4));
-      localStorage.setItem(ARTIST_PAGE_CACHE, JSON.stringify(keep));
+      const items = result.items.map(t => { const { thumbs, ...track } = t; return track; });
+      artistPageCache[id] = { name: result.name || name, thumb: result.thumb || "", items, at: Date.now() };
+      compactArtistPageCache(artistPageCache);
+      artistPageCache = Object.fromEntries(Object.entries(artistPageCache).sort((a, b) => (b[1]?.at || 0) - (a[1]?.at || 0)).slice(0, 4));
+      localStorage.setItem(ARTIST_PAGE_CACHE, JSON.stringify(artistPageCache));
     } catch {}
   };
   const fmtTotal = s => { const m = Math.round(s / 60); return m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`; };
@@ -90,7 +103,8 @@ window.SounosPages = (() => {
     page.d = (history.state?.d || 0) + 1;
     history.pushState({ ...(history.state || {}), page: kind, d: page.d }, "");
     if (window.__playerOpen) window.__playerShell?.lowerForPage?.();
-    requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add("open")));
+    void el.offsetWidth; // fixa o estado fora da tela; a próxima moldura já inicia a animação
+    requestAnimationFrame(() => el.classList.add("open"));
     swipeToClose(page);
     return page;
   }
@@ -472,7 +486,12 @@ window.SounosPages = (() => {
     let songs = [], albums = [], showAllSongs = false, artistThumb = artistInfo.thumb || "", artistCatalogSignature = "";
     const localCatalog = readArtistPageCache(name);
     // primeiro o que já se sabe (histórico), depois o resto da rede
-    const hist = (() => { try { return (Sounos.call("getHistory") || []).map(e => e.track).filter(Sounos.isSong); } catch { return []; } })();
+    const hist = (() => {
+      try {
+        const tracks = window.__sounosHistoryTracks;
+        return (Array.isArray(tracks) ? tracks : (Sounos.call("getHistory") || []).map(e => e.track)).filter(Sounos.isSong);
+      } catch { return []; }
+    })();
     const mine = []; hist.forEach(t => { if (key(t.artist) === key(name) && !mine.some(m => m.id === t.id)) mine.push(t); });
 
     el.innerHTML = `<div class="hero" style="background:var(--surface)"><div class="img" style="background-image:url('${photoUrl.replace(/'/g, "%27")}')"></div></div>

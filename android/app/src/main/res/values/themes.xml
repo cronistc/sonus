@@ -4,5 +4,7 @@
         <item name="android:windowBackground">@color/sounos_bg</item>
         <item name="android:statusBarColor">@color/sounos_bg</item>
         <item name="android:navigationBarColor">@color/sounos_bg</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
     </style>
 </resources>

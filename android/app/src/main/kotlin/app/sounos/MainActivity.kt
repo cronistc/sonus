@@ -19,6 +19,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.core.view.WindowInsetsControllerCompat
 import app.sounos.extractor.CoverStore
 import app.sounos.extractor.Thumb
 import app.sounos.extractor.Track
@@ -63,6 +64,8 @@ class MainActivity : Activity() {
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
             settings.allowFileAccess = false
+            // Assets locais mudam junto com o APK; o cache do WebView sobrevive à atualização do app.
+            settings.cacheMode = android.webkit.WebSettings.LOAD_NO_CACHE
             webViewClient = AssetClient()
             webChromeClient = object : android.webkit.WebChromeClient() {
                 // "trocar capa" da playlist: abre a galeria do celular
@@ -152,16 +155,9 @@ class MainActivity : Activity() {
         // Materialize o DecorView antes de pedir o InsetsController. No splash, onCreate ainda
         // não passou por setContentView e PhoneWindow.insetsController pode falhar com DecorView nulo.
         val decor = window.decorView
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            val mask = android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or
-                android.view.WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
-            val appearance = if (theme == "light") mask else 0
-            window.insetsController?.setSystemBarsAppearance(appearance, mask)
-        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            @Suppress("DEPRECATION")
-            decor.systemUiVisibility = if (theme == "light") {
-                android.view.View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or android.view.View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
-            } else 0
+        WindowInsetsControllerCompat(window, decor).apply {
+            isAppearanceLightStatusBars = theme == "light"
+            isAppearanceLightNavigationBars = theme == "light"
         }
         if (::web.isInitialized) {
             web.setBackgroundColor(color)
