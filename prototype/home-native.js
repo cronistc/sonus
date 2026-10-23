@@ -181,6 +181,7 @@
     if (appeared) miniRise();
     if (!t) return;
     (st.colors || []).forEach((c, k) => root.setProperty(`--c${k + 1}`, c));
+    window.SounosSyncSystemBars?.();
     if (before !== t.id) { shownId = t.id; resetMiniBar(); loadMini(); if (before) renderHome(); }
     if (homeCanAnimate()) drawMiniProgress();   // barra já na posição nova (não espera o próximo ciclo do relógio)
     SounosTips?.offer("mini");

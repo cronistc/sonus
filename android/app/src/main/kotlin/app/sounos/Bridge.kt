@@ -99,6 +99,8 @@ class Bridge(
                 main.post {
                     web.alpha = 1f
                     (web.context as? MainActivity)?.applyWindowTheme(app.library.settings().optString("theme", "gradient"))
+                    // O início usa a cor sólida do splash; depois da abertura, a interface envia os tons atuais do gradiente.
+                    web.evaluateJavascript("window.SounosSyncSystemBars?.()", null)
                     // a palavra nativa fica por cima mais um instante (está no mesmo lugar do 1º quadro da animação):
                     // assim nunca aparece um quadro vazio na troca
                     main.postDelayed({
@@ -260,6 +262,11 @@ class Bridge(
             }
             "setSettings" -> { app.library.saveSettings(a); player.applySettings(a); app.applyStartTheme(a.optString("theme", "gradient"))
                 (web.context as? MainActivity)?.applyWindowTheme(a.optString("theme", "gradient")) }
+            "setSystemBars" -> (web.context as? MainActivity)?.applyWindowTheme(
+                a.optString("theme", app.library.settings().optString("theme", "gradient")),
+                statusColor = a.optString("statusColor").takeIf { it.isNotBlank() },
+                navigationColor = a.optString("navigationColor").takeIf { it.isNotBlank() },
+            )
             "setFollowingArtists" -> {
                 val items = a.optJSONArray("items") ?: JSONArray()
                 if (app.userData.save("sounos.following", items.toString())) player.setFollowingArtists(items)

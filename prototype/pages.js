@@ -19,6 +19,28 @@ window.SounosPages = (() => {
     try { const u = new URL(canonicalUrl(raw)); u.pathname = u.pathname.replace(/=(?:s\d+|w\d+(?:-h\d+)?)(?:-[a-z0-9-]+)*$/i, ""); return u.href; }
     catch { return canonicalUrl(raw); }
   };
+  const ARTIST_PAGE_CACHE = "sounos.artistPageCache";
+  const readArtistPageCache = name => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(ARTIST_PAGE_CACHE) || "{}");
+      const item = saved[key(name)];
+      return item && Array.isArray(item.items) ? { ...item, isCached: true, fromLocalCache: true } : null;
+    } catch { return null; }
+  };
+  const saveArtistPageCache = (name, result) => {
+    if (!Array.isArray(result?.items)) return;
+    try {
+      const saved = JSON.parse(localStorage.getItem(ARTIST_PAGE_CACHE) || "{}");
+      const id = key(name);
+      const compact = items => items.map(t => {
+        const { thumbs, ...track } = t;
+        return track;
+      });
+      saved[id] = { name: result.name || name, thumb: result.thumb || "", items: compact(result.items), at: Date.now() };
+      const keep = Object.fromEntries(Object.entries(saved).sort((a, b) => (b[1]?.at || 0) - (a[1]?.at || 0)).slice(0, 4));
+      localStorage.setItem(ARTIST_PAGE_CACHE, JSON.stringify(keep));
+    } catch {}
+  };
   const fmtTotal = s => { const m = Math.round(s / 60); return m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`; };
   const count = n => n === 1 ? "1 música" : `${n} músicas`;
   const remember = entry => {
@@ -447,7 +469,8 @@ window.SounosPages = (() => {
     remember({ type: "a", name, thumb: artistInfo.thumb || "", url: artistInfo.url || "" });
     const page = mount("artist");
     const el = page.el;
-    let songs = [], albums = [], showAllSongs = false, artistThumb = artistInfo.thumb || "";
+    let songs = [], albums = [], showAllSongs = false, artistThumb = artistInfo.thumb || "", artistCatalogSignature = "";
+    const localCatalog = readArtistPageCache(name);
     // primeiro o que já se sabe (histórico), depois o resto da rede
     const hist = (() => { try { return (Sounos.call("getHistory") || []).map(e => e.track).filter(Sounos.isSong); } catch { return []; } })();
     const mine = []; hist.forEach(t => { if (key(t.artist) === key(name) && !mine.some(m => m.id === t.id)) mine.push(t); });
@@ -478,7 +501,7 @@ window.SounosPages = (() => {
       const normTitle = t => String(t?.title || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
       if (!normTitle(a) || normTitle(a) !== normTitle(b)) return false;
       const x = Number(a.dur || 0), y = Number(b.dur || 0);
-      return !x || !y || Math.abs(x - y) <= Math.max(5, Math.max(x, y) * .03);
+      return x > 0 && y > 0 && Math.abs(x - y) <= Math.max(5, Math.max(x, y) * .03);
     };
     const heard = mine.slice(0, 5);
     const all = () => {
@@ -500,6 +523,10 @@ window.SounosPages = (() => {
     const applyArtist = r => {
       if (page.closing) return;
       if (r.error) { $(".songs").innerHTML = `<div class="note">Não deu para carregar agora.</div>`; return; }
+      const signature = (r.items || []).map(t => t.id).join("\u0000");
+      if (signature && signature === artistCatalogSignature) return;
+      artistCatalogSignature = signature;
+      if (!r.fromLocalCache) saveArtistPageCache(name, r);
       songs = (r.items || []).filter(t => !heard.some(x => x.id === t.id || sameSong(x, t)));
       artistThumb = r.thumb || artistThumb;
       $(".name").textContent = handle(String(r.name || name || "Artista").trim() || "Artista");
@@ -507,10 +534,10 @@ window.SounosPages = (() => {
       $(".sub").textContent = total ? `Artista · ${count(total)}` : "Artista";
       $("[data-a=play]").disabled = !(songs.length || mine.length);
       drawSongs();
-      if (r.isCached) requestAnimationFrame(() => {
+      if (r.isCached) {
         const metric = { name, cached: true, cacheMs: Math.round(performance.now() - intentAt), tracks: total };
         (window.__sonusArtistMetrics ||= []).push(metric); window.__sonusLastArtistMetric = metric;
-      });
+      }
     };
     const applyAlbums = r => {
       if (page.closing || r.error) return;
@@ -539,6 +566,7 @@ window.SounosPages = (() => {
         if (ev.method === "searchAlbums" && ev.cacheKey === Sounos.cacheKey("searchAlbums", name)) applyAlbums(ev.payload || {});
       }),
     ];
+    if (localCatalog) applyArtist(localCatalog);
     Sounos.ask("artist", { name, thumb: artistInfo.thumb || "", url: artistInfo.url || "" }).then(r => {
       applyArtist(r);
       if (!window.__sonusLastArtistMetric || window.__sonusLastArtistMetric.name !== name) requestAnimationFrame(() => {

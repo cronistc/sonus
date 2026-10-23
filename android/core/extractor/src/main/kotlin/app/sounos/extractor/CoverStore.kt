@@ -677,6 +677,7 @@ class CoverStore(
             if (!allowedUrl(raw)) return emptyList()
             val uri = runCatching { java.net.URI(raw) }.getOrNull() ?: return listOf(raw)
             val host = uri.host.orEmpty().lowercase(Locale.ROOT)
+            val origin = "https://$host" + if (uri.port > 0) ":${uri.port}" else ""
             val path = uri.rawPath.orEmpty()
             val query = uri.rawQuery?.let { "?$it" }.orEmpty()
             val sizes = if (minDimension >= LARGE_MIN_PIXELS) listOf(1200, 800, 640, LARGE_MIN_PIXELS)
@@ -684,23 +685,23 @@ class CoverStore(
             val resized = when {
                 host.endsWith(".googleusercontent.com") -> {
                     val base = path.replace(GOOGLE_SUFFIXES, "")
-                    sizes.map { "$base=w$it-h$it-l90-rj$query" }
+                    sizes.map { "$origin$base=w$it-h$it-l90-rj$query" }
                 }
                 host.endsWith(".ggpht.com") -> {
                     val base = path.replace(GOOGLE_SUFFIXES, "")
-                    sizes.map { "$base=s$it-c$query" }
+                    sizes.map { "$origin$base=s$it-c$query" }
                 }
                 host.endsWith(".dzcdn.net") -> {
                     sizes.map { size ->
                         val replacement = if (minDimension >= LARGE_MIN_PIXELS) size else when (size) {
                             400 -> 500; 300 -> 400; 256 -> 250; else -> size
                         }
-                        path.replace(Regex("\\d+x\\d+"), "${replacement}x$replacement") + query
+                        origin + path.replace(Regex("\\d+x\\d+"), "${replacement}x$replacement") + query
                     }
                 }
                 else -> emptyList()
             }
-            return (resized + raw).distinct()
+            return (resized + if (resized.isEmpty()) listOf(raw) else emptyList()).distinct()
         }
 
         /**
@@ -715,7 +716,7 @@ class CoverStore(
             val minDimension = if (browse) LIST_MIN_PIXELS else LARGE_MIN_PIXELS
             val thumbs = sorted.flatMap { imageCandidates(it.url, minDimension) }
             val video = track.videoId?.let { id ->
-                listOf("maxresdefault.jpg", "hq720.jpg", "sddefault.jpg", "hqdefault.jpg")
+                (if (browse) listOf("hqdefault.jpg") else listOf("maxresdefault.jpg", "hq720.jpg", "sddefault.jpg", "hqdefault.jpg"))
                     .map { "https://i.ytimg.com/vi/$id/$it" }
             }.orEmpty()
             // Não pede mqdefault: o menor lado é 180 px e ficava borrado nas listas.

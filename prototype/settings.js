@@ -17,6 +17,26 @@
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(s)); } catch {} };
   const toApp = () => window.Sounos?.native && Sounos.call("setSettings", s);
   const emit = () => { toApp(); dispatchEvent(new CustomEvent("sounos:settings", { detail: { ...s } })); };
+  let activePhone = null;
+  const colorHex = raw => {
+    const srgb = /^color\(srgb\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)/i.exec(raw);
+    const rgb = srgb ? srgb.slice(1).map(v => Number(v) * 255) :
+      (/rgba?\(/i.test(raw) ? raw.match(/[\d.]+/g)?.slice(0, 3).map(Number) : null);
+    return rgb?.length === 3 ? "#" + rgb.map(v => Math.round(Math.max(0, Math.min(255, v))).toString(16).padStart(2, "0")).join("") : "#0e0e10";
+  };
+  function syncSystemBars() {
+    if (!activePhone || !window.Sounos?.native) return;
+    const probe = document.createElement("i");
+    probe.style.cssText = "position:absolute;width:1px;height:1px;visibility:hidden;pointer-events:none";
+    activePhone.appendChild(probe);
+    probe.style.backgroundColor = "var(--system-status-bg, #0e0e10)";
+    const statusColor = colorHex(getComputedStyle(probe).backgroundColor);
+    probe.style.backgroundColor = "var(--system-nav-bg, #0e0e10)";
+    const navigationColor = colorHex(getComputedStyle(probe).backgroundColor);
+    probe.remove();
+    Sounos.call("setSystemBars", { theme: s.theme, statusColor, navigationColor });
+  }
+  window.SounosSyncSystemBars = syncSystemBars;
   toApp();
 
   // aplica o tema já no carregamento (antes de pintar)
@@ -36,7 +56,9 @@
   function attach(button, phone) {
     const ov = document.createElement("div");
     ov.className = "set-ov";
+    activePhone = phone;
     phone.dataset.theme = s.theme;
+    syncSystemBars();
     phone.appendChild(ov);
     let isOpen = false, pushed = false;
     let pendingTheme = false, themeTimer = 0;
@@ -245,6 +267,7 @@
     function set(k, v, refreshUi = true) {
       s[k] = v; save(); emit();
       if (refreshUi) refresh();
+      if (k === "theme") syncSystemBars();
     }
 
     ov.addEventListener("click", e => {

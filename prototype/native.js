@@ -31,7 +31,7 @@ window.SounosVersao = (() => {
   const N = window.SounosNative;
   if (!N || window.__sounosMirror) return;
   window.__sounosMirror = true;
-  const KEYS = ["sounos.playlists", "sounos.searchHistory", "sounos.settings", "sounos.downloads", "sounos.following", "sounos.tips", "sounos.tipsVersion", "sounos.boasVindas"];
+  const KEYS = ["sounos.playlists", "sounos.searchHistory", "sounos.settings", "sounos.downloads", "sounos.following", "sounos.artistPageCache", "sounos.tips", "sounos.tipsVersion", "sounos.boasVindas"];
   // igual a CoverStore.artistKey (Kotlin)
   const artistKey = n => { const f = String(n || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/ø/g, "o").replace(/æ/g, "ae").replace(/œ/g, "oe").replace(/ß/g, "ss").replace(/đ/g, "d").replace(/ł/g, "l").replace(/þ/g, "th");
     const a = f.replace(/[^a-z0-9]/g, ""); if (a) return a;

@@ -90,7 +90,9 @@ class CacheTests {
             val pinned = File(root, "pinned")
             val browse = File(root, "browse")
             val store = CoverStore(pinned, browse, OkHttpClient())
-            val cached = store.browseFile("yt:abc123").apply { writeBytes(ByteArray(64)) }
+            val cached = store.browseFile("yt:abc123").apply {
+                javax.imageio.ImageIO.write(java.awt.image.BufferedImage(1, 1, java.awt.image.BufferedImage.TYPE_INT_RGB), "png", this)
+            }
             val started = System.nanoTime()
             val local = store.local("yt:abc123")
             val localMs = (System.nanoTime() - started) / 1_000_000

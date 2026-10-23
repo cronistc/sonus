@@ -188,7 +188,7 @@ class YtMusicArtist(private val client: OkHttpClient) {
             val title = titleKey(item.title)
             val duplicate = out.any { existing ->
                 if (titleKey(existing.title) != title) false
-                else existing.durationSec == 0L || item.durationSec == 0L ||
+                else existing.durationSec > 0L && item.durationSec > 0L &&
                     abs(existing.durationSec - item.durationSec) <= maxOf(5L, (maxOf(existing.durationSec, item.durationSec) * .03).toLong())
             }
             if (!duplicate) out += item

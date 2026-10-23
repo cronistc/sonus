@@ -174,6 +174,7 @@
     done = true;
     window.__sonusAberturaFim = Date.now();             // as dicas esperam a abertura terminar
     document.body.classList.remove("sonus-opening");
+    requestAnimationFrame(() => window.SounosSyncSystemBars?.());
     const l = layer;
     l?.remove();                                           // a clave do cabeçalho já está no mesmo lugar: troca invisível
     layer = base = bg = canvas = ctx = off = octx = joia = null;

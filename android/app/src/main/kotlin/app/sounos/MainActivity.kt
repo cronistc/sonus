@@ -83,10 +83,7 @@ class MainActivity : Activity() {
         ).also { it.attach() }
         web.addJavascriptInterface(bridge, "SounosNative")
         val shell = FrameLayout(this).apply {
-            background = if (theme == "gradient" && !coldOpening) GradientDrawable(
-                GradientDrawable.Orientation.TOP_BOTTOM,
-                intArrayOf(Color.rgb(32, 67, 152), Color.rgb(17, 38, 79), Color.rgb(14, 14, 16)),
-            ) else android.graphics.drawable.ColorDrawable(windowColor)
+            background = windowBackground(theme, opening = coldOpening)
             addView(web, FrameLayout.LayoutParams(-1, -1))
             if (coldOpening) {
                 // Mantém a primeira palavra visível enquanto a interface e o desenho vetorial preparam o primeiro quadro.
@@ -116,15 +113,38 @@ class MainActivity : Activity() {
 
     private fun windowColor(theme: String) = if (theme == "light") Color.rgb(244, 244, 246) else Color.rgb(14, 14, 16)
 
+    private fun windowBackground(
+        theme: String,
+        opening: Boolean,
+        top: Int = if (theme == "gradient" && !opening) Color.rgb(32, 67, 152) else windowColor(theme),
+        bottom: Int = windowColor(theme),
+    ): android.graphics.drawable.Drawable =
+        if (theme == "gradient" && !opening) GradientDrawable(
+            GradientDrawable.Orientation.TOP_BOTTOM,
+            intArrayOf(top, Color.rgb(17, 38, 79), bottom),
+        ) else android.graphics.drawable.ColorDrawable(windowColor(theme))
+
     /** Barras do sistema (status e navegação) na cor do tema; chamado ao abrir e sempre que o tema muda. */
-    fun applyWindowTheme(theme: String, opening: Boolean = false) {
+    fun applyWindowTheme(
+        theme: String,
+        opening: Boolean = false,
+        statusColor: String? = null,
+        navigationColor: String? = null,
+    ) {
         val color = windowColor(theme)
         // Durante o splash vale o fundo noturno compartilhado por Escuro e Gradiente. Depois da
         // abertura, o Gradiente usa a cor do primeiro ponto do fundo da tela; a navegação acompanha a base.
-        val status = if (theme == "gradient" && !opening) Color.rgb(32, 67, 152) else color
+        val defaultStatus = if (theme == "gradient" && !opening) Color.rgb(32, 67, 152) else color
+        val status = statusColor?.let { runCatching { Color.parseColor(it) }.getOrNull() } ?: defaultStatus
+        val navigation = navigationColor?.let { runCatching { Color.parseColor(it) }.getOrNull() } ?: color
+        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
+        window.clearFlags(
+            android.view.WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS or
+                android.view.WindowManager.LayoutParams.FLAG_TRANSLUCENT_NAVIGATION,
+        )
         window.statusBarColor = status
-        window.navigationBarColor = color
-        window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(color))
+        window.navigationBarColor = navigation
+        window.setBackgroundDrawable(windowBackground(theme, opening, status, navigation))
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             window.isNavigationBarContrastEnforced = false
             window.isStatusBarContrastEnforced = false
@@ -145,7 +165,7 @@ class MainActivity : Activity() {
         }
         if (::web.isInitialized) {
             web.setBackgroundColor(color)
-            (web.parent as? android.view.View)?.background = android.graphics.drawable.ColorDrawable(color)
+            (web.parent as? android.view.View)?.background = windowBackground(theme, opening, status, navigation)
         }
     }
 
