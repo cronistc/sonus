@@ -20,3 +20,11 @@ vezes "não baixam" (nome/artista/álbum/capa faltando ou errados, inclusive em 
 3. Meça depois com o mesmo script: zero falhas, zero piscadas, zero capas abaixo da resolução, zero itens incompletos
    (ou explique cada caso restante). Relatório em docs/metadados/depois.md.
 Commit; `git merge main`; compile limpo; instale; commit.
+
+4. VÁRIOS ARTISTAS (pedido do dono): músicas de 2+ artistas às vezes só trazem 1. Garanta a lista completa de artistas
+   (campos de artistas do YouTube Music / descrição "Provided to YouTube" / título "feat."/"part."/"&"/"x", e se
+   preciso outro provedor já usado no código, ex. Deezer, ou MusicBrainz — sem chave paga). Guarde `artists` (lista) em
+   todo lugar (fila, histórico, baixadas, playlists).
+5. No player (e mini-player/páginas/linhas onde houver a linha de artistas): CADA nome de artista é tocável
+   separadamente e abre a página DAQUELE artista (hoje tocar no 2º abre o 1º). Mantenha o visual (nomes separados por
+   vírgula); só a área de toque de cada nome é separada.
