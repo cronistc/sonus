@@ -15,6 +15,12 @@ docs/TAREFA-BOAS-VINDAS.md. Compile limpo `JAVA_HOME=~/Android/jdk17 ./gradlew c
 3. VOLTAR da página do artista aberta pela BUSCA: deve voltar para a busca com os mesmos resultados e rolagem, com a
    animação de saída das páginas (deslizar), nunca direto para a tela inicial e nunca sem animação. Vale também para
    álbum aberto pela busca e artista aberto pelo player. Teste com o botão voltar do Android e com a seta da página.
+6. barra de status e barra de navegação do Android devem casar com o TEMA escolhido (escuro,
+gradiente, claro) — desde a abertura (splash/tela de abertura que já segue o tema) até o uso normal, e trocar na hora
+ao mudar o tema. Hoje ficam brancas (modo claro) mesmo em tema escuro/gradiente. Cor de fundo das barras = fundo do
+tema (no gradiente, a cor do topo/fundo da tela), ícones claros em tema escuro/gradiente e escuros no claro
+(WindowInsetsControllerCompat / APPEARANCE_LIGHT_*). Ver res/values-night e themes.xml que o dono mexeu. Prints dos 3.
+(NÃO mexa na tela de compartilhar letra: o dono vai redesenhá-la.)
 Prints em docs/artista/. Commit; `git merge main`; compile limpo; instale; commit.
 
 4. ABRIR A PÁGINA DO ARTISTA SEM ESPERA: hoje demora um pouco e depois aparecem as músicas todas de uma vez. A página
