@@ -16,3 +16,13 @@ docs/TAREFA-BOAS-VINDAS.md. Compile limpo `JAVA_HOME=~/Android/jdk17 ./gradlew c
    animação de saída das páginas (deslizar), nunca direto para a tela inicial e nunca sem animação. Vale também para
    álbum aberto pela busca e artista aberto pelo player. Teste com o botão voltar do Android e com a seta da página.
 Prints em docs/artista/. Commit; `git merge main`; compile limpo; instale; commit.
+
+4. ABRIR A PÁGINA DO ARTISTA SEM ESPERA: hoje demora um pouco e depois aparecem as músicas todas de uma vez. A página
+   deve aparecer na hora com o que já se sabe (nome, foto guardada, músicas que a pessoa já ouviu dele, dados em cache
+   da última visita) e completar sem pulo (placeholders do mesmo tamanho das linhas, nada de a lista "saltar").
+   Meça do toque até a página com conteúdo (< 150 ms com cache; mostre os tempos).
+5. TODAS AS MÚSICAS DO ARTISTA: hoje vem só uma parte. Busque a lista completa: aba/playlist "Músicas" do artista no
+   YouTube Music (com paginação/continuação), mais as faixas dos álbuns e singles dele, sem duplicatas (mesmo título
+   normalizado + duração parecida). Mostre as principais primeiro e um "Ver todas" (ou rolagem que continua carregando,
+   como na busca). Compare a contagem com a página do artista no YouTube Music para 3 artistas (ex.: Djavan,
+   Tribalistas, Anavitória) e registre.
