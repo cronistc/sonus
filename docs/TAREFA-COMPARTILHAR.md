@@ -15,3 +15,9 @@ funciona. Faça:
    **Salvar**: grava em Pictures/Sonus/ (MediaStore) e mostra um aviso curto "Imagem salva". Testar os dois no celular
    (no compartilhar, só abrir a folha do Android e fechar com voltar — não envie para ninguém).
 Prints em docs/compartilhar/. Commit; `git merge main`; compile limpo; instale; commit.
+
+EXTRA (rápido, nativo): barra de status e barra de navegação do Android devem casar com o TEMA escolhido (escuro,
+gradiente, claro) — desde a abertura (splash/tela de abertura que já segue o tema) até o uso normal, e trocar na hora
+ao mudar o tema. Hoje ficam brancas (modo claro) mesmo em tema escuro/gradiente. Cor de fundo das barras = fundo do
+tema (no gradiente, a cor do topo/fundo da tela), ícones claros em tema escuro/gradiente e escuros no claro
+(WindowInsetsControllerCompat / APPEARANCE_LIGHT_*). Ver res/values-night e themes.xml que o dono mexeu. Prints dos 3.
