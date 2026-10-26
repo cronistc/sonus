@@ -2,7 +2,9 @@
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- o desenho é o do Galaxy A54 (384 px de largura): em qualquer celular a tela inteira é ampliada/reduzida
+     na mesma proporção (no A54 a escala é 1). Larguras ligadas a isto: SounosEscala (native.js) e MainActivity -->
+<meta name="viewport" content="width=384, user-scalable=no">
 <title>Sonus</title>
 <link rel="icon" href="logo.svg" type="image/svg+xml">
 
@@ -42,7 +44,9 @@
   @property --art { syntax: "<length>"; inherits: true; initial-value: 92px; }
   @property --pl  { syntax: "<length>"; inherits: true; initial-value: 150px; }
   .phone { transition: --rec .45s cubic-bezier(.2,.85,.25,1), --art .45s cubic-bezier(.2,.85,.25,1), --pl .45s cubic-bezier(.2,.85,.25,1); }
-  @media (min-width: 500px) { .phone { border-radius: 36px; border: 8px solid #222; } }
+  @media (min-width: 500px) { html:not(.native) .phone { border-radius: 36px; border: 8px solid #222; } }
+  /* no app a moldura nunca aparece: celular com "tamanho da tela" pequeno passa de 500px e parecia computador */
+  html.native .phone { max-width: none; max-height: none; }
 
   /* espaço no fim da rolagem acompanha a altura do mini-player (--mini-h, ajustada no JS) */
   .scroll { transform-origin: 50% 0; flex: 1; overflow-y: auto; scrollbar-width: none; padding: 8px 0 calc(var(--mini-h, 64px) + 32px); }

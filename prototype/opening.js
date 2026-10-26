@@ -56,7 +56,7 @@
     ctx = canvas.getContext("2d");
     document.body.classList.add("sonus-opening");
     document.body.appendChild(layer);
-    ratio = Math.min(window.devicePixelRatio || 1, 3);
+    ratio = Math.min((window.devicePixelRatio || 1) * (window.SounosEscala || 1), 3);   // nitidez também com a tela ampliada
     canvas.width = Math.round(innerWidth * ratio); canvas.height = Math.round(innerHeight * ratio);
     off = document.createElement("canvas"); off.width = canvas.width; off.height = canvas.height;
     octx = off.getContext("2d");
@@ -87,11 +87,14 @@
 
   function paint(ms) {
     // centro alinhado com o splash do Android (que centra na tela inteira); vai se ajustando durante a morfose
-    const cx = innerWidth / 2, cy = innerHeight / 2 + desloc * (1 - inOut(fase(ms, MORPH_INI, MORPH_FIM)));
+    const ajuste = 1 - inOut(fase(ms, MORPH_INI, MORPH_FIM));
+    const cx = innerWidth / 2, cy = innerHeight / 2 + desloc * ajuste;
     if (telaInicial && ms >= MORPH_FIM) return paintTela(ms, cx, cy);   // (não limpa: a clave pronta fica no canvas)
+    // a palavra começa no tamanho do splash do Android (fixo); com a tela ampliada (SounosEscala) chega ao tamanho da interface na morfose
+    const z = 1 + (1 / (window.SounosEscala || 1) - 1) * ajuste, zr = ratio * z;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    ctx.setTransform(zr, 0, 0, zr, cx * (ratio - zr), cy * (ratio - zr));
     ctx.fillStyle = cor;
 
     if (ms < MORPH_INI) {                                  // 1) a palavra, parada
@@ -100,7 +103,7 @@
       const t = inOut(fase(ms, MORPH_INI, MORPH_FIM));
       octx.setTransform(1, 0, 0, 1, 0, 0);
       octx.clearRect(0, 0, off.width, off.height);
-      octx.setTransform(ratio, 0, 0, ratio, 0, 0);
+      octx.setTransform(zr, 0, 0, zr, cx * (ratio - zr), cy * (ratio - zr));
       octx.fillStyle = cor;
       octx.beginPath();
       for (const p of pares) if (!p.furo && (p.l === 0 || p.cresce)) contorno(octx, p, p.cresce ? fase(ms, MORPH_INI + MORPH_DUR * .45, MORPH_FIM) : t, cx, cy);
@@ -112,7 +115,7 @@
       octx.globalCompositeOperation = "source-over";
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.drawImage(off, 0, 0);
-      ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+      ctx.setTransform(zr, 0, 0, zr, cx * (ratio - zr), cy * (ratio - zr));
       const k = inOut(fase(ms, MORPH_INI, MORPH_INI + MORPH_DUR * .78));
       letrasOnus.forEach((L, i) => {
         const kk = clamp(k * (1 + i * .06));               // as mais distantes andam um pouco mais rápido
@@ -190,7 +193,7 @@
   }
 
   window.__sonusOpeningLaunch = async (cold, dy = 0) => {
-    desloc = +dy || 0;
+    desloc = (+dy || 0) / (window.SounosEscala || 1);   // o app manda em dp; aqui é px da interface
     if (!cold || !window.Sounos?.native || done) {
       if (window.__sonusAberturaFim === undefined) window.__sonusAberturaFim = Date.now() - 1200;   // sem abertura: dicas liberadas
       if (window.SounosNative) SounosNative.call("openingReady", "{}");

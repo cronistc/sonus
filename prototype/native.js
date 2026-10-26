@@ -115,6 +115,8 @@ window.SounosVersao = (() => {
 window.Sounos = (() => {
   const N = window.SounosNative;
   if (N) document.documentElement.classList.add("native");
+  // quanto cada px da interface vale na tela real (A54 = 1; tela mais larga > 1). Só no app: o navegador do computador não amplia
+  window.SounosEscala = N ? Math.max(.5, Math.min(4, (screen.width || innerWidth) / (document.documentElement.clientWidth || innerWidth))) : 1;
   const listeners = {}, pending = {}, coverRevision = {};
   let seq = 0;
   const doc = Math.random().toString(36).slice(2, 7);    // pedidos de cada página com nome próprio

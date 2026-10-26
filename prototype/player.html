@@ -2,7 +2,9 @@
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- o desenho é o do Galaxy A54 (384 px de largura): em qualquer celular a tela inteira é ampliada/reduzida
+     na mesma proporção (no A54 a escala é 1). Larguras ligadas a isto: SounosEscala (native.js) e MainActivity -->
+<meta name="viewport" content="width=384, user-scalable=no">
 <title>Sonus · Tocando</title>
 <link rel="icon" href="logo.svg" type="image/svg+xml">
 
@@ -37,7 +39,9 @@
     display: flex; flex-direction: column;
     padding: 10px 24px 10px;
   }
-  @media (min-width: 500px) { .phone { border-radius: 36px; border: 8px solid #222; } }
+  @media (min-width: 500px) { html:not(.native) .phone { border-radius: 36px; border: 8px solid #222; } }
+  /* no app a moldura nunca aparece: celular com "tamanho da tela" pequeno passa de 500px e parecia computador */
+  html.native .phone { max-width: none; max-height: none; }
   /* itens que viajam entre o mini-player e o player */
   .cover { view-transition-name: cover; }
   #lyricsBtn { view-transition-name: btn-lyrics; }
@@ -496,7 +500,7 @@ function layoutRing() {
           + ` H${L + r} A${r} ${r} 0 0 1 ${L} ${B - r} V${T + r} A${r} ${r} 0 0 1 ${L + r} ${T} Z`;
   ["ringPath", "ringFill", "ringHit"].forEach(id => $(id).setAttribute("d", d));
   // barra desenhada num canvas (placa de vídeo): mesma forma do contorno, sem refazer máscara SVG
-  const cv = $("ringCanvas"), dpr = Math.min(3, devicePixelRatio || 1);
+  const cv = $("ringCanvas"), dpr = Math.min(3, (devicePixelRatio || 1) * (window.SounosEscala || 1));   // nitidez também com a tela ampliada
   Object.assign(cv.style, { left: svg.style.left, top: svg.style.top, width: svg.style.width, height: svg.style.height });
   cv.width = Math.round(vb[2] * dpr); cv.height = Math.round(vb[3] * dpr);
   RING = { path: new Path2D(d), vb, dpr };
@@ -1283,9 +1287,16 @@ function fitCover() {
     + ["info", "controls"].reduce((a, id) => a + outer($(id)), 0)
     + 24;                                      // fila sem o bloco: margens (4 − 10) + respiro (14 + 16)
   const oldTop = 40;                           // espaço que o topo ocupava antes de ser removido
-  const cover = Math.max(160, Math.min(maxW, innerH - fixed - oldTop - TILE_MIN));
+  // A capa do A54 (navegação por gestos: altura útil 763px) é a referência. Em tela mais baixa (botões de navegação,
+  // barra de status alta, tela mais curta) a capa NÃO encolhe: cedem antes a fila (até TILE_MIN) e o respiro entre a
+  // fila e o play (até RESPIRO_MIN). Só se nem assim couber a capa diminui.
+  const H_A54 = 763, RESPIRO_MIN = 6;
+  const coverA54 = Math.min(maxW, H_A54 - fixed - oldTop - TILE_MIN);
+  const coverAntes = Math.min(maxW, innerH - fixed - oldTop - TILE_MIN);          // telas altas: regra de sempre
+  const coverCabe = innerH - fixed - TILE_MIN - RESPIRO_MIN;
+  const cover = Math.max(160, coverAntes, Math.min(coverA54, coverCabe));
   const oldTile = Math.max(TILE_MIN, Math.min(TILE_MAX, innerH - fixed - oldTop - cover));
-  const tile = Math.max(TILE_MIN, Math.min(TILE_MAX, Math.round(oldTile * 1.1)));
+  const tile = Math.max(TILE_MIN, Math.min(TILE_MAX, Math.round(oldTile * 1.1), innerH - fixed - cover - RESPIRO_MIN));
   root.setProperty("--cover-size", cover + "px");
   root.setProperty("--tile", tile + "px");
 }

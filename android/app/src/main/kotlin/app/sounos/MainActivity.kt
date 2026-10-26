@@ -63,6 +63,11 @@ class MainActivity : Activity() {
             overScrollMode = WebView.OVER_SCROLL_NEVER
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
+            // desenho fixo na largura do A54 (meta viewport width=384 em home.html): o WebView amplia/reduz a tela inteira
+            settings.useWideViewPort = true
+            settings.loadWithOverviewMode = true
+            settings.setSupportZoom(false)
+            settings.textZoom = 100                          // tamanho da fonte do sistema não deforma o desenho
             settings.allowFileAccess = false
             // Assets locais mudam junto com o APK; o cache do WebView sobrevive à atualização do app.
             settings.cacheMode = android.webkit.WebSettings.LOAD_NO_CACHE
