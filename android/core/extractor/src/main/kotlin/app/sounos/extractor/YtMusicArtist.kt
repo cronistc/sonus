@@ -45,26 +45,50 @@ class YtMusicArtist(private val client: OkHttpClient) {
             else -> return@flatMap emptyList()
         }
         shelf.getArray("contents").mapNotNull { value ->
-            val r = (value as? JsonObject)?.getObject("musicTwoRowItemRenderer") ?: return@mapNotNull null
-            val title = r.getObject("title")?.getArray("runs")?.firstOrNull()?.let { (it as? JsonObject)?.getString("text") }?.trim()
-            if (title.isNullOrBlank()) return@mapNotNull null
-            val sub = r.getObject("subtitle")?.getArray("runs")?.mapNotNull { (it as? JsonObject)?.getString("text")?.trim() }.orEmpty()
-            val year = sub.firstNotNullOfOrNull { s -> s.takeIf { it.length == 4 && it.all(Char::isDigit) }?.toInt() }
-            val kind = when {
-                sub.any { it.equals("EP", true) } -> "EP"
-                sub.any { it.contains("single", true) } -> "Single"
-                sub.any { it.contains("álbum", true) || it.contains("album", true) } -> "Álbum"
-                else -> shelfKind
-            }
-            val listId = r.path("thumbnailOverlay", "musicItemThumbnailOverlayRenderer", "content", "musicPlayButtonRenderer",
-                "playNavigationEndpoint", "watchPlaylistEndpoint").getString("playlistId")
-            val thumbs = r.path("thumbnailRenderer", "musicThumbnailRenderer", "thumbnail").getArray("thumbnails").mapNotNull { t ->
-                val o = t as? JsonObject ?: return@mapNotNull null
-                Thumb(o.getString("url") ?: return@mapNotNull null, o.getInt("width"), o.getInt("height"))
-            }
-            Release(title, kind, year, listId?.let { "https://www.youtube.com/playlist?list=$it" }, thumbs)
+            (value as? JsonObject)?.getObject("musicTwoRowItemRenderer")?.let { parseRelease(it, shelfKind) }
         }
     }.distinctBy { it.url ?: it.title }.sortedByDescending { it.year ?: 0 }
+
+    /** Um lançamento (capa de álbum/single/EP) como aparece nas grades e carrosséis do YouTube Music. */
+    private fun parseRelease(r: JsonObject, fallbackKind: String): Release? {
+        val title = r.getObject("title")?.getArray("runs")?.firstOrNull()?.let { (it as? JsonObject)?.getString("text") }?.trim()
+        if (title.isNullOrBlank()) return null
+        val sub = r.getObject("subtitle")?.getArray("runs")?.mapNotNull { (it as? JsonObject)?.getString("text")?.trim() }.orEmpty()
+        val year = sub.firstNotNullOfOrNull { s -> s.takeIf { it.length == 4 && it.all(Char::isDigit) }?.toInt() }
+        val kind = when {
+            sub.any { it.equals("EP", true) } -> "EP"
+            sub.any { it.contains("single", true) } -> "Single"
+            sub.any { it.contains("álbum", true) || it.contains("album", true) } -> "Álbum"
+            else -> fallbackKind
+        }
+        // "Single • Artista e Outro": os nomes vêm depois do tipo (separadores "•", "e", "," não contam)
+        val artist = sub.filterNot { it == "•" || it == "," || it == "e" || it == "&" || it.isBlank() || it == kind || it.toIntOrNull() != null ||
+            it.equals("Single", true) || it.equals("EP", true) || it.contains("álbum", true) }.firstOrNull().orEmpty()
+        val listId = r.path("thumbnailOverlay", "musicItemThumbnailOverlayRenderer", "content", "musicPlayButtonRenderer",
+            "playNavigationEndpoint", "watchPlaylistEndpoint").getString("playlistId")
+        val thumbs = r.path("thumbnailRenderer", "musicThumbnailRenderer", "thumbnail").getArray("thumbnails").mapNotNull { t ->
+            val o = t as? JsonObject ?: return@mapNotNull null
+            Thumb(o.getString("url") ?: return@mapNotNull null, o.getInt("width"), o.getInt("height"))
+        }
+        val browseId = r.path("navigationEndpoint", "browseEndpoint").getString("browseId")?.takeIf { it.startsWith("MPRE") }
+        return Release(title, kind, year, listId?.let { "https://www.youtube.com/playlist?list=$it" }, thumbs, artist, browseId)
+    }
+
+    /** Lançamentos novos do país (álbuns e singles) — a base genérica de "Novidades". */
+    fun newReleases(): List<Release> {
+        val out = mutableListOf<Release>()
+        fun walk(v: Any?) {
+            when (v) {
+                is JsonObject -> { v.getObject("musicTwoRowItemRenderer")?.let { r -> parseRelease(r, "Álbum")?.let(out::add) }; v.values.forEach(::walk) }
+                is JsonArray -> v.forEach(::walk)
+            }
+        }
+        walk(browse("FEmusic_new_releases_albums"))
+        return out.filter { it.browseId != null }.distinctBy { it.browseId }
+    }
+
+    /** Faixas de um lançamento (página do álbum/single). */
+    fun releaseTracks(browseId: String, artist: String): List<Track> = albumTracks(browseId, artist)
 
     fun tracks(artistId: String, artistName: String, trace: (String) -> Unit = {}): List<Track> {
         val started = System.nanoTime()

@@ -41,6 +41,12 @@ const SonusInicio = (() => {
   };
 
   // ---------- fonte de exemplo (navegador) ----------
+  const exemploNovidades = [
+    { title: "Maré Alta (Ao Vivo)", kind: "Álbum", year: new Date().getFullYear(), artist: "Coletivo Demo", c: tracks[1].c },
+    { title: "Neon Azul", kind: "Single", year: new Date().getFullYear(), artist: "Os Placeholders", c: tracks[3].c },
+    { title: "Noite Lenta", kind: "EP", year: new Date().getFullYear() - 1, artist: "Lo-Fi Amostra", c: tracks[5].c },
+    { title: "Céu de Vidro", kind: "Single", year: new Date().getFullYear(), artist: "Trio Protótipo", c: tracks[9].c },
+  ];
   const exemplo = {
     dados() {
       const agora = Date.now();
@@ -51,6 +57,7 @@ const SonusInicio = (() => {
         minhas: [],
         artistas: followed.map(name => ({ name })),
         playlists: playlists.map((p, i) => ({ ...p, i })),
+        novidades: { lancamentos: exemploNovidades, musicas: [2, 8, 11, 14, 17].map(t => tracks[t]) },
       };
     },
     capa: t => t?.c ? grad(t.c) : "var(--surface)",
@@ -63,11 +70,7 @@ const SonusInicio = (() => {
     abrirPlaylist(p) { location.href = `player.html?p=${p.i}`; },
     novaPlaylist() { add.openCreate(); },
     buscar() { $("searchBtn").click(); },
-    novidades: () => new Promise(r => setTimeout(() => r([
-      { title: "Maré Alta (Ao Vivo)", kind: "Álbum", year: new Date().getFullYear(), artist: "Coletivo Demo", c: tracks[1].c },
-      { title: "Neon Azul", kind: "Single", year: new Date().getFullYear(), artist: "Os Placeholders", c: tracks[3].c },
-      { title: "Noite Lenta", kind: "EP", year: new Date().getFullYear() - 1, artist: "Lo-Fi Amostra", c: tracks[5].c },
-    ]), 700)),
+    novidades: () => new Promise(r => setTimeout(() => r(exemploNovidades), 700)),
     capaLancamento: r => r.c ? grad(r.c) : "var(--surface)",
     abrirLancamento() {},
   };
@@ -77,22 +80,28 @@ const SonusInicio = (() => {
   // Cada janela: rótulo, lista e o que fazer ao tocar. Próximas janelas (novidades, mix do dia…) entram aqui.
   function janelas() {
     if (d.offline) return [{ id: "minhas", rotulo: "Minhas músicas", lista: d.minhas, sub: "Toque para ouvir todas", vazio: "Nenhuma música disponível offline" }];
-    return [{ id: "recentes", rotulo: "Ouvidos recentemente", lista: d.recentes, sub: "Toque para ouvir tudo de novo", vazio: "Busque uma música para começar" }];
+    const L = [{ id: "recentes", rotulo: "Ouvidos recentemente", lista: d.recentes, sub: "Toque para ouvir tudo de novo", vazio: "Busque uma música para começar" }];
+    // Novidades: a mesma lista do Ver tudo de artistas; o mosaico usa as capas dos lançamentos; toca em ordem aleatória
+    const nov = d.novidades;
+    if (nov?.musicas?.length) L.push({ id: "novidades", rotulo: "Novidades", lista: nov.musicas, sub: "Lançamentos para você",
+      capas: nov.lancamentos.slice(0, 6).map(fonte.capaLancamento), aleatoria: true });
+    return L;
   }
   let jan = [], atual = 0, chaveJan = "", passaT = 0;
   function htmlJanela(j, k) {
     const n = j.lista.length, id = k === 0 ? ' id="recentTitle"' : "";
     if (!n) return `<button class="jan vazia tap" data-jan="${k}"><div class="jx"><div class="lbl"${id}>${j.rotulo}</div><div class="big">${j.vazio}</div></div></button>`;
     // as últimas 6 músicas, paradas (sem piscar); com menos de 6 a grade se ajusta
-    const capas = j.lista.slice(0, 6), c = n >= 5 ? 3 : n === 4 ? 2 : n, l = n >= 4 ? 2 : 1;
-    const cel = Array.from({ length: c * l }, (_, i) => `<i style="background:${fonte.capa(capas[i % capas.length])}"></i>`).join("");
+    const capas = j.capas || j.lista.slice(0, 6).map(fonte.capa), m = capas.length;
+    const c = m >= 5 ? 3 : m === 4 ? 2 : m, l = m >= 4 ? 2 : 1;
+    const cel = Array.from({ length: c * l }, (_, i) => `<i style="background:${capas[i % m]}"></i>`).join("");
     return `<button class="jan tap" data-jan="${k}"><div class="jmos" style="grid-template-columns:repeat(${c},1fr);grid-template-rows:repeat(${l},1fr)">${cel}</div>
       <div class="jx"><div class="big"${id}>${j.rotulo}</div><div class="sub">${j.sub}</div></div>
       <span class="jpp">${I.play}</span></button>`;
   }
   function renderJanelas() {
     jan = janelas();
-    const chave = jan.map(j => j.id + ":" + j.lista.slice(0, 6).map(t => t.id || t.title).join(",") + ":" + j.lista.length).join("|");
+    const chave = jan.map(j => j.id + ":" + j.lista.slice(0, 6).map(t => t.id || t.title).join(",") + ":" + j.lista.length + ":" + (j.capas || []).join(",").length).join("|");
     if (chave === chaveJan) return;                 // nada mudou: não redesenha (o mosaico não pisca)
     chaveJan = chave;
     $("dynTrack").innerHTML = jan.map(htmlJanela).join("");
@@ -137,7 +146,7 @@ const SonusInicio = (() => {
     if (ar.foi) return;
     const j = jan[+e.target.closest("[data-jan]")?.dataset.jan]; if (!j) return;
     if (!j.lista.length) return fonte.buscar();
-    fonte.tocar(j.lista, j.id);
+    fonte.tocar(j.aleatoria ? [...j.lista].sort(() => Math.random() - .5) : j.lista, j.id);
   });
 
   // ---------- seções ----------
@@ -193,19 +202,20 @@ const SonusInicio = (() => {
   function ajustarGrade() {
     $("playlists").style.setProperty("--grade", Math.floor((sc().clientWidth - 40 - 12) / 2) + "px");
   }
-  // Ver tudo de artistas: as capas dos carrosséis diminuem juntas até tudo caber na altura (sem rolar)
+  // Ver tudo de artistas: as capas dos carrosséis crescem ou diminuem juntas até o conteúdo encostar no espaço do
+  // mini-player, em qualquer aparelho (a tela não rola). Mede de novo a cada passo porque os textos não escalam.
   function ajustarVt() {
     const vt = $("vt"), blocos = [...vt.querySelectorAll(".vt-bloco")];
     if (!blocos.length) return;
-    vt.style.setProperty("--rel", "150px");
-    const free = sc().getBoundingClientRect().bottom - parseFloat(getComputedStyle(sc()).paddingBottom) - vt.getBoundingClientRect().top;
-    const resto = blocos.reduce((a, b) => a + b.offsetHeight + parseFloat(getComputedStyle(b).marginTop) - 150, 0);
-    let rel = Math.max(72, Math.min(150, Math.floor((free - resto) / blocos.length)));
-    vt.style.setProperty("--rel", rel + "px");
-    // segunda medida, já no tamanho novo: as capas crescem (ou encolhem) até o fim encostar no espaço do mini-player
-    const fim = sc().getBoundingClientRect().bottom - parseFloat(getComputedStyle(sc()).paddingBottom);
-    rel = Math.max(72, Math.min(150, rel + Math.floor((fim - blocos[blocos.length - 1].getBoundingClientRect().bottom) / blocos.length)));
-    vt.style.setProperty("--rel", rel + "px");
+    const fim = () => sc().getBoundingClientRect().bottom - parseFloat(getComputedStyle(sc()).paddingBottom);
+    const base = el => el.querySelector(".rel")?.getBoundingClientRect().bottom ?? el.getBoundingClientRect().bottom;
+    let rel = parseFloat(vt.style.getPropertyValue("--rel")) || 130;
+    for (let i = 0; i < 4; i++) {
+      vt.style.setProperty("--rel", rel + "px");
+      const sobra = fim() - base(blocos[blocos.length - 1]);
+      if (Math.abs(sobra) < 2) break;
+      rel = Math.max(72, Math.min(240, Math.floor(rel + sobra / blocos.length)));
+    }
   }
   // FLIP: os blocos saem de onde estavam (fileira) e deslizam até o lugar novo (grade), e vice-versa
   function flipBlocos(trocar) {
@@ -261,13 +271,14 @@ const SonusInicio = (() => {
     ocupado = false;
   }
 
-  // Novidades de quem a pessoa segue (álbum novo, single, EP, ao vivo). Recomendações entram com o motor de entendimento.
+  // Novidades: lançamentos recentes escolhidos pelo motor (genéricos no começo, puxando para o gosto com o uso).
+  // Etiquetas: Álbum novo, Single, EP, Ao vivo. Recomendações entram quando o motor for além de guardar dados.
   const etiqueta = r => /ao vivo|\blive\b|ac[uú]stico/i.test(r.title) ? "Ao vivo"
     : r.kind === "Álbum" && r.year === new Date().getFullYear() ? "Álbum novo" : r.kind;
   function htmlNovidades(lista) {
     const corpo = lista === null
       ? Array.from({ length: 3 }, () => '<div class="rel sk"><div class="rc"></div><div class="rt"></div><div class="ra"></div></div>').join("")
-      : !lista.length ? '<div class="vt-vazio">Nenhum lançamento recente de quem você segue.</div>'
+      : !lista.length ? '<div class="vt-vazio">Nenhuma novidade agora. Tente de novo mais tarde.</div>'
       : lista.map((r, k) => `<button class="rel tap" data-rel="${k}"><div class="rc" style="background:${fonte.capaLancamento(r)}"><span class="kind">${etiqueta(r)}</span></div>
           <div class="rt">${esc(r.title)}</div><div class="ra">${esc(r.artist)}${r.year ? " · " + r.year : ""}</div></button>`).join("");
     return `<section class="vt-bloco" data-bloco="novidades"><div class="sec-head"><h2>Novidades</h2></div><div class="row vt-row">${corpo}</div></section>`;

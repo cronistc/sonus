@@ -34,6 +34,7 @@ class SounosApp : Application() {
     lateinit var userData: app.sounos.data.UserData; private set
     lateinit var lyrics: Lyrics; private set
     lateinit var player: PlayerController; private set
+    lateinit var motor: app.sounos.motor.Motor; private set
     lateinit var updater: app.sounos.update.Updater; private set
     // erro inesperado numa tarefa fica no log; nunca derruba o app (nem a música)
     val io = CoroutineScope(SupervisorJob() + Dispatchers.IO + CoroutineExceptionHandler { _, e -> android.util.Log.e("Sonus", "tarefa em segundo plano falhou", e) })
@@ -62,6 +63,7 @@ class SounosApp : Application() {
             if (migration.first > 0 || trim.removedFiles > 0) android.util.Log.i("Sonus", "cache migração_pin arquivos=${migration.first} bytes=${migration.second} lru_removidos=${trim.removedFiles}")
         }
         lyrics = Lyrics(File(filesDir, "lyrics"), Sounos.http)
+        motor = app.sounos.motor.Motor(File(filesDir, "motor"), io, Sounos.http)     // motor de entendimento: aprende o uso, no celular
         player = PlayerController(this)
         // a sessão restaurada não emite estado: cria a MediaSession já pausada, para o play do fone/carro funcionar ao abrir
         runCatching { app.sounos.player.MediaSessionHolder.sync(this) }

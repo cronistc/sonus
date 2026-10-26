@@ -156,6 +156,9 @@ class NewPipeSource(private val service: StreamingService = ServiceList.YouTube)
         ytmArtists.releases(channelId)
     }
 
+    suspend fun newReleases(): List<Release> = withContext(Dispatchers.IO) { ytmArtists.newReleases() }
+    suspend fun releaseTracks(browseId: String, artist: String): List<Track> = withContext(Dispatchers.IO) { ytmArtists.releaseTracks(browseId, artist) }
+
     private suspend fun artistChannel(query: String, knownUrl: String?, trace: (String) -> Unit): String? =
         knownUrl?.let(::channelId)
             ?: searchArtists(query, trace).asSequence()

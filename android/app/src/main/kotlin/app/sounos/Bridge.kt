@@ -226,7 +226,14 @@ class Bridge(
                     .put("thumb", photo?.url ?: JSONObject.NULL)
                     .put("items", Json.tracks(unique)).put("total", unique.size)
             }
-            // Novidades da tela inicial: lançamentos recentes de um artista seguido.
+            // Novidades (tela inicial): lançamentos recentes pesados pelo gosto (motor), com as músicas para tocar.
+            "novidades" -> async(a) {
+                val seg = a.optJSONArray("seguidos") ?: JSONArray()
+                app.motor.novidades(app.source, (0 until seg.length()).mapNotNull { i ->
+                    seg.optJSONObject(i)?.let { o -> o.optString("name").takeIf(String::isNotBlank)?.let { it to o.optString("url").takeIf(String::isNotBlank) } }
+                })
+            }
+            // Lançamentos recentes de um artista.
             "artistReleases" -> cachedAsync(a, "artistReleases", a.getString("name")) {
                 val name = a.getString("name")
                 JSONObject().put("items", JSONArray().apply {

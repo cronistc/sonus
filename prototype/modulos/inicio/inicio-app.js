@@ -14,16 +14,22 @@
     $("offlineMark").hidden = !A.offline;
   }
 
-  // Novidades: lançamentos deste ano e do anterior de quem a pessoa segue (até 4 por artista), do mais novo ao mais antigo.
-  async function novidades() {
-    const lista = seguidos().slice(0, 12);
-    if (!lista.length) return [];
-    const ano = new Date().getFullYear();
-    const porArtista = await Promise.all(lista.map(x => Sounos.ask("artistReleases", { name: x.name, url: x.url || "" })
-      .then(r => (r?.items || []).map(i => ({ ...i, artist: x.name }))).catch(() => [])));
-    return porArtista.flatMap(l => l.filter(r => (r.year || 0) >= ano - 1).slice(0, 4))
-      .sort((a, b) => (b.year || 0) - (a.year || 0)).slice(0, 20);
-  }
+  // Novidades: o motor monta a lista (lançamentos + músicas) a cada vez que o app abre do zero. Exceção: se o que está
+  // tocando veio dessa lista, ela é preservada. Fica guardada para a janela do topo e o Ver tudo usarem a mesma.
+  const NOV = "sonus.novidades";
+  let nov = null;
+  try { nov = JSON.parse(localStorage.getItem(NOV) || "null"); } catch {}
+  const tocandoDaLista = () => A.S?.context?.type === "novidades" || (!!A.cur() && !!nov?.musicas?.some(t => t.id === A.cur().id));
+  const pronta = (nov && tocandoDaLista()) ? Promise.resolve(nov) : Sounos.ask("novidades", {
+    seguidos: seguidos().map(x => ({ name: x.name, url: x.url || "" })),
+  }).then(r => {
+    if (r?.error || !r?.musicas?.length) return nov;         // falhou (sem internet…): fica a última que existia
+    nov = { lancamentos: r.lancamentos || [], musicas: r.musicas, at: Date.now() };
+    try { localStorage.setItem(NOV, JSON.stringify(nov)); } catch {}
+    SonusInicio.render();
+    return nov;
+  }).catch(() => nov);
+  const novidades = () => pronta.then(n => n?.lancamentos || []);
 
   SonusInicio.usar({
     dados() {
@@ -43,6 +49,7 @@
         offline: A.offline, recentes, minhas,
         artistas: seguidos().map(x => ({ name: x.name, thumb: x.thumb || "", url: x.url || "" })),
         playlists: baixadas.length ? [...playlists, { id: "__downloads__", name: "Músicas baixadas", tracks: baixadas, downloads: true }] : playlists,
+        novidades: nov,
       };
     },
     capa: t => bg(t),
