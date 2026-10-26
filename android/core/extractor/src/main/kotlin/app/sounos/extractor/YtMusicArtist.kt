@@ -21,15 +21,55 @@ class YtMusicArtist(private val client: OkHttpClient) {
     private fun version(): String = clientVersion ?: runCatching { YoutubeParsingHelper.getYoutubeMusicClientVersion() }
         .getOrDefault(FALLBACK_VERSION).also { clientVersion = it }
 
-    fun tracks(artistId: String, artistName: String, trace: (String) -> Unit = {}): List<Track> {
-        val started = System.nanoTime()
-        trace("YtMusicArtist.inicio id=$artistId versao=${version()}")
+    /** Seções da aba Música da página do artista (faixas, carrosséis de álbuns/singles…). */
+    private fun artistSections(artistId: String): List<JsonObject> {
         val page = browse(artistId)
         val tab = page.path("contents", "singleColumnBrowseResultsRenderer").getArray("tabs")
             .mapNotNull { it as? JsonObject }
             .firstOrNull { it.path("tabRenderer").getBoolean("selected") }
             ?.getObject("tabRenderer") ?: error("A página de artista não tem a aba Música")
-        val sections = tab.path("content", "sectionListRenderer").getArray("contents").mapNotNull { it as? JsonObject }
+        return tab.path("content", "sectionListRenderer").getArray("contents").mapNotNull { it as? JsonObject }
+    }
+
+    /**
+     * Lançamentos da página do artista (carrosséis "Álbuns" e "Singles e EPs"), do mais novo ao mais antigo.
+     * Uma requisição só: os carrosséis já trazem os mais recentes; a discografia completa não é necessária aqui.
+     */
+    fun releases(artistId: String): List<Release> = artistSections(artistId).flatMap { section ->
+        val shelf = section.getObject("musicCarouselShelfRenderer") ?: return@flatMap emptyList()
+        val label = shelf.path("header", "musicCarouselShelfBasicHeaderRenderer").getObject("title")?.getArray("runs")
+            ?.firstOrNull()?.let { (it as? JsonObject)?.getString("text") }.orEmpty()
+        val shelfKind = when {
+            label.contains("álbu", true) || label.contains("album", true) -> "Álbum"
+            label.contains("single", true) || label.contains("EP") -> "Single"
+            else -> return@flatMap emptyList()
+        }
+        shelf.getArray("contents").mapNotNull { value ->
+            val r = (value as? JsonObject)?.getObject("musicTwoRowItemRenderer") ?: return@mapNotNull null
+            val title = r.getObject("title")?.getArray("runs")?.firstOrNull()?.let { (it as? JsonObject)?.getString("text") }?.trim()
+            if (title.isNullOrBlank()) return@mapNotNull null
+            val sub = r.getObject("subtitle")?.getArray("runs")?.mapNotNull { (it as? JsonObject)?.getString("text")?.trim() }.orEmpty()
+            val year = sub.firstNotNullOfOrNull { s -> s.takeIf { it.length == 4 && it.all(Char::isDigit) }?.toInt() }
+            val kind = when {
+                sub.any { it.equals("EP", true) } -> "EP"
+                sub.any { it.contains("single", true) } -> "Single"
+                sub.any { it.contains("álbum", true) || it.contains("album", true) } -> "Álbum"
+                else -> shelfKind
+            }
+            val listId = r.path("thumbnailOverlay", "musicItemThumbnailOverlayRenderer", "content", "musicPlayButtonRenderer",
+                "playNavigationEndpoint", "watchPlaylistEndpoint").getString("playlistId")
+            val thumbs = r.path("thumbnailRenderer", "musicThumbnailRenderer", "thumbnail").getArray("thumbnails").mapNotNull { t ->
+                val o = t as? JsonObject ?: return@mapNotNull null
+                Thumb(o.getString("url") ?: return@mapNotNull null, o.getInt("width"), o.getInt("height"))
+            }
+            Release(title, kind, year, listId?.let { "https://www.youtube.com/playlist?list=$it" }, thumbs)
+        }
+    }.distinctBy { it.url ?: it.title }.sortedByDescending { it.year ?: 0 }
+
+    fun tracks(artistId: String, artistName: String, trace: (String) -> Unit = {}): List<Track> {
+        val started = System.nanoTime()
+        trace("YtMusicArtist.inicio id=$artistId versao=${version()}")
+        val sections = artistSections(artistId)
         trace("YtMusicArtist.artista secoes=${sections.size} tipos=${sections.joinToString(",") { if (it.has("musicShelfRenderer")) "faixas" else if (it.has("musicCarouselShelfRenderer")) "carrossel" else "outro" }}")
         val topShelf = sections.firstOrNull { it.has("musicShelfRenderer") }?.getObject("musicShelfRenderer")
         val topEndpoint = topShelf?.getObject("bottomEndpoint")?.path("browseEndpoint")

@@ -226,6 +226,17 @@ class Bridge(
                     .put("thumb", photo?.url ?: JSONObject.NULL)
                     .put("items", Json.tracks(unique)).put("total", unique.size)
             }
+            // Novidades da tela inicial: lançamentos recentes de um artista seguido.
+            "artistReleases" -> cachedAsync(a, "artistReleases", a.getString("name")) {
+                val name = a.getString("name")
+                JSONObject().put("items", JSONArray().apply {
+                    app.source.artistReleases(name, a.optString("url").takeIf { it.isNotBlank() }) { android.util.Log.i("Sonus", it) }.forEach { r ->
+                        put(JSONObject().put("title", r.title).put("kind", r.kind).put("year", r.year ?: JSONObject.NULL)
+                            .put("url", r.url ?: JSONObject.NULL).put("artist", name)
+                            .put("thumb", r.thumbs.maxByOrNull { it.width * it.height }?.url ?: JSONObject.NULL))
+                    }
+                })
+            }
             "suggest" -> cachedAsync(a, "suggest", a.getString("q")) { JSONObject().put("items", JSONArray(app.source.suggestions(a.getString("q")).take(6))) }
             "prefetch" -> app.resolver.prefetch(Json.tracks(a.optJSONArray("tracks")))
             "playQueue" -> {

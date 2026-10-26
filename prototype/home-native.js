@@ -1,6 +1,7 @@
-// Tela inicial ligada ao app: histórico real, seus artistas, suas playlists e o mini-player do player nativo.
-(() => {
-  if (!Sounos.native) return;
+// Ligação da tela inicial com o app: estado do player, páginas (artista/playlist/álbum), botão voltar, offline
+// e o player embutido. O que aparece na tela mora nos módulos: modulos/inicio (Início) e modulos/mini-player.
+window.SonusApp = (() => {
+  if (!Sounos.native) return null;
   const esc = s => String(s ?? "").replace(/[&<>"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
   const thumbLayer = () => "";   // a capa vem só pela rota local (/cover), que já busca e guarda; nada de baixar duas vezes
   const bg = t => `url('${Sounos.coverUrl(t)}') center/cover no-repeat, ${thumbLayer(t)}linear-gradient(135deg,${Sounos.hashColors(t.id).join(",")})`;
@@ -8,120 +9,16 @@
     const a = f.replace(/[^a-z0-9]/g, ""); if (a) return a;
     // nome sem letras latinas (아이유, 宇多田ヒカル): código das letras, senão todos viram o mesmo artista
     const h = [...f].filter(c => /[\p{L}\p{N}]/u.test(c)).map(c => c.codePointAt(0).toString(16)).join("").slice(0, 80); return h ? "u" + h : ""; };
-  let S = Sounos.call("getState");
-  let offline = !!Sounos.call("getOffline").offline;
-  let items = [];                          // o que está na tela (para os toques)
-  let downloadedTracks = [];
-
-  // ---------- seções ----------
-  const artistsSec = $("artists").closest("section");
-  const recentTitle = $("recentTitle");
-  artistsSec.querySelector("h2").textContent = "Seus artistas";
-  document.querySelectorAll(".sec-head button").forEach(b => b.style.display = "none");   // "Ver tudo": tela ainda não existe
-  function syncOfflineMark() {
-    $("brandLetter").hidden = offline;
-    $("offlineMark").hidden = !offline;
-  }
-  syncOfflineMark();
-
-  function renderHome() {
-    const hist = Sounos.call("getHistory");
-    const list = (Array.isArray(hist) ? hist : []).filter(e => Sounos.isSong(e.track));      // vídeos ouvidos antes não aparecem
-    window.__sounosHistoryTracks = list.map(e => e.track);
-    const mineData = Sounos.call("getMineTracks");
-    const downloaded = Array.isArray(mineData.downloaded) ? mineData.downloaded : [];
-    downloadedTracks = downloaded;
-    const cached = offline && Array.isArray(mineData.cached) ? mineData.cached : [];
-    const mine = [...new Map([...downloaded, ...cached].map(t => [t.id, t])).values()];
-    items = [];
-    recentTitle.textContent = offline ? "Minhas músicas" : "Ouvidos recentemente";
-    if (offline) {
-      // No modo offline, cada cartão inicia a fila inteira de músicas disponíveis.
-      $("recent").innerHTML = mine.length ? mine.map((t, index) => {
-        const k = items.push({ kind: "mineTrack", tracks: mine, index }) - 1;
-        return `<button class="blk big tap" data-k="${k}" style="background:${bg(t)}">${meta(esc(t.title), Sounos.handle(Sounos.artistLine(t)))}</button>`;
-      }).join("") : `<div class="blk big" style="background:linear-gradient(135deg,var(--c1),var(--c2))">
-        <div class="ini" style="font-size:44px">♪</div>${meta("Minhas músicas", "Nenhuma música disponível offline")}</div>`;
-    } else {
-      // Recentes: música solta, ou a playlist de onde a música tocou.
-      const seenPl = new Set(), recent = [];
-      for (const e of list) {
-        const src = e.source || {};
-        if (src.type === "playlist" && src.id) {
-          if (seenPl.has(src.id)) continue; seenPl.add(src.id);
-          const p = SounosData.getPlaylists().find(x => x.id === src.id);
-          if (p) { recent.push({ kind: "playlist", p }); continue; }
-        }
-        recent.push({ kind: "track", t: e.track });
-        if (recent.length >= 12) break;
-      }
-      $("recent").innerHTML = recent.length ? recent.map(r => {
-        const k = items.push(r) - 1;
-        if (r.kind === "playlist") return `<button class="blk big tap" data-k="${k}">${mosaicOf(r.p)}
-          <span class="kind">${ICON.playlist}Playlist</span>${meta(esc(r.p.name), count(r.p))}</button>`;
-        return `<button class="blk big tap" data-k="${k}" style="background:${bg(r.t)}">${meta(esc(r.t.title), Sounos.handle(Sounos.artistLine(r.t)))}</button>`;
-      }).join("") : `<button class="blk big tap" data-k="search" style="background:linear-gradient(135deg,var(--c1),var(--c2))">
-          <div class="ini" style="font-size:44px">♪</div>${meta("Busque uma música", "para começar")}</button>`;
-    }
-
-    // artistas seguidos aparecem primeiro; depois vêm os mais ouvidos que ainda não foram seguidos.
-    const by = new Map();
-    for (const e of list) { const a = e.track.artist; if (!a) continue; const x = by.get(a) || { n: 0, t: e.track }; x.n++; by.set(a, x); }
-    let followed = [];
-    try { const saved = JSON.parse(localStorage.getItem("sounos.following") || "[]"); if (Array.isArray(saved)) followed = saved.filter(x => x?.name && x?.key); } catch {}
-    const ordered = followed.map(x => ({ name: x.name, thumb: x.thumb || "", following: true }));
-    const used = new Set(ordered.map(x => x.key || artistKey(x.name)));
-    [...by.entries()].sort((a, b) => b[1].n - a[1].n).forEach(([name, x]) => {
-      const k = artistKey(name); if (!used.has(k)) { used.add(k); ordered.push({ name, track: x.t }); }
-    });
-    const arts = ordered.slice(0, 12);
-    artistsSec.style.display = arts.length ? "" : "none";
-    $("artists").innerHTML = arts.map(x => {
-      const name = x.name, k = items.push({ kind: "artist", name, thumb: x.thumb || "" }) - 1;
-      const photo = Sounos.coverUrl({ id: "artist:" + (artistKey(name) || "x"), name, thumb: x.thumb || "" }).replace(/&/g, "&amp;").replace(/'/g, "%27");
-      return `<button class="ar tap" data-k="${k}" style="text-align:center"><div class="pic" style="background:url('${photo}') center/cover no-repeat,${grad(Sounos.hashColors(name))}"></div><div class="n">${Sounos.handle(name)}</div></button>`;
-    }).join("");
-    renderPlaylists();
-    if (stateSeen) fitHome();   // seção de artistas pode ter aparecido/sumido
-  }
-  const count = p => p.tracks.length === 1 ? "1 música" : `${p.tracks.length} músicas`;
-  const mosaicOf = p => {
-    if (p.cover) return `<div class="mosaic" style="background:url('${p.cover.replace(/'/g, "%27")}') center/cover no-repeat"></div>`;
-    if (!p.tracks.length) return `<div class="mosaic" style="background:linear-gradient(135deg,var(--c1),var(--c2))"></div>`;
-    const four = [0, 1, 2, 3].map(i => p.tracks[Math.min(i, p.tracks.length - 1)]);
-    return `<div class="mosaic">${four.map(t => `<i style="background:${bg(t)}"></i>`).join("")}</div>`;
+  const app = {
+    S: Sounos.call("getState"),
+    offline: !!Sounos.call("getOffline").offline,
+    esc, bg, artistKey,
+    cur: () => app.S && app.S.current ? app.S.current : null,
   };
-  renderPlaylists = function () {
-    playlists = SounosData.getPlaylists();
-    const shown = downloadedTracks.length
-      ? [...playlists, { id: "__downloads__", name: "Músicas baixadas", tracks: downloadedTracks, downloads: true }]
-      : playlists;
-    $("playlists").innerHTML = shown.map(p => { const k = items.push({ kind: p.downloads ? "downloads" : "playlist", p }) - 1;
-      return `<button class="blk tap" data-k="${k}">${mosaicOf(p)}${meta(esc(p.name), count(p))}</button>`; }).join("")
-      + `<button class="blk new tap" aria-label="Nova playlist"><span class="in">
-        <svg class="lu" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Nova playlist</span></button>`;
-  };
-
-  // toques nas seções
-  document.addEventListener("click", e => {
-    const el = e.target.closest("[data-k]"); if (!el || e.target.closest("#mini")) return;
-    if (el.dataset.k === "search") return $("searchBtn").click();
-    const it = items[+el.dataset.k]; if (!it) return;
-    if (it.kind === "track") { Sounos.call("playSingle", { track: it.t, context: { type: "radio" } }); openPlayer(); }
-    else if (it.kind === "mineTrack") { Sounos.call("playQueue", { tracks: it.tracks, index: it.index, context: { type: "mine" } }); openPlayer(); }
-    else if (it.kind === "playlist") pages.openPlaylist(it.p.id);
-    else if (it.kind === "downloads") pages.openDownloads();
-    else if (it.kind === "artist") { window.__sonusArtistIntentAt = performance.now(); pages.openArtist(it.name, { thumb: it.thumb || "", __intentAt: window.__sonusArtistIntentAt }); }
-  }, true);
-  window.addEventListener("sounos:following", renderHome);
-  // "Nova playlist": abre o fluxo sem guardar nada até a confirmação.
-  document.addEventListener("click", e => {
-    if (!e.target.closest("#playlists .blk.new")) return;
-    e.stopImmediatePropagation(); add.openCreate();
-  }, true);
-  const pages = SounosPages.attach($("phone"), { onChange: () => {
-    renderHome();
-    setTimeout(() => { SounosTips?.offer("home"); if (offline) SounosTips?.offer("offline"); if (cur()) SounosTips?.offer("mini"); }, 350);
+  const cur = app.cur;
+  const pages = app.pages = SounosPages.attach($("phone"), { onChange: () => {
+    SonusInicio.render();
+    setTimeout(() => { SounosTips?.offer("home"); if (app.offline) SounosTips?.offer("offline"); if (cur()) SounosTips?.offer("mini"); }, 350);
   } });
   // botão voltar do Android: fecha a tela interna mais alta antes de sair do player ou da página
   // (nunca depende só do histórico do navegador: se ele não tiver a entrada, o app fechava em vez de voltar)
@@ -136,112 +33,21 @@
       window.__playerShell?.close?.(); return true;        // senão, desce o player
     }
     if (window.homeSearch?.isOpen?.()) { window.homeSearch.close(); return true; }
+    if (SonusInicio.modo) { SonusInicio.fecharVerTudo(); return true; }   // "Ver tudo" volta para a tela inicial
     return false;
   };
   Sounos.on("offline", ev => {
     const next = !!ev.offline;
-    if (next === offline) return;
-    offline = next;
-    syncOfflineMark();
-    renderHome();
-    fitHome();
-    if (offline) SounosTips?.offer("offline");
+    if (next === app.offline) return;
+    app.offline = next;
+    SonusInicio.render();
+    if (app.offline) SounosTips?.offer("offline");
   });
-  Sounos.on("library", () => { renderHome(); fitHome(); });
-  Sounos.on("download", ev => { if (ev.done || ev.error) { renderHome(); fitHome(); } });
+  Sounos.on("library", () => SonusInicio.render());
+  Sounos.on("download", ev => { if (ev.done || ev.error) SonusInicio.render(); });
   document.querySelectorAll(".row").forEach(row => row.addEventListener("scroll", () => SounosTips?.offer("home"), { passive: true }));
-
-  // ---------- mini-player ----------
-  const cur = () => S && S.current && S.current !== null ? S.current : null;
-  let shownId = null;                      // música que o mini-player está mostrando
-  let stateSeen = false;                   // o primeiro estado (ao abrir a tela) não anima
-  // Mini-player sobe de baixo; o conteúdo dá uma subidinha e diminui um pouco o zoom (só transform/opacity)
-  function miniRise() {
-    if (!homeCanAnimate() || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const o = { duration: 450, easing: "cubic-bezier(.2,.85,.25,1)" };
-    $("mini").animate([{ opacity: 0, transform: "translateY(48px)" }, { opacity: 1, transform: "none" }], o);
-    document.querySelector(".scroll").animate([
-      { transform: "none" }, { transform: "translateY(-10px) scale(.97)", offset: .4 }, { transform: "none" }], o);
-  }
-  function applyState(st) {
-    const before = shownId;
-    S = st;
-    const t = cur();
-    const appeared = !!t && !$("mini").classList.contains("has-track") && stateSeen;   // mini-player acabou de aparecer
-    stateSeen = true;
-    $("mini").classList.toggle("has-track", !!t);
-    $("miniAdd").hidden = !t;
-    $("phone").classList.toggle("paused", !st.playing);
-    $("phone").style.setProperty("--mini-h", t ? $("mini").offsetHeight + "px" : "0px");
-    playing = !!st.playing; shuffle = st.shuffle; repeat = st.repeat;
-    pos = (st.positionMs || 0) / 1000;
-    last = performance.now();
-    renderMiniIcon(!!st.playing || (!!st.loading && !!st.playWhenReady), !!st.loading);
-    homeClockChanged();
-    fitHome();                             // blocos se reajustam à nova altura disponível
-    if (appeared) miniRise();
-    if (!t) return;
-    (st.colors || []).forEach((c, k) => root.setProperty(`--c${k + 1}`, c));
-    window.SounosSyncSystemBars?.();
-    if (before !== t.id) { shownId = t.id; resetMiniBar(); loadMini(); if (before) renderHome(); }
-    if (homeCanAnimate()) drawMiniProgress();   // barra já na posição nova (não espera o próximo ciclo do relógio)
-    SounosTips?.offer("mini");
-  }
-  loadMini = function () {
-    const t = cur(); if (!t) return;
-    $("miniIni").textContent = "";
-    $("miniCv").style.background = bg(t);
-    $("miniT").textContent = t.title;
-    $("miniA").textContent = Sounos.handle(Sounos.artistLine(t));
-    if (!miniFirst) {
-      swapIn($("miniCv"), { opacity: .3, transform: "scale(.85)" });
-      swapIn($("miniT"), { opacity: 0, transform: "translateX(12px)" });
-      swapIn($("miniA"), { opacity: 0, transform: "translateX(12px)" }, 360);
-    }
-    miniFirst = false;
-  };
-  curDur = () => Math.max(1, (S?.durationMs || 0) / 1000 || cur()?.dur || 1);
-  durKnown = () => (S?.durationMs || 0) > 0 || (cur()?.dur || 0) > 1;
-  atEnd = () => { pos = curDur(); };                 // o player nativo passa para a próxima
-  step = d => Sounos.call(d > 0 ? "next" : "prev");
-  doShuffle = () => Sounos.call("setShuffle", { on: !shuffle });
-  doRepeat = () => Sounos.call("setRepeat", { mode: { off: "all", all: "one", one: "off" }[repeat] });
-  doToggle = () => {
-    const nextPlaying = !(!!playing || (!!S?.loading && !!S?.playWhenReady));
-    if (!S?.loading) { playing = nextPlaying; $("phone").classList.toggle("paused", !playing); homeClockChanged(); }
-    renderMiniIcon(nextPlaying, !!S?.loading);
-    Sounos.call(nextPlaying ? "play" : "pause");
-  };
-  let seekT = 0;
-  scrubBy = dx => { const d = curDur(); pos = Math.max(0, Math.min(d, pos + dx * 0.002 * d)); clearTimeout(seekT); seekT = setTimeout(() => Sounos.call("seek", { sec: pos }), 120); };
-  currentForAdd = () => cur();
-
-  Sounos.on("state", applyState);
-  Sounos.on("progress", p => {
-    if (p.id && cur() && p.id !== cur().id) return;       // progresso de outra música (troca em andamento)
-    const changed = playing !== p.playing;
-    if (!scrubbing) pos = p.pos;
-    playing = p.playing; $("phone").classList.toggle("paused", !playing); last = performance.now();
-    if (changed) renderMiniIcon(!!p.playing || (!!p.loading && !!p.playWhenReady), !!p.loading);
-    if (homeCanAnimate() && !playing) drawMiniProgress();
-    if (changed) homeClockChanged();
-  });
-  addEventListener("sounos:visibility", e => {
-    if (!e.detail?.active) return;
-    const p = Sounos.call("getProgress");
-    if (Number.isFinite(p.pos) && !scrubbing) pos = p.pos;
-    playing = !!p.playing; $("phone").classList.toggle("paused", !playing); last = performance.now();
-    renderMiniIcon(!!p.playing || (!!p.loading && !!p.playWhenReady), !!p.loading);
-    if (homeCanAnimate() && !playing) drawMiniProgress();
-    homeClockChanged();
-  });
-  renderHome();
-  applyState(S);
   SounosTips?.offer("home");
-  if (offline) SounosTips?.offer("offline");
-  if (cur()) SounosTips?.offer("mini");
-  // O player embutido lê a letra nativa; este envio mantém o quadro sincronizado ao carregá-la.
-  if (cur()) window.__sounos.emit("lyrics", Sounos.call("getLyrics"));
+  if (app.offline) SounosTips?.offer("offline");
 
 // ---------- player embutido ----------
 // O player fica carregado num quadro por cima da tela inicial (escondido, parado). Abrir/fechar é só
@@ -305,7 +111,7 @@
       const wasOpen = isOpen;
       isOpen = false;
       // continua desenhado logo abaixo da tela (pronto para subir sem atraso), só que parado
-      slide(H(), 340, () => { if (!isOpen) { win().__playerHidden?.(); y = null; window.__playerOpen = false; $("phone").classList.remove("player-open"); syncTheme(); homeClockChanged(); SounosTips?.offer("home"); if (offline) SounosTips?.offer("offline"); if (cur()) SounosTips?.offer("mini"); } });
+      slide(H(), 340, () => { if (!isOpen) { win().__playerHidden?.(); y = null; window.__playerOpen = false; $("phone").classList.remove("player-open"); syncTheme(); homeClockChanged(); SounosTips?.offer("home"); if (app.offline) SounosTips?.offer("offline"); if (cur()) SounosTips?.offer("mini"); } });
       if (wasOpen && !fromPop && pushed) { pushed = false; history.back(); }
     },
     // arrastando o mini-player para cima: o player aparece por baixo do dedo
@@ -325,7 +131,8 @@
   // o "+" ou as configurações mudaram algo no player → a tela inicial acompanha
   addEventListener("storage", e => {
     if (e.key === "sounos.settings") { if (!window.__playerOpen) syncTheme(); }
-    else renderHome();
+    else SonusInicio.render();
   });
 }
+  return app;
 })();

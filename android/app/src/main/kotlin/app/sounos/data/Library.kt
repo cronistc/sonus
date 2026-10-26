@@ -21,7 +21,11 @@ class Library(context: Context) {
     // ---------- histórico ----------
     @Synchronized fun addHistory(t: Track, source: JSONObject) {
         val arr = JSONArray(prefs.getString("history", "[]"))
-        val out = JSONArray().put(JSONObject().put("track", withFixes(Json.track(t))).put("source", source).put("at", System.currentTimeMillis()))
+        // n = quantas vezes a música tocou ("Escute novamente" mostra as mais ouvidas); antigas sem contagem valem 1
+        val plays = (0 until arr.length()).map { arr.getJSONObject(it) }
+            .firstOrNull { it.getJSONObject("track").getString("id") == t.id }?.optInt("n", 1) ?: 0
+        val out = JSONArray().put(JSONObject().put("track", withFixes(Json.track(t))).put("source", source)
+            .put("at", System.currentTimeMillis()).put("n", plays + 1))
         for (i in 0 until minOf(arr.length(), 300)) {
             val e = arr.getJSONObject(i)
             if (e.getJSONObject("track").getString("id") != t.id) out.put(e)

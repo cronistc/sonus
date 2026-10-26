@@ -146,14 +146,22 @@ class NewPipeSource(private val service: StreamingService = ServiceList.YouTube)
 
     /** Faixas da aba Música e dos álbuns/singles oficiais do artista, sem versões duplicadas. */
     suspend fun artistTracks(query: String, knownUrl: String? = null, trace: (String) -> Unit = {}): List<Track> = withContext(Dispatchers.IO) {
-        val channelId = knownUrl?.let(::channelId)
+        val channelId = artistChannel(query, knownUrl, trace) ?: return@withContext emptyList()
+        ytmArtists.tracks(channelId, query, trace)
+    }
+
+    /** Álbuns, singles e EPs mais recentes do artista (para "Novidades" da tela inicial). */
+    suspend fun artistReleases(query: String, knownUrl: String? = null, trace: (String) -> Unit = {}): List<Release> = withContext(Dispatchers.IO) {
+        val channelId = artistChannel(query, knownUrl, trace) ?: return@withContext emptyList()
+        ytmArtists.releases(channelId)
+    }
+
+    private suspend fun artistChannel(query: String, knownUrl: String?, trace: (String) -> Unit): String? =
+        knownUrl?.let(::channelId)
             ?: searchArtists(query, trace).asSequence()
                 .filter { CoverStore.artistKey(it.name) == CoverStore.artistKey(query) }
                 .maxWithOrNull(compareBy<ArtistResult> { it.verified }.thenBy { it.subscriberCount.coerceAtLeast(0) })
-                ?.url?.let(::channelId)
-        if (channelId.isNullOrBlank()) return@withContext emptyList()
-        ytmArtists.tracks(channelId, query, trace)
-    }
+                ?.url?.let(::channelId)?.takeIf { it.isNotBlank() }
 
     private fun channelId(url: String): String? = Regex("UC[A-Za-z0-9_-]{22}").find(url)?.value
 
