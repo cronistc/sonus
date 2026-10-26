@@ -81,13 +81,13 @@ const SonusInicio = (() => {
   }
   let jan = [], atual = 0, chaveJan = "", passaT = 0;
   function htmlJanela(j, k) {
-    const n = j.lista.length, rot = `<div class="lbl"${k === 0 ? ' id="recentTitle"' : ""}>${j.rotulo}</div>`;
-    if (!n) return `<button class="jan vazia tap" data-jan="${k}"><div class="jx">${rot}<div class="big">${j.vazio}</div></div></button>`;
+    const n = j.lista.length, id = k === 0 ? ' id="recentTitle"' : "";
+    if (!n) return `<button class="jan vazia tap" data-jan="${k}"><div class="jx"><div class="lbl"${id}>${j.rotulo}</div><div class="big">${j.vazio}</div></div></button>`;
     // as últimas 6 músicas, paradas (sem piscar); com menos de 6 a grade se ajusta
     const capas = j.lista.slice(0, 6), c = n >= 5 ? 3 : n === 4 ? 2 : n, l = n >= 4 ? 2 : 1;
     const cel = Array.from({ length: c * l }, (_, i) => `<i style="background:${fonte.capa(capas[i % capas.length])}"></i>`).join("");
     return `<button class="jan tap" data-jan="${k}"><div class="jmos" style="grid-template-columns:repeat(${c},1fr);grid-template-rows:repeat(${l},1fr)">${cel}</div>
-      <div class="jx">${rot}<div class="big">${plural(n, "música", "músicas")}</div><div class="sub">${j.sub}</div></div>
+      <div class="jx"><div class="big"${id}>${j.rotulo}</div><div class="sub">${j.sub}</div></div>
       <span class="jpp">${I.play}</span></button>`;
   }
   function renderJanelas() {
