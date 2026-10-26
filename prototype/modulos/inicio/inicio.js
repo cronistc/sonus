@@ -207,8 +207,9 @@ const SonusInicio = (() => {
   function ajustarVt() {
     const vt = $("vt"), blocos = [...vt.querySelectorAll(".vt-bloco")];
     if (!blocos.length) return;
-    const fim = () => sc().getBoundingClientRect().bottom - parseFloat(getComputedStyle(sc()).paddingBottom);
-    const base = el => el.querySelector(".rel")?.getBoundingClientRect().bottom ?? el.getBoundingClientRect().bottom;
+    // medidas sem a animação de entrada (o #vt entra deslizando): tudo relativo ao topo do próprio #vt
+    const fim = () => sc().clientHeight - parseFloat(getComputedStyle(sc()).paddingBottom) - (vt.offsetTop - sc().offsetTop - sc().scrollTop);
+    const base = el => (el.querySelector(".rel") || el).getBoundingClientRect().bottom - vt.getBoundingClientRect().top;
     let rel = parseFloat(vt.style.getPropertyValue("--rel")) || 130;
     for (let i = 0; i < 4; i++) {
       vt.style.setProperty("--rel", rel + "px");
