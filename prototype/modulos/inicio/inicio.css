@@ -159,14 +159,15 @@ section:first-of-type { margin-top: 4px; }
 /* ---------- "Ver tudo": a tela inicial vira a lista completa ---------- */
 .vt-sec[hidden], .dyn-sec[hidden] { display: none; }
 .sec-head .ver { min-width: 54px; text-align: right; }
-.phone.vt-on .scroll { overflow-y: auto !important; }
 .phone.vt-on .vt-sec { margin-top: 4px; }
-/* playlists em grade (2 colunas); o tamanho do bloco vem do JS (--s) */
+/* playlists em grade (2 colunas); o tamanho do bloco vem do JS (--grade) */
 .row.grade { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; overflow: visible; padding: 12px 20px 8px; margin: -8px 0 0; }
-.row.grade > .blk { --s0: 150px; width: var(--s); height: var(--s); }
+.row.grade > .blk { --s0: 150px; --s: var(--grade); }
+/* só o Ver tudo de playlists rola (a lista pode ser grande); a tela inicial e o de artistas ficam travados */
+.phone.vt-playlists .scroll { overflow-y: auto !important; }
 /* novidades de quem a pessoa segue */
 .vt-bloco { margin-top: 30px; }
-.vt-row > .rel { width: 150px; }
+.vt-row > .rel { width: var(--rel, 150px); }
 .rel { display: block; min-width: 0; text-align: left; }
 .rel .rc { position: relative; width: 100%; aspect-ratio: 1; border-radius: 10px; overflow: hidden; box-shadow: var(--tile-shadow);
            background-size: cover !important; background-position: center !important; }

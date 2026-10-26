@@ -189,10 +189,23 @@ const SonusInicio = (() => {
     anima(b, [{ opacity: 0, transform: "translateY(4px)" }, { opacity: 1, transform: "none" }], { duration: 260 });
     b.textContent = texto;
   }
+  // Ver tudo de playlists: grade de 2 colunas do tamanho da tela (esta tela pode rolar; as outras não)
   function ajustarGrade() {
-    // duas colunas do tamanho da tela (mesmo desenho dos blocos, só maiores)
-    const w = (sc().clientWidth - 40 - 12) / 2;
-    $("playlists").style.setProperty("--s", Math.floor(w) + "px");
+    $("playlists").style.setProperty("--grade", Math.floor((sc().clientWidth - 40 - 12) / 2) + "px");
+  }
+  // Ver tudo de artistas: as capas dos carrosséis diminuem juntas até tudo caber na altura (sem rolar)
+  function ajustarVt() {
+    const vt = $("vt"), blocos = [...vt.querySelectorAll(".vt-bloco")];
+    if (!blocos.length) return;
+    vt.style.setProperty("--rel", "150px");
+    const free = sc().getBoundingClientRect().bottom - parseFloat(getComputedStyle(sc()).paddingBottom) - vt.getBoundingClientRect().top;
+    const resto = blocos.reduce((a, b) => a + b.offsetHeight + parseFloat(getComputedStyle(b).marginTop) - 150, 0);
+    let rel = Math.max(72, Math.min(150, Math.floor((free - resto) / blocos.length)));
+    vt.style.setProperty("--rel", rel + "px");
+    // segunda medida, já no tamanho novo: as capas crescem (ou encolhem) até o fim encostar no espaço do mini-player
+    const fim = sc().getBoundingClientRect().bottom - parseFloat(getComputedStyle(sc()).paddingBottom);
+    rel = Math.max(72, Math.min(150, rel + Math.floor((fim - blocos[blocos.length - 1].getBoundingClientRect().bottom) / blocos.length)));
+    vt.style.setProperty("--rel", rel + "px");
   }
   // FLIP: os blocos saem de onde estavam (fileira) e deslizam até o lugar novo (grade), e vice-versa
   function flipBlocos(trocar) {
@@ -217,11 +230,11 @@ const SonusInicio = (() => {
     $("phone").classList.add("vt-on", "vt-" + m);
     sc().scrollTop = 0;
     // 2) a seção sobe para o topo; playlists viram grade
-    if (m === "playlists") flipBlocos(() => { ajustarGrade(); $("playlists").classList.add("grade"); });
+    if (m === "playlists") flipBlocos(() => { $("playlists").classList.add("grade"); ajustarGrade(); });
     anima(alvo, [{ transform: `translateY(${y0 - alvo.getBoundingClientRect().top}px)` }, { transform: "none" }], { duration: 460 });
     trocaRotulo(m, "Voltar");
     // 3) o conteúdo novo entra por baixo
-    if (m === "artistas") { $("vt").innerHTML = htmlNovidades(null) + htmlEscute(); carregarNovidades(); }
+    if (m === "artistas") { $("vt").innerHTML = htmlNovidades(null) + htmlEscute(); ajustarVt(); carregarNovidades(); }
     anima($("vt"), [{ opacity: 0, transform: "translateY(28px)" }, { opacity: 1, transform: "none" }], { duration: 420, delay: 180, fill: "backwards" });
     ocupado = false;
   }
@@ -234,7 +247,9 @@ const SonusInicio = (() => {
     sc().scrollTop = 0;
     const y0 = alvo.getBoundingClientRect().top;
     const voltar = () => { resto.forEach(el => el.hidden = false); $("phone").classList.remove("vt-on", "vt-" + m); };
-    if (m === "playlists") flipBlocos(() => { $("playlists").classList.remove("grade"); $("playlists").style.removeProperty("--s"); voltar(); });
+    if (m === "playlists") flipBlocos(() => {
+      const g = $("playlists"); g.classList.remove("grade"); g.style.removeProperty("--grade"); voltar();
+    });
     else voltar();
     modo = null;
     anima(alvo, [{ transform: `translateY(${y0 - alvo.getBoundingClientRect().top}px)` }, { transform: "none" }], { duration: 460 });
@@ -272,6 +287,7 @@ const SonusInicio = (() => {
     const g = $("vt").querySelector('[data-bloco="novidades"] .row'); if (!g) return;
     const novo = document.createElement("div"); novo.innerHTML = htmlNovidades(lista);
     g.replaceWith(novo.querySelector(".row"));
+    ajustarVt();
     [...$("vt").querySelectorAll('[data-bloco="novidades"] .rel')].forEach((el, i) => anima(el, [{ opacity: 0, transform: "translateY(12px)" }, { opacity: 1, transform: "none" }],
       { duration: 360, delay: Math.min(i, 10) * 40, fill: "backwards" }));
   }
@@ -280,6 +296,7 @@ const SonusInicio = (() => {
     usar(f) { fonte = f; render(); },
     render,
     get modo() { return modo; },
+    reajustar() { if (modo === "playlists") ajustarGrade(); else if (modo === "artistas") ajustarVt(); },
     fecharVerTudo,
     RECENTES_MS,
   };
@@ -293,7 +310,7 @@ function renderPlaylists() { SonusInicio.render(); }
 const FIT = [["dyn", "--rec", 150, 236], ["artists", "--art", 64, 110], ["playlists", "--pl", 100, 160]];
 let fitKey = "", fitFirst = true;
 function fitHome() {
-  if (SonusInicio.modo) return;
+  if (SonusInicio.modo) return SonusInicio.reajustar();
   const ph = $("phone"), sc = ph.querySelector(".scroll"), cs = getComputedStyle(sc);
   const secs = FIT.map(f => ({ f, sec: $(f[0]).closest("section") })).filter(x => x.sec.offsetParent);   // seção oculta não conta
   const miniH = parseFloat(ph.style.getPropertyValue("--mini-h")) || 0;
