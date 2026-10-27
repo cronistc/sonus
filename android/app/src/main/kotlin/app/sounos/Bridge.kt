@@ -121,6 +121,8 @@ class Bridge(
             "getNotificationPermission" -> JSONObject().put("granted", notificationPermissionGranted()).toString()
             "getOffline" -> JSONObject().put("offline", !player.isOnline).toString()
             "getMineTracks" -> mineTracks().toString()
+            // só as baixadas (rápido): a tela inicial online não precisa conferir o cache no disco a cada desenho
+            "getDownloadedTracks" -> JSONObject().put("downloaded", Json.tracks(downloadedTracks())).toString()
             "getCoverArtistKeys" -> JSONObject().put("keys", JSONArray(if (BuildConfig.DEBUG) app.covers.knownArtistKeys() else emptyList<String>())).toString()
             "saveData" -> {
                 val key = a.optString("key")
@@ -306,6 +308,10 @@ class Bridge(
         }
     }
 
+    private fun downloadedTracks(): List<app.sounos.extractor.Track> = app.library.downloadedMeta().keys().asSequence().mapNotNull { id ->
+        app.library.downloadedTrack(id)?.takeIf { app.library.isDownloaded(id) }
+    }.distinctBy { it.id }.toList()
+
     private fun mineTracks(): JSONObject {
         val known = linkedMapOf<String, app.sounos.extractor.Track>()
         app.library.cachedTracks().forEach { (id, track) -> known[id] = track }
@@ -317,9 +323,7 @@ class Bridge(
                 }
             }
         }
-        val downloaded = app.library.downloadedMeta().keys().asSequence().mapNotNull { id ->
-            app.library.downloadedTrack(id)?.takeIf { app.library.isDownloaded(id) }
-        }.distinctBy { it.id }.toList()
+        val downloaded = downloadedTracks()
         val downloadedIds = downloaded.map { it.id }.toSet()
         val cached = known.values.filter { app.audio.isFreshComplete(it.id) && it.id !in downloadedIds }.distinctBy { it.id }
         app.library.pruneCached(known.values.filter { app.audio.isFreshComplete(it.id) }.map { it.id }.toSet())

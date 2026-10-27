@@ -39,7 +39,8 @@
       const agora = Date.now();
       // recentes: cada música vale RECENTES_MS desde a última vez que tocou (o histórico já sobe a música tocada de novo)
       const recentes = lista.filter(e => agora - (e.at || 0) < SonusInicio.RECENTES_MS).map(e => e.track);
-      const mine = Sounos.call("getMineTracks");
+      // online só as baixadas (consulta rápida); offline também o que está inteiro no cache (consulta mais lenta)
+      const mine = Sounos.call(A.offline ? "getMineTracks" : "getDownloadedTracks");
       const baixadas = Array.isArray(mine.downloaded) ? mine.downloaded : [];
       const cache = A.offline && Array.isArray(mine.cached) ? mine.cached : [];
       const minhas = A.offline ? [...new Map([...baixadas, ...cache].map(t => [t.id, t])).values()] : [];

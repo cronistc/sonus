@@ -17,7 +17,8 @@ window.SonusApp = (() => {
   };
   const cur = app.cur;
   const pages = app.pages = SounosPages.attach($("phone"), { onChange: () => {
-    SonusInicio.render();
+    // depois da animação da página (abrir/fechar): redesenhar no meio dela travava o deslize e a volta saía seca
+    setTimeout(() => SonusInicio.render(), 380);
     setTimeout(() => { SounosTips?.offer("home"); if (app.offline) SounosTips?.offer("offline"); if (cur()) SounosTips?.offer("mini"); }, 350);
   } });
   // botão voltar do Android: fecha a tela interna mais alta antes de sair do player ou da página
