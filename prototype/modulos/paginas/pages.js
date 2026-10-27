@@ -506,7 +506,6 @@ window.SounosPages = (() => {
       <div class="art-topo">
         <div class="art-txt">
           <div class="art-linha"><div class="name">${esc(handle(name))}</div><button class="ab follow" data-a="follow" aria-label="Seguir artista"></button></div>
-          <div class="sub">Artista</div>
         </div>
         <button class="big" data-a="play" aria-label="Tocar" disabled>${I.play}</button>
       </div>
@@ -559,7 +558,6 @@ window.SounosPages = (() => {
       artistThumb = r.thumb || artistThumb;
       $(".name").textContent = handle(String(r.name || name || "Artista").trim() || "Artista");
       const total = all().length;
-      $(".sub").textContent = total ? `Artista · ${count(total)}` : "Artista";
       $("[data-a=play]").disabled = !(songs.length || mine.length);
       drawSongs();
       if (r.isCached) {
