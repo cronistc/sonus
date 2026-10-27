@@ -12,6 +12,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
@@ -190,12 +191,56 @@ class Motor(private val dir: File, private val io: CoroutineScope, private val h
         http.newCall(Request.Builder().url(url).build()).execute().use { r -> if (r.isSuccessful) JSONObject(r.body!!.string()) else null }
     }.getOrNull()
 
-    /** Artistas de que a pessoa mais gosta pelo uso: tempo ouvido e músicas até o fim pesam; pular tira. */
-    suspend fun artistasPreferidos(n: Int): List<String> = lock.withLock {
+    // ---------- o que o motor sabe do gosto (usado pelas Novidades e pela busca) ----------
+    /** Pontos de gosto de uma soma: tempo ouvido e músicas até o fim somam; pular tira. */
+    private fun pontos(o: JSONObject) = (o.optLong("ouviuMs") / 60000.0 + o.optLong("completas") * 2 - o.optLong("puladas") * 1.5).coerceAtLeast(0.0)
+
+    /**
+     * Afinidade com cada artista (chave → 0..1, 1 = o mais ouvido). Junta o que o motor aprendeu com o histórico de
+     * reprodução que já existia (vezes que cada música tocou), para valer desde o primeiro dia.
+     */
+    suspend fun afinidadeArtistas(historico: JSONArray = JSONArray()): Map<String, Pair<String, Double>> = lock.withLock {
+        val soma = HashMap<String, Pair<String, Double>>()
+        fun add(nome: String, v: Double) { val k = CoverStore.artistKey(nome); if (k.isBlank() || v <= 0) return
+            soma[k] = (soma[k]?.first ?: nome) to ((soma[k]?.second ?: 0.0) + v) }
         val a = carregar().getJSONObject("artistas")
-        a.keys().asSequence().map { a.getJSONObject(it) }
-            .sortedByDescending { it.optLong("ouviuMs") / 60000.0 + it.optLong("completas") * 2 - it.optLong("puladas") * 1.5 }
-            .map { it.optString("nome") }.filter(String::isNotBlank).take(n).toList()
+        a.keys().forEach { k -> a.getJSONObject(k).let { add(it.optString("nome"), pontos(it)) } }
+        for (i in 0 until historico.length()) historico.optJSONObject(i)?.let { e ->
+            e.optJSONObject("track")?.optString("artist")?.takeIf(String::isNotBlank)?.let { add(it, e.optInt("n", 1) * 0.5) }
+        }
+        val max = soma.values.maxOfOrNull { it.second } ?: return@withLock emptyMap()
+        soma.mapValues { (_, v) -> v.first to v.second / max }
+    }
+
+    /** Gosto por gênero (gênero em minúsculas → 0..1). Vazio enquanto o motor não conhece nenhum gênero. */
+    suspend fun gostoGeneros(): Map<String, Double> = lock.withLock {
+        val g = carregar().getJSONObject("generos")
+        val m = g.keys().asSequence().associateWith { pontos(g.getJSONObject(it)) }.filterValues { it > 0 }
+        val max = m.values.maxOrNull() ?: return@withLock emptyMap()
+        m.mapValues { it.value / max }
+    }
+
+    /** Artistas de que a pessoa mais gosta pelo uso (nomes, do mais ao menos). */
+    suspend fun artistasPreferidos(n: Int, historico: JSONArray = JSONArray()): List<String> =
+        afinidadeArtistas(historico).values.sortedByDescending { it.second }.map { it.first }.take(n)
+
+    /** Gêneros de um lançamento (Deezer: busca o álbum do mesmo artista → gêneros), guardados por lançamento. */
+    private val deezerVez = kotlinx.coroutines.sync.Semaphore(4)       // poucas consultas ao mesmo tempo (limite do Deezer)
+    private suspend fun generosDoLancamento(r: Release): List<String> {
+        val id = r.browseId ?: return emptyList()
+        lock.withLock { carregar().optJSONObject("generoLanc")?.optJSONArray(id)?.let { a -> return (0 until a.length()).map(a::getString) } }
+        val lista = deezerVez.withPermit {
+            val q = URLEncoder.encode("${r.artist} ${r.title}", "UTF-8")
+            val chave = CoverStore.artistKey(r.artist)
+            val album = get("https://api.deezer.com/search/album?q=$q&limit=5")?.optJSONArray("data")?.let { d ->
+                (0 until d.length()).mapNotNull { d.optJSONObject(it) }
+                    .firstOrNull { chave.isBlank() || CoverStore.artistKey(it.optJSONObject("artist")?.optString("name").orEmpty()) == chave }
+            }?.optLong("id")?.takeIf { it > 0 }
+            album?.let { get("https://api.deezer.com/album/$it")?.optJSONObject("genres")?.optJSONArray("data") }
+                ?.let { a -> (0 until a.length()).mapNotNull { a.optJSONObject(it)?.optString("name")?.takeIf(String::isNotBlank) } }.orEmpty()
+        }
+        lock.withLock { val p = carregar(); (p.optJSONObject("generoLanc") ?: JSONObject().also { p.put("generoLanc", it) }).put(id, JSONArray(lista)) }
+        return lista
     }
 
     // ---------- Novidades ----------
@@ -205,9 +250,11 @@ class Motor(private val dir: File, private val io: CoroutineScope, private val h
      * quando o motor for além da 0.1.)
      * Devolve os lançamentos (para os cartões) e as músicas deles, embaralhadas (para tocar).
      */
-    suspend fun novidades(source: NewPipeSource, seguidos: List<Pair<String, String?>>): JSONObject = coroutineScope {
+    suspend fun novidades(source: NewPipeSource, seguidos: List<Pair<String, String?>>, historico: JSONArray = JSONArray()): JSONObject = coroutineScope {
         val ano = Calendar.getInstance().get(Calendar.YEAR)
-        val preferidos = artistasPreferidos(6).filter { p -> seguidos.none { CoverStore.artistKey(it.first) == CoverStore.artistKey(p) } }.take(4)
+        val afinidade = afinidadeArtistas(historico)
+        val gosto = gostoGeneros()
+        val preferidos = artistasPreferidos(6, historico).filter { p -> seguidos.none { CoverStore.artistKey(it.first) == CoverStore.artistKey(p) } }.take(4)
         val pessoais = (seguidos.take(10) + preferidos.map { it to null }).map { (nome, url) ->
             async(Dispatchers.IO) {
                 runCatching { source.artistReleases(nome, url) }.getOrDefault(emptyList())
@@ -219,8 +266,18 @@ class Motor(private val dir: File, private val io: CoroutineScope, private val h
         val peso = (0.15 + 0.07 * (seguidos.size + preferidos.size)).coerceAtMost(0.85)
         val total = 20
         val daPessoa = meus.take((total * peso).toInt().coerceAtLeast(minOf(meus.size, 3)))
-        val escolhidos = (daPessoa + genericos.await().shuffled().filter { g -> daPessoa.none { it.browseId == g.browseId } })
-            .take(total).shuffled()
+        // lançamentos do país: os que combinam com o gosto (artistas que a pessoa já ouve, gêneros que ela mais ouve)
+        // ganham a maior parte das vagas; o resto é sorteado, para conhecer coisa nova
+        val vagas = (total - daPessoa.size).coerceAtLeast(0)
+        val candidatos = genericos.await().filter { g -> daPessoa.none { it.browseId == g.browseId } }.shuffled().take(24)
+        val generosLanc = if (gosto.isEmpty()) emptyMap()
+            else candidatos.map { r -> async(Dispatchers.IO) { r.browseId to runCatching { generosDoLancamento(r) }.getOrDefault(emptyList()) } }.awaitAll().toMap()
+        fun nota(r: Release) = (afinidade[CoverStore.artistKey(r.artist)]?.second ?: 0.0) * 2 +
+            (generosLanc[r.browseId]?.sumOf { gosto[it.lowercase()] ?: 0.0 } ?: 0.0)
+        val porGosto = candidatos.sortedByDescending(::nota)
+        val doGosto = (vagas * 0.7).toInt()
+        val genericosEscolhidos = porGosto.take(doGosto) + porGosto.drop(doGosto).shuffled().take(vagas - doGosto)
+        val escolhidos = (daPessoa + genericosEscolhidos).take(total).shuffled()
         // músicas: o single inteiro; de álbum/EP, as 2 primeiras
         val musicas = escolhidos.map { r ->
             async(Dispatchers.IO) {

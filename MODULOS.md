@@ -24,7 +24,7 @@ Páginas de entrada: `prototype/home.html` e `prototype/player.html`. Fontes em 
 ## Motores e parte nativa (`android/`)
 | Módulo | Versão | Onde | O que é |
 |---|---|---|---|
-| Motor de entendimento | 0.1 | `android/app/src/main/kotlin/app/sounos/motor` | aprende o gosto (escutas, artistas, gêneros); Novidades |
+| Motor de entendimento | 0.2 | `android/app/src/main/kotlin/app/sounos/motor` | aprende o gosto (escutas, artistas, gêneros); Novidades |
 | Extrator (busca e áudio) | 1.1 | `android/core/extractor` | YouTube/YouTube Music via NewPipe + chamadas diretas |
 | Player nativo | — | `android/app/.../player`, `.../engine` | fila, áudio, notificação |
 | Dados | — | `android/app/.../data` | histórico, baixadas, letras, backups |

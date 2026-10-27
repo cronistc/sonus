@@ -48,7 +48,7 @@ class NewPipeSource(private val service: StreamingService = ServiceList.YouTube)
      * primeiro quem tem o nome igual ao pesquisado, depois quem começa com as letras, depois quem tem uma palavra que
      * começa com elas; por último os próximos do nicho que o YouTube Music sugere. Dentro de cada grupo, maior público primeiro.
      */
-    suspend fun searchArtists(query: String, trace: (String) -> Unit = {}): List<ArtistResult> {
+    suspend fun searchArtists(query: String, trace: (String) -> Unit = {}, afinidade: (String) -> Double = { 0.0 }): List<ArtistResult> {
         val all = searchArtistsAll(query, trace)
         val q = CoverStore.artistKey(query)
         val palavras = query.lowercase().split(Regex("\\s+")).map(CoverStore::artistKey).filter(String::isNotBlank)
@@ -64,7 +64,9 @@ class NewPipeSource(private val service: StreamingService = ServiceList.YouTube)
             }
         }
         return all.filter { it.subscriberCount >= MIN_PUBLICO_ARTISTA || it.subscriberCount < 0 }   // < 0: público desconhecido (reserva do NewPipe)
-            .sortedWith(compareBy<ArtistResult> { grupo(it) }.thenByDescending { it.subscriberCount })
+            // nome que combina com o que foi digitado + a pessoa já ouve = primeiro de todos ("gal" → Gal Costa antes da conta "GAL")
+            .sortedWith(compareBy<ArtistResult> { if (grupo(it) <= 2 && afinidade(CoverStore.artistKey(it.name)) > 0) 0 else 1 }
+                .thenBy { grupo(it) }.thenByDescending { afinidade(CoverStore.artistKey(it.name)) }.thenByDescending { it.subscriberCount })
     }
 
     /** Todos os artistas que a busca do YouTube Music devolve (sem filtro de público): para achar a foto de um nome exato. */

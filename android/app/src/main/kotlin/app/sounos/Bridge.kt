@@ -175,7 +175,19 @@ class Bridge(
             }
             "searchArtists" -> cachedAsync(a, "searchArtists", a.getString("q")) {
                 JSONObject().put("items", JSONArray().apply {
-                    app.source.searchArtists(a.getString("q")) { android.util.Log.i("Sonus", it) }.take(8).forEach { r ->
+                    // entre artistas do mesmo nível de nome, quem a pessoa mais ouve vem antes (motor de entendimento)
+                    val afinidade = app.motor.afinidadeArtistas(app.library.history())
+                    val q = a.getString("q")
+                    val achados = app.source.searchArtists(q, { android.util.Log.i("Sonus", it) }) { afinidade[it]?.second ?: 0.0 }
+                    // artistas que a pessoa já ouve e cujo nome começa com o que foi digitado vêm primeiro,
+                    // mesmo que o YouTube Music não os traga para essas letras (ex.: "en" → Enygma)
+                    val chave = CoverStore.artistKey(q)
+                    val jaOuve = if (chave.isBlank()) emptyList() else afinidade.values
+                        .filter { (nome, _) -> nome.lowercase().split(Regex("[\\s&,/-]+")).any { CoverStore.artistKey(it).startsWith(chave) } || CoverStore.artistKey(nome).startsWith(chave) }
+                        .sortedByDescending { it.second }.take(3)
+                        .filter { (nome, _) -> achados.none { CoverStore.artistKey(it.name) == CoverStore.artistKey(nome) } }
+                    jaOuve.forEach { (nome, _) -> put(JSONObject().put("name", nome).put("url", JSONObject.NULL).put("thumb", JSONObject.NULL)) }
+                    achados.take(8 - jaOuve.size).forEach { r ->
                         put(JSONObject().put("name", r.name).put("url", r.url)
                             .put("thumb", r.thumbs.maxByOrNull { it.width * it.height }?.url ?: JSONObject.NULL))
                     }
@@ -233,7 +245,7 @@ class Bridge(
                 val seg = a.optJSONArray("seguidos") ?: JSONArray()
                 app.motor.novidades(app.source, (0 until seg.length()).mapNotNull { i ->
                     seg.optJSONObject(i)?.let { o -> o.optString("name").takeIf(String::isNotBlank)?.let { it to o.optString("url").takeIf(String::isNotBlank) } }
-                })
+                }, app.library.history())
             }
             // Lançamentos recentes de um artista.
             "artistReleases" -> cachedAsync(a, "artistReleases", a.getString("name")) {
