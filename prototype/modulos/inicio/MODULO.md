@@ -24,7 +24,7 @@ A tela inicial do Sonus, sempre numa tela só (sem rolar):
 | `inicio.css` | aparência da tela inicial |
 | `inicio.js` | desenho, bloco dinâmico, Ver tudo, encaixe na altura (`fitHome`), dados de exemplo do navegador |
 | `inicio-app.js` | fonte de dados reais no app (histórico, seguidos, playlists, novidades) e o que cada toque faz |
-| `../../home.html` | a página: cabeçalho, seções e a ordem dos scripts |
+| `../../home.html` | a página: cabeçalho, seções e a ordem dos scripts (ligação com o app: `../base/home-native.js`) |
 | nativo | `Bridge.kt` (`artistReleases`), `NewPipeSource.artistReleases`, `YtMusicArtist.releases`, `Library.addHistory` (contagem `n`) |
 
 ## Histórico
