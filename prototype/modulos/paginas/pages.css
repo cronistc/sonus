@@ -93,3 +93,16 @@
 .pg .sk { height: 50px; margin: 7px 8px; border-radius: 10px; background: var(--chip-soft); animation: pgPulse 1.1s ease-in-out infinite alternate; }
 html.page-hidden .pg .sk, .pg:not(.open) .sk, .phone.overlay-open .pg .sk { animation-play-state: paused; }
 @keyframes pgPulse { to { opacity: .4; } }
+
+/* Página do artista: a foto fica limpa (nada por cima, sem degradê); embaixo dela, o nome com "Seguir" ao lado
+   e "Artista · N músicas"; aleatório e play à direita */
+.pg.artist .hero::after { display: none; }
+.pg.artist .art-topo { display: flex; align-items: center; gap: 6px; padding: 16px 20px 6px; }
+.pg.artist .art-txt { flex: 1; min-width: 0; }
+.pg.artist .art-linha { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; }
+.pg.artist .art-linha .name { text-shadow: none; font-size: calc(var(--fs) * (26px)); min-width: 0; }
+.pg.artist .art-linha .follow { min-width: 0; height: 30px; padding: 0 10px 0 8px; gap: 5px; border-radius: 15px;
+                                font-size: calc(var(--fs) * 12px); }
+.pg.artist .art-linha .follow svg { width: 15px; height: 15px; }
+.pg.artist .art-topo .sub { margin-top: 4px; }
+.pg.artist .art-topo .big { flex-shrink: 0; }

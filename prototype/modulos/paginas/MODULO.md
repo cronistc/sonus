@@ -14,3 +14,6 @@ Minhas músicas. Voltar desliza a página para fora (a tela inicial só se redes
 ## Histórico
 - **1.0** — páginas existentes.
 - **1.1** — Sunshine Beta 1.1 (em preparação, ainda não lançada) — volta animada de verdade; mini player por cima da página aberta a partir da busca.
+  Página do artista em teste: foto limpa (nada por cima); nome embaixo da foto com "Seguir" ao lado; play à direita;
+  sem botão de aleatório — no artista tudo toca em aleatório (play = catálogo embaralhado; tocar numa música = ela
+  primeiro e o resto embaralhado, com o aleatório do player ligado).
