@@ -2,7 +2,11 @@
 
 Mapa de cada parte do app. **Versões de módulo são controle interno**: não aparecem no app nem no GitHub (para fora
 sai só a versão, ex.: Sunshine Beta 1.1, e as melhorias em texto). Cada módulo tem um `MODULO.md` com o que faz,
-os arquivos e o histórico. X.Y: Y sobe a cada ajuste/novidade; X só quando o módulo for redesenhado.
+os arquivos e o histórico.
+
+**Versão só muda quando sai para o público.** Tudo o que é feito antes de um lançamento é UMA versão (a do próximo
+lançamento). Cada módulo sobe no máximo uma vez por lançamento (Y = ajustes/novidades; X = redesenho), nunca a cada
+mudança. Hoje em preparação: **Sunshine Beta 1.1** (ainda não lançada).
 
 ## Telas (interface, `prototype/`)
 | Módulo | Versão | Pasta | O que é |
@@ -24,7 +28,7 @@ Páginas de entrada: `prototype/home.html` e `prototype/player.html`. Fontes em 
 ## Motores e parte nativa (`android/`)
 | Módulo | Versão | Onde | O que é |
 |---|---|---|---|
-| Motor de entendimento | 0.2 | `android/app/src/main/kotlin/app/sounos/motor` | aprende o gosto (escutas, artistas, gêneros); Novidades |
+| Motor de entendimento | 0.1 | `android/app/src/main/kotlin/app/sounos/motor` | aprende o gosto (escutas, artistas, gêneros); Novidades |
 | Extrator (busca e áudio) | 1.1 | `android/core/extractor` | YouTube/YouTube Music via NewPipe + chamadas diretas |
 | Player nativo | — | `android/app/.../player`, `.../engine` | fila, áudio, notificação |
 | Dados | — | `android/app/.../data` | histórico, baixadas, letras, backups |

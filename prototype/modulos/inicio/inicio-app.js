@@ -31,6 +31,32 @@
   }).catch(() => nov);
   const novidades = () => pronta.then(n => n?.lancamentos || []);
 
+  // Quem a pessoa ouve muito mas não segue também aparece em Seus artistas, depois dos seguidos, com o selo "Seguir":
+  // pelo menos OUVIU_MIN reproduções nos últimos OUVIU_DIAS dias (cada música conta até 3), no máximo OUVIU_MAX artistas.
+  const OUVIU_DIAS = 14, OUVIU_MIN = 3, OUVIU_MAX = 6;
+  function ouvidosMuito(lista, agora) {
+    const seg = new Set(seguidos().map(x => x.key)), conta = new Map();
+    for (const e of lista) {
+      if (agora - (e.at || 0) > OUVIU_DIAS * 864e5) continue;
+      const nome = e.track.artist, k = artistKey(nome);
+      if (!k || seg.has(k)) continue;
+      const c = conta.get(k) || { name: nome, n: 0 }; c.n += Math.min(e.n || 1, 3); conta.set(k, c);
+    }
+    return [...conta.values()].filter(c => c.n >= OUVIU_MIN).sort((a, b) => b.n - a.n).slice(0, OUVIU_MAX)
+      .map(c => ({ name: c.name, thumb: "", url: "", sugerido: true }));
+  }
+  // seguir pelo selo: mesmo registro da página do artista; entra no FIM dos seguidos (o artista não troca de lugar na tela)
+  function seguir(a) {
+    const list = seguidos(), k = artistKey(a.name);
+    if (list.some(x => x.key === k)) return;
+    list.push({ name: a.name, key: k, thumb: a.thumb || "", since: new Date().toISOString() });
+    const json = JSON.stringify(list);
+    try { localStorage.setItem("sounos.following", json); } catch {}
+    window.__sounosSave?.("sounos.following", json);
+    Sounos.call("setFollowingArtists", { items: list });
+    window.dispatchEvent(new CustomEvent("sounos:following", { detail: list }));
+  }
+
   SonusInicio.usar({
     dados() {
       const hist = Sounos.call("getHistory");
@@ -48,7 +74,7 @@
       marcaOffline();
       return {
         offline: A.offline, recentes, minhas,
-        artistas: seguidos().map(x => ({ name: x.name, thumb: x.thumb || "", url: x.url || "" })),
+        artistas: [...seguidos().map(x => ({ name: x.name, thumb: x.thumb || "", url: x.url || "" })), ...ouvidosMuito(lista, agora)],
         playlists: baixadas.length ? [...playlists, { id: "__downloads__", name: "Músicas baixadas", tracks: baixadas, downloads: true }] : playlists,
         novidades: nov,
       };
@@ -71,6 +97,7 @@
       window.__sonusArtistIntentAt = performance.now();
       A.pages.openArtist(a.name, { thumb: a.thumb || "", url: a.url || "", __intentAt: window.__sonusArtistIntentAt });
     },
+    seguir,
     abrirPlaylist(p) { p.downloads ? A.pages.openDownloads() : A.pages.openPlaylist(p.id); },
     novaPlaylist() { add.openCreate(); },
     buscar() { $("searchBtn").click(); },

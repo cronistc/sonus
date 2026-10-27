@@ -12,4 +12,4 @@ A tela de configurações (engrenagem): tema, reprodução, armazenamento, conte
 | tema | as cores dos temas ficam em `../base/theme.css` |
 
 ## Histórico
-- **1.0** (26/10/2026) — organizado em módulo, sem mudança.
+- **1.0** — Sunshine Beta 1.1 (em preparação, ainda não lançada) — organizado em módulo, sem mudança.

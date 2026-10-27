@@ -1,4 +1,4 @@
-# Motor de entendimento — versão 0.2
+# Motor de entendimento — versão 0.1
 Controle interno.
 
 ## O que é
@@ -26,5 +26,5 @@ Aprende o uso de quem ouve, **só no celular** (nada sai do aparelho), e usa iss
 A definição do motor é do dono: não acrescentar regra de recomendação sem combinar.
 
 ## Histórico
-- **0.1** (26/10/2026) — criado: escutas, somas, gênero, Novidades.
-- **0.2** (26/10/2026) — afinidade com artistas e gosto por gênero passam a pesar nas Novidades e na busca.
+- **0.1** — Sunshine Beta 1.1 (em preparação, ainda não lançada): criado — escutas, somas por música/artista/gênero,
+  afinidade e gosto pesando nas Novidades e na busca de artistas.

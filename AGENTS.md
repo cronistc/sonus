@@ -9,6 +9,8 @@ Player de música para Android. Interface em HTML/CSS/JS (`prototype/`, roda num
   ampliada por inteiro em outros celulares). Nada muda no visual sem o dono pedir.
 - **Nada é publicado sem o dono decidir** (`tools/publicar.sh` solta versão para os testadores).
 - **Versão pública** = só "Sunshine Beta X.Y". Versões de módulo (Player 1.2…) são controle interno.
+- **Versão só muda quando sai para o público.** Tudo antes de um lançamento é UMA versão; cada módulo sobe no máximo
+  uma vez por lançamento, nunca a cada mudança. Em preparação: Sunshine Beta 1.1 (não lançada).
 - **Nenhuma tela rola na vertical**, exceto o Ver tudo de playlists e listas longas (páginas).
 - **Nada com cara de Spotify** nas propostas de tela.
 - **Motor de entendimento**: definir com o dono antes de acrescentar regras de recomendação.

@@ -8,4 +8,4 @@ Os balões de dica que aparecem uma vez (por versão) apontando para partes da t
 `dicas.js` (lista das dicas, com seletor e versão) e `dicas.css`.
 
 ## Histórico
-- **1.0** (26/10/2026) — organizado em módulo, sem mudança.
+- **1.0** — Sunshine Beta 1.1 (em preparação, ainda não lançada) — organizado em módulo, sem mudança.

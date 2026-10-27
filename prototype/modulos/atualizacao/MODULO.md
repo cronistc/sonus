@@ -13,4 +13,4 @@ O app procura `update.json` no ramo "updates" do GitHub e se atualiza sozinho.
 | nativo | `android/.../update/Updater.kt`; publicação: `tools/publicar.sh` (só com decisão do dono) |
 
 ## Histórico
-- **1.0** (26/10/2026) — organizado em módulo, sem mudança.
+- **1.0** — Sunshine Beta 1.1 (em preparação, ainda não lançada) — organizado em módulo, sem mudança.

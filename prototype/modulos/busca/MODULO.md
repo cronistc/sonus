@@ -20,4 +20,4 @@ não aparecem. Ordem:
 
 ## Histórico
 - **1.0** — busca existente.
-- **1.1** (26/10/2026) — artistas filtrados por público e ordenados por nome e pelo gosto; campo de texto com a fonte do Sonus.
+- **1.1** — Sunshine Beta 1.1 (em preparação, ainda não lançada) — artistas filtrados por público e ordenados por nome e pelo gosto; campo de texto com a fonte do Sonus.

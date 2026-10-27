@@ -8,7 +8,9 @@ A tela inicial do Sonus, sempre numa tela só (sem rolar):
    6 músicas; tocar = ouvir a lista inteira). Cada música vale **6 horas** na lista, contadas da última vez que tocou
    (regra interna, não aparece na tela). Offline: *Minhas músicas*. Próximas janelas (mix do dia, novidades…) entram
    em `janelas()` de `inicio.js`.
-2. **Seus artistas** — só quem a pessoa segue. Vazio: convite "Seguir artistas" (abre a busca).
+2. **Seus artistas** — quem a pessoa segue e, depois, quem ela ouve muito sem seguir (≥ 3 reproduções em 14 dias,
+   até 6), com o selo **"+ Seguir"** no canto da foto. Tocar no selo: vira "Seguindo" com um pulinho e se recolhe; o
+   artista passa a ser seguido sem trocar de lugar. Vazio: convite "Seguir artistas" (abre a busca).
 3. **Suas playlists** — como sempre, mais "Músicas baixadas" e "Nova playlist".
 
 **Ver tudo** (à direita de Seus artistas e Suas playlists) transforma a própria tela, com animação (nada abre por cima):
@@ -28,5 +30,5 @@ A tela inicial do Sonus, sempre numa tela só (sem rolar):
 | nativo | `Bridge.kt` (`artistReleases`), `NewPipeSource.artistReleases`, `YtMusicArtist.releases`, `Library.addHistory` (contagem `n`) |
 
 ## Histórico
-- **1.0** (26/10/2026, Sunshine Beta 1.0 → próxima) — módulo criado. Bloco dinâmico com Ouvidos recentemente (6 h),
-  Seus artistas só com seguidos, Ver tudo animado (artistas: Novidades + Escute novamente; playlists: grade).
+- **1.0** — Sunshine Beta 1.1 (em preparação, ainda não lançada) — módulo criado. Bloco dinâmico com Ouvidos recentemente (6 h),
+  Seus artistas com seguidos e ouvidos muito (selo Seguir animado), Ver tudo animado (artistas: Novidades + Escute novamente; playlists: grade).

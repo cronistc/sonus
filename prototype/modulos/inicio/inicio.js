@@ -38,6 +38,8 @@ const SonusInicio = (() => {
   const I = {
     play: '<svg viewBox="0 0 24 24"><polygon points="7 4 20 12 7 20" fill="currentColor"/></svg>',
     mais: '<svg class="lu" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>',
+    seguir: '<svg class="lu" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>',
+    seguindo: '<svg class="lu" viewBox="0 0 24 24"><path d="m5 12 4.5 4.5L19 7"/></svg>',
   };
 
   // ---------- fonte de exemplo (navegador) ----------
@@ -55,7 +57,7 @@ const SonusInicio = (() => {
         recentes: [0, 1, 20, 9, 3, 5, 7].map((t, k) => ({ ...tracks[t], at: agora - k * 40 * 60e3 }))
           .filter(t => agora - t.at < RECENTES_MS),
         minhas: [],
-        artistas: followed.map(name => ({ name })),
+        artistas: [...followed.map(name => ({ name })), ...["Grupo Modelo", "Artista Teste"].filter(n => !followed.includes(n)).map(name => ({ name, sugerido: true }))],
         playlists: playlists.map((p, i) => ({ ...p, i })),
         novidades: { lancamentos: exemploNovidades, musicas: [2, 8, 11, 14, 17].map(t => tracks[t]) },
       };
@@ -67,6 +69,7 @@ const SonusInicio = (() => {
     tocar(lista, id, i = 0) { location.href = `player.html?t=${tracks.indexOf(tracks.find(x => x.title === lista[i]?.title))}`; },
     escute: () => [4, 9, 0, 13, 6, 2].map(t => tracks[t]),
     abrirArtista() {},
+    seguir(a) { followed.push(a.name); },
     abrirPlaylist(p) { location.href = `player.html?p=${p.i}`; },
     novaPlaylist() { add.openCreate(); },
     buscar() { $("searchBtn").click(); },
@@ -152,7 +155,8 @@ const SonusInicio = (() => {
   // ---------- seções ----------
   function renderArtistas() {
     $("artists").innerHTML = d.artistas.length ? d.artistas.map((a, k) =>
-      `<button class="ar tap" data-ar="${k}"><div class="pic" style="background:${fonte.foto(a)}"></div><div class="n">${esc(a.name)}</div></button>`).join("")
+      `<button class="ar tap" data-ar="${k}"><div class="pic" style="background:${fonte.foto(a)}"></div>${a.sugerido
+        ? `<span class="selo" data-seguir="${k}" role="button" aria-label="Seguir ${esc(a.name)}">${I.seguir}<b>Seguir</b></span>` : ""}<div class="n">${esc(a.name)}</div></button>`).join("")
       : `<button class="ar tap convite" data-act="buscar"><div class="pic">${I.mais}</div><div class="n">Seguir artistas</div></button>`;
   }
   const mosaicoDe = p => {
@@ -170,6 +174,8 @@ const SonusInicio = (() => {
     if (e.target.closest("#mini")) return;          // arrasto nos carrosséis já é barrado antes (captura)
     const a = e.target.closest("[data-ar]"), p = e.target.closest("[data-pl]"), act = e.target.closest("[data-act]"), v = e.target.closest("[data-ver]");
     const r = e.target.closest("[data-rel]"), ou = e.target.closest("[data-ou]");
+    const selo = e.target.closest("[data-seguir]");
+    if (selo) return seguir(selo, d.artistas[+selo.dataset.seguir]);
     if (v) return modo ? fecharVerTudo() : abrirVerTudo(v.dataset.ver);
     if (a) return fonte.abrirArtista(d.artistas[+a.dataset.ar]);
     if (p) return fonte.abrirPlaylist(d.playlists[+p.dataset.pl]);
@@ -178,6 +184,26 @@ const SonusInicio = (() => {
     if (act?.dataset.act === "nova") return fonte.novaPlaylist();
     if (act?.dataset.act === "buscar") return fonte.buscar();
   });
+
+  // Selo "Seguir" de quem a pessoa ouve muito mas não segue: vira "Seguindo" com um pulinho e depois se recolhe.
+  // Só no fim da animação o artista passa a ser seguido de verdade (aí a tela se redesenha, já sem o selo, no mesmo lugar).
+  async function seguir(selo, a) {
+    if (!a || selo.dataset.ok) return;
+    selo.dataset.ok = "1";
+    await anima(selo, [{ transform: "scale(1)" }, { transform: "scale(.86)" }], { duration: 120 }).finished;
+    selo.classList.add("ok");
+    selo.innerHTML = `${I.seguindo}<b>Seguindo</b>`;
+    await anima(selo, [{ transform: "scale(.86)" }, { transform: "scale(1.12)", offset: .55 },
+      { transform: "scale(1)" }], { duration: 380 }).finished;
+    selo.querySelector("svg path")?.animate?.([{ strokeDashoffset: 24 }, { strokeDashoffset: 0 }], { duration: 320, easing: EASE });
+    await new Promise(r => setTimeout(r, 850));
+    // recolhe: o texto some, a pílula encolhe até virar um ponto e desaparece
+    anima(selo.querySelector("b"), [{ opacity: 1, maxWidth: "80px" }, { opacity: 0, maxWidth: "0px" }], { duration: 260, fill: "forwards" });
+    await anima(selo, [{ transform: "scale(1)", opacity: 1 }, { transform: "scale(1)", opacity: 1, offset: .5 },
+      { transform: "scale(.2)", opacity: 0 }], { duration: 520, fill: "forwards" }).finished;
+    fonte.seguir(a);
+    render();
+  }
 
   function render() {
     d = fonte.dados();

@@ -15,4 +15,4 @@ aleatório · segurar e arrastar para o lado = avançar/voltar na música. Desli
 | `mini-player-app.js` | ligação com o player nativo: estado, progresso, comandos |
 
 ## Histórico
-- **1.0** (26/10/2026) — separado da tela inicial, sem mudança de comportamento.
+- **1.0** — Sunshine Beta 1.1 (em preparação, ainda não lançada) — separado da tela inicial, sem mudança de comportamento.

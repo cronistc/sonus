@@ -13,4 +13,4 @@ A animação de abertura (a palavra "Sonus" vira a clave e sobe ao topo) e a tel
 | nativo | `MainActivity.kt` (splash e a palavra nativa antes da animação) |
 
 ## Histórico
-- **1.0** (26/10/2026) — organizado em módulo; abertura casada com a escala da tela.
+- **1.0** — Sunshine Beta 1.1 (em preparação, ainda não lançada) — organizado em módulo; abertura casada com a escala da tela.

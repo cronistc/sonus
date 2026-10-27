@@ -17,4 +17,4 @@ fila e o respiro (`fitCover` em `player.js`). No app ele fica carregado num quad
 | nativo | `android/.../player/PlayerController.kt` (fila, repetir, aleatório), `engine/AudioEngine.kt` (áudio) |
 
 ## Histórico
-- **1.0** (26/10/2026) — separado em módulo. Capa fixa no tamanho do A54 quando falta altura.
+- **1.0** — Sunshine Beta 1.1 (em preparação, ainda não lançada) — separado em módulo. Capa fixa no tamanho do A54 quando falta altura.

@@ -13,4 +13,4 @@ Minhas músicas. Voltar desliza a página para fora (a tela inicial só se redes
 
 ## Histórico
 - **1.0** — páginas existentes.
-- **1.1** (26/10/2026) — volta animada de verdade; mini player por cima da página aberta a partir da busca.
+- **1.1** — Sunshine Beta 1.1 (em preparação, ainda não lançada) — volta animada de verdade; mini player por cima da página aberta a partir da busca.
