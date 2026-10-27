@@ -184,6 +184,8 @@ class Bridge(
                     val chave = CoverStore.artistKey(q)
                     val jaOuve = if (chave.isBlank()) emptyList() else afinidade.values
                         .filter { (nome, _) -> nome.lowercase().split(Regex("[\\s&,/-]+")).any { CoverStore.artistKey(it).startsWith(chave) } || CoverStore.artistKey(nome).startsWith(chave) }
+                        // nomes de canal do YouTube que ficaram no histórico ("DjavanOficial", "X VEVO", "X - Topic") não são artistas
+                        .filterNot { (nome, _) -> Regex("(?i)(oficial|official|vevo|\\s-\\stopic)$").containsMatchIn(nome.trim()) }
                         .sortedByDescending { it.second }.take(3)
                         .filter { (nome, _) -> achados.none { CoverStore.artistKey(it.name) == CoverStore.artistKey(nome) } }
                     jaOuve.forEach { (nome, _) -> put(JSONObject().put("name", nome).put("url", JSONObject.NULL).put("thumb", JSONObject.NULL)) }
