@@ -43,8 +43,37 @@ class NewPipeSource(private val service: StreamingService = ServiceList.YouTube)
         }
 
     /** Artistas (canais "Topic"/oficiais) para a seção de artistas dos resultados. */
-    suspend fun searchArtists(query: String, trace: (String) -> Unit = {}): List<ArtistResult> = withContext(Dispatchers.IO) {
+    /**
+     * Artistas para a tela de busca: só perfis de artista com público de verdade (contas sem audiência ficam de fora),
+     * primeiro quem tem o nome igual ao pesquisado, depois quem começa com as letras, depois quem tem uma palavra que
+     * começa com elas; por último os próximos do nicho que o YouTube Music sugere. Dentro de cada grupo, maior público primeiro.
+     */
+    suspend fun searchArtists(query: String, trace: (String) -> Unit = {}): List<ArtistResult> {
+        val all = searchArtistsAll(query, trace)
+        val q = CoverStore.artistKey(query)
+        val palavras = query.lowercase().split(Regex("\\s+")).map(CoverStore::artistKey).filter(String::isNotBlank)
+        fun grupo(a: ArtistResult): Int {
+            val k = CoverStore.artistKey(a.name)
+            val nomes = a.name.lowercase().split(Regex("[\\s&,/-]+")).map(CoverStore::artistKey)
+            return when {
+                q.isNotBlank() && k == q -> 0
+                q.isNotBlank() && k.startsWith(q) -> 1
+                palavras.isNotEmpty() && palavras.all { p -> nomes.any { it.startsWith(p) } } -> 2
+                q.isNotBlank() && k.contains(q) -> 3
+                else -> 4
+            }
+        }
+        return all.filter { it.subscriberCount >= MIN_PUBLICO_ARTISTA || it.subscriberCount < 0 }   // < 0: público desconhecido (reserva do NewPipe)
+            .sortedWith(compareBy<ArtistResult> { grupo(it) }.thenByDescending { it.subscriberCount })
+    }
+
+    /** Todos os artistas que a busca do YouTube Music devolve (sem filtro de público): para achar a foto de um nome exato. */
+    private suspend fun searchArtistsAll(query: String, trace: (String) -> Unit): List<ArtistResult> = withContext(Dispatchers.IO) {
         val started = System.nanoTime()
+        runCatching { ytmArtists.searchArtists(query) }.onFailure { trace("YtMusic.searchArtists falhou: ${it.message}") }.getOrNull()
+            ?.takeIf { it.isNotEmpty() }
+            ?.also { trace("YtMusic.searchArtists_ms=${(System.nanoTime() - started) / 1_000_000} resultados=${it.size}") }
+            ?.let { return@withContext it }
         val handler = service.searchQHFactory.fromQuery(query, listOf(SearchFilter.ARTISTS.youtube), "")
         val artists = SearchInfo.getInfo(service, handler).relatedItems.mapNotNull { item ->
             (item as? org.schabi.newpipe.extractor.channel.ChannelInfoItem)?.let {
@@ -60,7 +89,7 @@ class NewPipeSource(private val service: StreamingService = ServiceList.YouTube)
 
     /** Só devolve um canal cujo nome identifica exatamente o artista pedido. */
     suspend fun searchArtist(query: String, trace: (String) -> Unit = {}): ArtistResult? {
-        val artists = searchArtists(query, trace)
+        val artists = searchArtistsAll(query, trace)
         val target = CoverStore.artistKey(query)
         if (target.isBlank()) return null
         return artists.asSequence()
@@ -161,7 +190,7 @@ class NewPipeSource(private val service: StreamingService = ServiceList.YouTube)
 
     private suspend fun artistChannel(query: String, knownUrl: String?, trace: (String) -> Unit): String? =
         knownUrl?.let(::channelId)
-            ?: searchArtists(query, trace).asSequence()
+            ?: searchArtistsAll(query, trace).asSequence()
                 .filter { CoverStore.artistKey(it.name) == CoverStore.artistKey(query) }
                 .maxWithOrNull(compareBy<ArtistResult> { it.verified }.thenBy { it.subscriberCount.coerceAtLeast(0) })
                 ?.url?.let(::channelId)?.takeIf { it.isNotBlank() }
@@ -216,6 +245,9 @@ class NewPipeSource(private val service: StreamingService = ServiceList.YouTube)
     }
 
     companion object {
+        /** abaixo disto (ouvintes mensais ou inscritos) é conta sem audiência: não aparece na busca de artistas */
+        const val MIN_PUBLICO_ARTISTA = 1000L
+
         /**
          * Escolhe o áudio: só arquivos diretos (progressivos), que permitem começar a tocar
          * pelos primeiros bytes e baixar o resto em paralelo.

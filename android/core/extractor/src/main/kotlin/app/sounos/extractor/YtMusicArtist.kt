@@ -272,6 +272,48 @@ class YtMusicArtist(private val client: OkHttpClient) {
             ?: entry.path("nextContinuationData", "continuation").getString("token")
     }
 
+    /**
+     * Busca SÓ artistas no YouTube Music (perfis marcados como "Artista"), com o tamanho do público:
+     * ouvintes mensais quando o YouTube Music informa, senão inscritos. subscriberCount = esse público.
+     */
+    fun searchArtists(query: String): List<ArtistResult> {
+        val body = JsonWriter.string().`object`()
+            .`object`("context").`object`("client")
+                .value("clientName", "WEB_REMIX").value("clientVersion", version()).value("hl", "pt").value("gl", "BR")
+            .end().end()
+            .value("query", query).value("params", ARTISTS_FILTER).end().done()
+        val request = Request.Builder().url("https://music.youtube.com/youtubei/v1/search?prettyPrint=false")
+            .header("Origin", "https://music.youtube.com").header("Referer", "https://music.youtube.com/")
+            .header("User-Agent", UA).post(body.toRequestBody("application/json".toMediaType())).build()
+        val page = client.newCall(request).execute().use { response ->
+            check(response.isSuccessful) { "YouTube Music: HTTP ${response.code}" }
+            JsonParser.`object`().from(response.body!!.string())
+        }
+        val out = mutableListOf<ArtistResult>()
+        fun walk(v: Any?) {
+            when (v) {
+                is JsonObject -> { v.getObject("musicResponsiveListItemRenderer")?.let { r -> artistRow(r)?.let(out::add) }; v.values.forEach(::walk) }
+                is JsonArray -> v.forEach(::walk)
+            }
+        }
+        walk(page)
+        return out.distinctBy { it.url }
+    }
+
+    private fun artistRow(r: JsonObject): ArtistResult? {
+        val id = r.path("navigationEndpoint", "browseEndpoint").getString("browseId")?.takeIf { it.startsWith("UC") } ?: return null
+        val cols = r.getArray("flexColumns").mapNotNull { (it as? JsonObject)?.path("musicResponsiveListItemFlexColumnRenderer", "text")?.getArray("runs") }
+        val name = cols.firstOrNull()?.mapNotNull { (it as? JsonObject)?.getString("text") }?.joinToString("")?.trim()
+        if (name.isNullOrBlank()) return null
+        val info = cols.getOrNull(1)?.mapNotNull { (it as? JsonObject)?.getString("text") }?.joinToString("").orEmpty()
+        val thumbs = r.path("thumbnail", "musicThumbnailRenderer", "thumbnail").getArray("thumbnails").mapNotNull { t ->
+            val o = t as? JsonObject ?: return@mapNotNull null
+            val url = o.getString("url") ?: return@mapNotNull null
+            Thumb(CoverStore.artistImageUrl(url), o.getInt("width"), o.getInt("height"))
+        }
+        return ArtistResult(TitleNormalizer.cleanArtist(name), "https://www.youtube.com/channel/$id", thumbs, publico(info))
+    }
+
     private fun browse(browseId: String? = null, params: String? = null, continuation: String? = null): JsonObject {
         val writer = JsonWriter.string().`object`()
             .`object`("context").`object`("client")
@@ -294,6 +336,19 @@ class YtMusicArtist(private val client: OkHttpClient) {
     private fun JsonObject.path(vararg keys: String): JsonObject = keys.fold(this) { o, key -> o.getObject(key) }
 
     companion object {
+        /** filtro "Artistas" da busca do YouTube Music */
+        private const val ARTISTS_FILTER = "EgWKAQIgAWoMEA4QChADEAQQCRAF"
+
+        /** "Artista • 5,45 mi ouvintes mensais" → 5450000 · "845 mil inscritos" → 845000 · "868 inscritos" → 868 · sem número → 0 */
+        fun publico(info: String): Long {
+            val m = Regex("""([\d.,]+)\s*(mi|mil|bi|k|m|b)?\b""", RegexOption.IGNORE_CASE)
+                .findAll(info.replace('\u00a0', ' ')).lastOrNull { it.groupValues[1].any(Char::isDigit) } ?: return 0
+            val raw = m.groupValues[1]
+            val n = (if (raw.contains(',')) raw.replace(".", "").replace(',', '.') else if (m.groupValues[2].isEmpty()) raw.replace(".", "") else raw).toDoubleOrNull() ?: return 0
+            val mult = when (m.groupValues[2].lowercase()) { "mil", "k" -> 1e3; "mi", "m" -> 1e6; "bi", "b" -> 1e9; else -> 1.0 }
+            return (n * mult).toLong()
+        }
+
         private const val FALLBACK_VERSION = "1.20241016.01.00"
         private const val ALBUM_WORKERS = 5
         private const val MAX_PAGES = 30
