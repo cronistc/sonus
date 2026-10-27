@@ -117,11 +117,16 @@ class NewPipeSource(private val service: StreamingService = ServiceList.YouTube)
     /** Dados e músicas de um álbum. As capas são mantidas quadradas para a interface. */
     suspend fun album(url: String): Album = withContext(Dispatchers.IO) {
         val info = PlaylistInfo.getInfo(service, url)
+        // faixas pelo YouTube Music (artista creditado de verdade); se falhar, as da playlist do YouTube
+        val ytm = Regex("list=([A-Za-z0-9_-]+)").find(url)?.groupValues?.get(1)?.let { id ->
+            runCatching { ytmArtists.albumPlaylistTracks(id, info.uploaderName ?: "") }.getOrNull()
+        }.orEmpty()
+        val artista = ytm.groupingBy { it.artist }.eachCount().maxByOrNull { it.value }?.key
         Album(
             name = albumName(info.name),
-            artist = info.uploaderName ?: "",
+            artist = artista ?: info.uploaderName ?: "",
             thumbs = albumThumbs(info.thumbnails.map(::toThumb)),
-            items = info.relatedItems.mapNotNull(::toTrack),
+            items = ytm.ifEmpty { info.relatedItems.mapNotNull(::toTrack) },
         )
     }
 

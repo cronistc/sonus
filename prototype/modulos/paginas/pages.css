@@ -7,9 +7,10 @@
 .pg.closing { transform: translateX(100%); transition-duration: .3s; }
 .pg.dragging { transition: none; }
 .pg .pg-back { position: fixed; z-index: 5; top: 8px; left: 12px; width: 42px; height: 42px; border-radius: 14px;
-               display: grid; place-items: center; color: var(--text); background: rgba(0,0,0,.3); backdrop-filter: blur(12px);
+               display: grid; place-items: center; color: #fff; background: rgba(0,0,0,.42); backdrop-filter: blur(12px);
+               box-shadow: 0 2px 12px rgba(0,0,0,.28), inset 0 0 0 1px rgba(255,255,255,.14);   /* visível em capa clara ou escura */
                -webkit-tap-highlight-color: transparent; }
-.pg .pg-back:active { background: var(--chip); }
+.pg .pg-back:active { background: rgba(0,0,0,.6); }
 .pg .pg-back svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .phone.has-page .mini { z-index: 57; }        /* com página aberta, o mini-player continua por cima dela */
 

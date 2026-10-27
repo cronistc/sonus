@@ -87,6 +87,22 @@ class YtMusicArtist(private val client: OkHttpClient) {
         return out.filter { it.browseId != null }.distinctBy { it.browseId }
     }
 
+    /**
+     * Faixas de um álbum pela playlist dele (OLAK…) no YouTube Music: cada faixa vem com o ARTISTA creditado
+     * (a playlist do YouTube comum traz o canal que subiu o vídeo, ex.: "DjavanOficial", que não é página de artista).
+     */
+    fun albumPlaylistTracks(playlistId: String, fallbackArtist: String): List<Track> {
+        val rows = JsonArray()
+        fun walk(v: Any?) {
+            when (v) {
+                is JsonObject -> { if (v.has("musicResponsiveListItemRenderer")) rows.add(v) else v.values.forEach(::walk) }
+                is JsonArray -> v.forEach(::walk)
+            }
+        }
+        walk(browse("VL$playlistId"))
+        return parseTracks(rows, fallbackArtist)
+    }
+
     /** Faixas de um lançamento (página do álbum/single). */
     fun releaseTracks(browseId: String, artist: String): List<Track> = albumTracks(browseId, artist)
 
