@@ -208,8 +208,33 @@ class YtMusicArtist(private val client: OkHttpClient) {
     private fun playlistTracks(browseId: String, params: String?, artist: String, trace: (String) -> Unit): List<Track> =
         collectShelfTracks(browse(browseId, params), "musicPlaylistShelfRenderer", artist, trace)
 
-    private fun albumTracks(browseId: String, artist: String): List<Track> =
-        collectShelfTracks(browse(browseId), "musicShelfRenderer", artist) {}
+    /**
+     * Faixas da página de um álbum. Nessa página as faixas não trazem capa (só o cabeçalho do álbum traz): sem isto,
+     * cada música caía na miniatura do VÍDEO (16:9). Toda faixa sem capa herda a capa quadrada do próprio álbum.
+     */
+    private fun albumTracks(browseId: String, artist: String): List<Track> {
+        val page = browse(browseId)
+        val capa = (page.path("background", "musicThumbnailRenderer", "thumbnail").getArray("thumbnails").takeIf { it.isNotEmpty() }
+            ?: albumHeaderThumbs(page)).mapNotNull { t ->
+                val o = t as? JsonObject ?: return@mapNotNull null
+                Thumb(o.getString("url") ?: return@mapNotNull null, o.getInt("width"), o.getInt("height"))
+            }
+        return collectShelfTracks(page, "musicShelfRenderer", artist) {}.map { if (it.thumbs.isEmpty() && capa.isNotEmpty()) it.copy(thumbs = capa) else it }
+    }
+
+    private fun albumHeaderThumbs(page: JsonObject): JsonArray {
+        var achou: JsonArray? = null
+        fun walk(v: Any?) {
+            if (achou != null) return
+            when (v) {
+                is JsonObject -> v.getObject("musicResponsiveHeaderRenderer")?.path("thumbnail", "musicThumbnailRenderer", "thumbnail")
+                    ?.getArray("thumbnails")?.takeIf { it.isNotEmpty() }?.let { achou = it } ?: v.values.forEach(::walk)
+                is JsonArray -> v.forEach(::walk)
+            }
+        }
+        walk(page)
+        return achou ?: JsonArray()
+    }
 
     private fun collectShelfTracks(first: JsonObject, shelfName: String, artist: String, trace: (String) -> Unit): List<Track> {
         val result = mutableListOf<Track>()

@@ -19,4 +19,4 @@ Base: NewPipe Extractor (GPLv3). A ideia de trocar por um motor próprio ("Sonus
 
 ## Histórico
 - **1.0** — extrator existente.
-- **1.1** — Sunshine Beta 1.1 (em preparação, ainda não lançada) — lançamentos (artista e país), faixas de lançamento, busca só de artistas com público; catálogo do artista do lançamento mais novo ao mais antigo; faixas de álbum pelo YouTube Music (artista creditado).
+- **1.1** — Sunshine Beta 1.1 (em preparação, ainda não lançada) — lançamentos (artista e país), faixas de lançamento, busca só de artistas com público; catálogo do artista do lançamento mais novo ao mais antigo; faixas de álbum pelo YouTube Music (artista creditado); faixas de página de álbum herdam a capa quadrada do álbum (antes caíam na miniatura 16:9 do vídeo) — um download por álbum, as faixas usam o mesmo arquivo (índice por endereço em CoverStore).
