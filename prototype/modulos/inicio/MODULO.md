@@ -31,4 +31,4 @@ A tela inicial do Sonus, sempre numa tela só (sem rolar):
 
 ## Histórico
 - **1.0** — Sunshine Beta 1.1 (em preparação, ainda não lançada) — módulo criado. Bloco dinâmico com Ouvidos recentemente (6 h),
-  Seus artistas com seguidos e ouvidos muito (selo Seguir animado), Ver tudo animado (artistas: Novidades + Escute novamente; playlists: grade).
+  Seus artistas com seguidos e ouvidos muito (selo Seguir animado), Ver tudo animado (artistas: Novidades + Escute novamente; playlists: grade). Lista de Novidades vale 6 h (mesmo reabrindo o app).

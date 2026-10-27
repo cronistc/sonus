@@ -14,13 +14,15 @@
     $("offlineMark").hidden = !A.offline;
   }
 
-  // Novidades: o motor monta a lista (lançamentos + músicas) a cada vez que o app abre do zero. Exceção: se o que está
-  // tocando veio dessa lista, ela é preservada. Fica guardada para a janela do topo e o Ver tudo usarem a mesma.
-  const NOV = "sonus.novidades";
+  // Novidades: o motor monta a lista (lançamentos + músicas) e ela vale NOV_MS (6 h), mesmo que o app seja fechado e
+  // aberto de novo. Passado esse tempo, uma lista nova é feita ao abrir — a menos que o que está tocando venha da
+  // lista atual (aí ela é preservada). Fica guardada para a janela do topo e o Ver tudo usarem a mesma.
+  const NOV = "sonus.novidades", NOV_MS = 6 * 3600e3;
   let nov = null;
   try { nov = JSON.parse(localStorage.getItem(NOV) || "null"); } catch {}
   const tocandoDaLista = () => A.S?.context?.type === "novidades" || (!!A.cur() && !!nov?.musicas?.some(t => t.id === A.cur().id));
-  const pronta = (nov && tocandoDaLista()) ? Promise.resolve(nov) : Sounos.ask("novidades", {
+  const valeAinda = () => !!nov?.musicas?.length && Date.now() - (nov.at || 0) < NOV_MS;
+  const pronta = (nov && (valeAinda() || tocandoDaLista())) ? Promise.resolve(nov) : Sounos.ask("novidades", {
     seguidos: seguidos().map(x => ({ name: x.name, url: x.url || "" })),
   }).then(r => {
     if (r?.error || !r?.musicas?.length) return nov;         // falhou (sem internet…): fica a última que existia
