@@ -114,7 +114,8 @@ class YtMusicArtist(private val client: OkHttpClient) {
         }.distinctBy { it.id }
 
         // As capas de discografia se sobrepõem aos dez primeiros itens mostrados na página do artista.
-        val refs = discography.distinctBy { it.id }
+        // Do lançamento mais novo ao mais antigo: a página do artista abre com as músicas mais atuais.
+        val refs = discography.distinctBy { it.id }.sortedByDescending { it.year ?: 0 }
         val pool = Executors.newFixedThreadPool(ALBUM_WORKERS)
         val albums = try {
             refs.map { ref -> pool.submit(Callable { runCatching { albumTracks(ref.id, artistName) }.getOrDefault(emptyList()) }) }
@@ -122,12 +123,12 @@ class YtMusicArtist(private val client: OkHttpClient) {
         } finally {
             pool.shutdownNow()
         }
-        val combined = deduplicate(topTracks + albums)
+        val combined = deduplicate(albums + topTracks)       // mais atuais primeiro; as populares que não estão em lançamento vêm depois
         trace("YtMusicArtist.artist=${artistName} top=${topTracks.size} discografia=${refs.size} faixas_album=${albums.size} unicas=${combined.size} ms=${(System.nanoTime() - started) / 1_000_000}")
         return combined
     }
 
-    private data class AlbumRef(val id: String)
+    private data class AlbumRef(val id: String, val year: Int? = null)
 
     private fun discographyItems(browseId: String, params: String?): List<AlbumRef> {
         val items = mutableListOf<AlbumRef>()
@@ -143,7 +144,9 @@ class YtMusicArtist(private val client: OkHttpClient) {
                     val item = (itemValue as? JsonObject)?.getObject("musicTwoRowItemRenderer") ?: continue
                     val endpoint = item.path("navigationEndpoint", "browseEndpoint")
                     val id = endpoint.getString("browseId") ?: continue
-                    if (id.startsWith("MPRE") || id.startsWith("MPAD")) items += AlbumRef(id)
+                    val year = item.getObject("subtitle")?.getArray("runs")?.mapNotNull { (it as? JsonObject)?.getString("text")?.trim() }
+                        ?.firstNotNullOfOrNull { t -> t.takeIf { it.length == 4 && it.all(Char::isDigit) }?.toInt() }
+                    if (id.startsWith("MPRE") || id.startsWith("MPAD")) items += AlbumRef(id, year)
                 }
             }
             val token = selectedDiscographyContinuation(result)

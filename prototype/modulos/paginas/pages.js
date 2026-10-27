@@ -403,9 +403,11 @@ window.SounosPages = (() => {
     let songs = [];
     const albumCover = (n, t) => t ? `url('${Sounos.coverUrl({ id: "album:" + (key(n) || "x"), name: n, artist, thumb: t }, false, true)}')` : `linear-gradient(135deg,${Sounos.hashColors(n).join(",")})`;
     el.innerHTML = `<div class="hero"><div class="img" style="background-image:${albumCover(name, thumb)}"></div></div>
-      <div class="ph"><div class="name"></div><div class="sub"></div></div>
-      <div class="acts"><button class="big" data-a="play" aria-label="Tocar" disabled>${I.play}</button>
-        <button class="ab" data-a="shuffle" aria-label="Aleatório">${I.shuffle}</button></div>
+      <div class="art-topo">
+        <div class="art-txt"><div class="art-linha"><div class="name"></div></div><div class="sub"></div></div>
+        <button class="ab" data-a="shuffle" aria-label="Aleatório">${I.shuffle}</button>
+        <button class="big" data-a="play" aria-label="Tocar" disabled>${I.play}</button>
+      </div>
       <div class="list"><div class="sec">Músicas</div><div class="songs">${'<div class="sk"></div>'.repeat(6)}</div></div>`;
     addBack(page);
     const $ = s => el.querySelector(s);
@@ -491,16 +493,8 @@ window.SounosPages = (() => {
     remember({ type: "a", name, thumb: artistInfo.thumb || "", url: artistInfo.url || "" });
     const page = mount("artist");
     const el = page.el;
-    let songs = [], albums = [], showAllSongs = false, artistThumb = artistInfo.thumb || "", artistCatalogSignature = "";
+    let songs = [], albums = [], mostrar = 5, artistThumb = artistInfo.thumb || "", artistCatalogSignature = "";
     const localCatalog = readArtistPageCache(name);
-    // primeiro o que já se sabe (histórico), depois o resto da rede
-    const hist = (() => {
-      try {
-        const tracks = window.__sounosHistoryTracks;
-        return (Array.isArray(tracks) ? tracks : (Sounos.call("getHistory") || []).map(e => e.track)).filter(Sounos.isSong);
-      } catch { return []; }
-    })();
-    const mine = []; hist.forEach(t => { if (key(t.artist) === key(name) && !mine.some(m => m.id === t.id)) mine.push(t); });
 
     el.innerHTML = `<div class="hero" style="background:var(--surface)"><div class="img" style="background-image:url('${photoUrl.replace(/'/g, "%27")}')"></div></div>
       <div class="art-topo">
@@ -509,10 +503,10 @@ window.SounosPages = (() => {
         </div>
         <button class="big" data-a="play" aria-label="Tocar" disabled>${I.play}</button>
       </div>
-      <div class="list">${mine.length ? `<div class="sec">Você ouviu</div>` + mine.slice(0, 5).map((t, i) => rowHtml(t, "m" + i, "", false, false)).join("") : ""}
-        <div class="albums"></div>
-        <div class="sec">Músicas</div><div class="songs">${'<div class="sk"></div>'.repeat(6)}</div>
-        <button class="all-songs" hidden></button></div>`;
+      <div class="list">
+        <div class="sec">Músicas</div><div class="songs">${'<div class="sk"></div>'.repeat(5)}</div>
+        <button class="all-songs" hidden>Ver mais</button>
+        <div class="albums"></div></div>`;
     addBack(page);
     const $ = s => el.querySelector(s);
     const followingKey = key(name);
@@ -530,22 +524,23 @@ window.SounosPages = (() => {
       const x = Number(a.dur || 0), y = Number(b.dur || 0);
       return x > 0 && y > 0 && Math.abs(x - y) <= Math.max(5, Math.max(x, y) * .03);
     };
-    const heard = mine.slice(0, 5);
+    const heard = [];                       // "Você ouviu" saiu da página: a lista é só do catálogo (mais atuais primeiro)
     const all = () => {
       const out = [...heard];
       for (const t of songs) if (!out.some(x => x.id === t.id || sameSong(x, t))) out.push(t);
       return out;
     };
-    const drawSongs = () => {
-      const shown = showAllSongs ? songs : songs.slice(0, 20);
+    // começa com as 5 mais atuais; "Ver mais" abre de 10 em 10 (as novas entram com uma subidinha)
+    const drawSongs = (antes = 0) => {
+      const shown = songs.slice(0, mostrar);
       $(".songs").innerHTML = songs.length ? shown.map((t, i) => rowHtml(t, i, "", false, false)).join("") : `<div class="note">Nenhuma música encontrada.</div>`;
-      const more = $(".all-songs");
-      more.hidden = songs.length <= 20;
-      more.textContent = showAllSongs ? "Mostrar principais" : `Ver todas · ${count(all().length)}`;
+      $(".all-songs").hidden = songs.length <= mostrar;
+      if (antes) [...$(".songs").children].slice(antes).forEach((r, i) => r.animate?.(
+        [{ opacity: 0, transform: "translateY(10px)" }, { opacity: 1, transform: "none" }],
+        { duration: 320, delay: i * 28, easing: "cubic-bezier(.2,.85,.25,1)", fill: "backwards" }));
       markNow();
     };
     paintFollow();
-    if (mine.length) $("[data-a=play]").disabled = false;
 
     const applyArtist = r => {
       if (page.closing) return;
@@ -558,7 +553,7 @@ window.SounosPages = (() => {
       artistThumb = r.thumb || artistThumb;
       $(".name").textContent = handle(String(r.name || name || "Artista").trim() || "Artista");
       const total = all().length;
-      $("[data-a=play]").disabled = !(songs.length || mine.length);
+      $("[data-a=play]").disabled = !songs.length;
       drawSongs();
       if (r.isCached) {
         const metric = { name, cached: true, cacheMs: Math.round(performance.now() - intentAt), tracks: total };
@@ -628,11 +623,11 @@ window.SounosPages = (() => {
         window.dispatchEvent(new CustomEvent("sounos:following", { detail: list }));
         paintFollow(); return;
       }
-      if (e.target.closest(".all-songs")) { showAllSongs = !showAllSongs; return drawSongs(); }
+      if (e.target.closest(".all-songs")) { const antes = mostrar; mostrar += 10; return drawSongs(antes); }
       const album = e.target.closest("[data-album]"); if (album) { const x = albums[+album.dataset.album]; return openAlbum(x.url, x.name, x.artist, x.thumb); }
       const row = e.target.closest(".tr"); if (!row) return;
       // a música tocada vem primeiro; depois o resto do catálogo do artista, embaralhado
-      const i = row.dataset.i, t = String(i).startsWith("m") ? mine[+i.slice(1)] : songs[+i];
+      const t = songs[+row.dataset.i];
       const lista = [t, ...all().filter(x => x.id !== t.id)];
       playFrom(lista, 0, ctx, "aleatorio");
     });

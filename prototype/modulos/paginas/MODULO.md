@@ -18,3 +18,6 @@ Minhas músicas. Voltar desliza a página para fora (a tela inicial só se redes
   N músicas"); play à direita;
   sem botão de aleatório — no artista tudo toca em aleatório (play = catálogo embaralhado; tocar numa música = ela
   primeiro e o resto embaralhado, com o aleatório do player ligado).
+  Artista: sem "Você ouviu"; "Músicas" começa com as 5 mais atuais (catálogo do lançamento mais novo ao mais antigo)
+  e "Ver mais" abre de 10 em 10; álbuns fixos no fim, maiores.
+  Álbum: mesmo desenho (capa limpa; nome, "artista · N músicas"; aleatório à esquerda do play); lista sem capinhas.

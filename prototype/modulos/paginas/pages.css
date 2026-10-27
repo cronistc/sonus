@@ -94,15 +94,23 @@
 html.page-hidden .pg .sk, .pg:not(.open) .sk, .phone.overlay-open .pg .sk { animation-play-state: paused; }
 @keyframes pgPulse { to { opacity: .4; } }
 
-/* Página do artista: a foto fica limpa (nada por cima, sem degradê); embaixo dela, o nome com "Seguir" ao lado
-   e "Artista · N músicas"; aleatório e play à direita */
-.pg.artist .hero::after { display: none; }
-.pg.artist .art-topo { display: flex; align-items: center; gap: 6px; padding: 16px 20px 6px; }
-.pg.artist .art-txt { flex: 1; min-width: 0; }
-.pg.artist .art-linha { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; }
-.pg.artist .art-linha .name { text-shadow: none; font-size: calc(var(--fs) * (26px)); min-width: 0; }
+/* Páginas de artista e de álbum: a imagem fica limpa (nada por cima, sem degradê); embaixo dela, o nome
+   (artista: com "Seguir" ao lado · álbum: com "artista · N músicas" embaixo); play à direita (álbum: aleatório à esquerda dele) */
+.pg.artist .hero::after, .pg.album .hero::after { display: none; }
+.pg.artist .art-topo, .pg.album .art-topo { display: flex; align-items: center; gap: 6px; padding: 16px 20px 6px; }
+.pg.artist .art-txt, .pg.album .art-txt { flex: 1; min-width: 0; }
+.pg.artist .art-linha, .pg.album .art-linha { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; }
+.pg.artist .art-linha .name, .pg.album .art-linha .name { text-shadow: none; font-size: calc(var(--fs) * (26px)); min-width: 0; }
 .pg.artist .art-linha .follow { min-width: 0; height: 30px; padding: 0 10px 0 8px; gap: 5px; border-radius: 15px;
                                 font-size: calc(var(--fs) * 12px); }
 .pg.artist .art-linha .follow svg { width: 15px; height: 15px; }
-.pg.artist .art-topo .sub { margin-top: 4px; }
-.pg.artist .art-topo .big { flex-shrink: 0; }
+.pg.artist .art-topo .sub, .pg.album .art-topo .sub { margin-top: 4px; }
+.pg.artist .art-topo .big, .pg.album .art-topo .big { flex-shrink: 0; }
+
+/* álbum: na lista, só nome, artista e ⋮ (a capa é a do próprio álbum, já lá em cima) */
+.pg.album .tr .cv { display: none; }
+/* artista: álbuns no fim, maiores */
+.pg.artist .albums .s-album { width: 150px; }
+.pg.artist .albums .s-album .pic { width: 150px; height: 150px; }
+.pg.artist .albums .s-album .n { font-size: calc(var(--fs) * (13px)); }
+.pg.artist .albums .s-album .a { font-size: calc(var(--fs) * (12px)); }
