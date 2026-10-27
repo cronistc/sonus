@@ -91,7 +91,7 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
 
     init {
         runCatching { connectivity.registerDefaultNetworkCallback(networkCallback) }
-        restoreSession(); applySettings(app.library.settings())
+        restoreSession(); app.motor.retomar(currentTrack); applySettings(app.library.settings())
     }
 
     // ---------------- eventos para a interface ----------------
@@ -171,16 +171,23 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
 
     fun pause() { playWhenReady = false; buffering = false; engine.pause(); emitState(); saveSession() }
 
+    /** Como a música atual vai terminar quando a próxima começar (para o motor de entendimento). */
+    private var fimPendente = "trocou"
+
     /** afterError: a faixa não carregou — pula de verdade, mesmo com "repetir uma" (repetir uma faixa quebrada travava o player). */
     fun next(auto: Boolean = false, afterError: Boolean = false) {
         if (index < 0) return
-        if (auto && repeat == Repeat.ONE && !afterError) { engine.seekTo(0); engine.play(); return }
+        fimPendente = when { afterError -> "erro"; auto -> "completa"; else -> "pulou" }
+        if (auto && repeat == Repeat.ONE && !afterError) {
+            app.motor.terminou(durationMs, durationMs, "completa"); currentTrack?.let { app.motor.comecou(it, context) }
+            engine.seekTo(0); engine.play(); return
+        }
         when {
             index + 1 < queue.size -> index++
             repeat == Repeat.ALL -> index = 0
             isRadio() && topUpRadio() -> index++
             !auto -> index = 0
-            else -> { engine.pause(); engine.seekTo(0); emitState(); return }
+            else -> { app.motor.terminou(durationMs, durationMs, "completa"); engine.pause(); engine.seekTo(0); emitState(); return }
         }
         resumeAtMs = 0
         startCurrent()
@@ -188,6 +195,7 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
 
     fun prev() {
         if (engine.positionMs() > 3000 || repeat == Repeat.ONE) { engine.seekTo(0); emitState(); return }
+        fimPendente = "voltou"
         index = if (index > 0) index - 1 else if (repeat == Repeat.ALL) queue.lastIndex else 0
         resumeAtMs = 0
         startCurrent()
@@ -271,6 +279,7 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
     private fun startCurrent(startMs: Long = 0) {
         val t = currentTrack ?: return
         if (!online && !isAvailableOffline(t)) { skipUnavailableOffline(); return }
+        app.motor.trocando(t.id, positionMs(), durationMs, fimPendente); fimPendente = "trocou"
         app.audio.protectedIds = (upcoming().map { it.id } + t.id).toSet()
         val my = ++token
         loading = true; buffering = false; playWhenReady = true; seekWhenReadyMs = -1; current = null; currentUsesCache = false; durationMs = t.durationSec * 1000
@@ -327,6 +336,7 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
                 requestFocus()
                 engine.load(source, startMs, playWhenReady = playWhenReady, knownGainDb = app.library.gain(t.id))
                 app.library.addHistory(track, context)
+                app.motor.comecou(track, context)
                 launch(Dispatchers.IO) {                                   // capa (fica guardada) + cores do fundo
                     runCatching {
                         app.covers.get(track, pin = app.library.isDownloaded(track.id), large = true) { android.util.Log.i("Sonus", "cover $it") }
@@ -611,12 +621,14 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
         .put("id", currentTrack?.id ?: JSONObject.NULL)   // a tela ignora progresso de outra música
 
     private var ticking = false
+    private var ticks = 0
     private fun ticker() {
         if (ticking) return
         ticking = true
         main.post(object : Runnable {
             override fun run() {
                 emit("progress", progress())
+                if (engine.isPlaying && ++ticks % 40 == 0) app.motor.marcar(positionMs(), durationMs)   // a cada 10 s: até onde tocou
                 if (engine.isPlaying || loading) main.postDelayed(this, 250) else { ticking = false; PlaybackService.update(app) }
             }
         })
@@ -639,6 +651,7 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
 
     // ---------------- sessão (continuar de onde parou) ----------------
     fun saveSession() {
+        app.motor.marcar(positionMs(), durationMs)
         if (index < 0) return
         app.library.saveSession(JSONObject().put("queue", Json.tracks(queue)).put("original", Json.tracks(original))
             .put("index", index).put("pos", positionMs()).put("context", context)

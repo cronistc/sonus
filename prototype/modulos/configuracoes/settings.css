@@ -153,3 +153,20 @@ html[data-theme="light"] .upd .sun-glow, .phone[data-theme="light"] .upd .sun-gl
 /* parado quando a página está escondida ou o painel de configurações está fechado */
 html.page-hidden .sun-glow, .upd:not(.open) .sun-glow { animation-play-state: paused; }
 @media (prefers-reduced-motion: reduce) { .sun-glow { animation: none; background-position: 50% 0; } }
+
+/* novidades da versão em blocos que abrem e fecham (a tela de atualização não rola) */
+.upd-notes .ugs { margin-top: 10px; overflow: hidden; }
+.upd-notes .ug + .ug { border-top: 1px solid var(--line, rgba(255,255,255,.08)); }
+.upd-notes .ug.fora { display: none; }
+.upd-notes .ug-head { width: 100%; display: flex; align-items: center; gap: 10px; padding: 12px 0; background: none; border: 0;
+                      color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.upd-notes .ug-tx { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.upd-notes .ug-tx b { font-family: "SonusTitulo", "SonusFont", sans-serif; font-size: calc(var(--fs) * (15px)); font-weight: 600; }
+.upd-notes .ug-resumo { font-size: calc(var(--fs) * (13.5px)); color: var(--text-dim); line-height: 1.35;
+                        display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.upd-notes .ug-resumo i { font-style: normal; font-weight: 600; color: var(--text); white-space: nowrap; }
+.upd-notes .ug.on .ug-resumo { display: none; }
+.upd-notes .ug-seta { width: 20px; height: 20px; flex-shrink: 0; color: var(--text-dim); transition: transform .3s cubic-bezier(.2,.85,.25,1); }
+.upd-notes .ug.on .ug-seta { transform: rotate(180deg); }
+.upd-notes .ug-itens { display: none; margin: 0 0 10px; padding-left: 18px; }
+.upd-notes .ug.on .ug-itens { display: block; max-height: 46vh; overflow-y: auto; scrollbar-width: none; }

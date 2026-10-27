@@ -28,7 +28,7 @@
 .sbar .s-icon { order: 3; width: var(--icon-w, 44px); }   /* a lupa fica à direita, exatamente onde está o botão */
 .sbar .s-icon svg { width: var(--icon-size, 22px); height: var(--icon-size, 22px); }
 .sbar input { flex: 1; min-width: 0; height: 100%; background: none; border: 0; outline: 0;
-              color: var(--text, #f5f5f7); font: 500 calc(var(--fs) * 16px) system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+              color: var(--text, #f5f5f7); font: 500 calc(var(--fs) * 16px) "SonusFont", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
 .sbar input::placeholder { color: var(--text-dim, #a1a1aa); }
 .sbar input::-webkit-search-cancel-button { display: none; }
 
@@ -91,5 +91,5 @@
 .s-pl .meta { position: absolute; left: 0; right: 0; bottom: 0; padding: 18px 8px 7px; background: linear-gradient(transparent, rgba(0,0,0,.75)); }
 .s-pl .t { font-size: calc(var(--fs) * (12.5px)); font-weight: 600; }
 /* mini-player por cima da busca (fechar o player na busca deixa o mini visível); resultados não ficam atrás dele */
-.phone:has(.search-ov.open) .mini { z-index: 51; }
+.phone:not(.has-page):has(.search-ov.open) .mini { z-index: 51; }   /* com página aberta, vale o z-index de pages.css (por cima dela) */
 .search-ov.open .sbody { padding-bottom: 96px; }

@@ -1,0 +1,273 @@
+/* Módulo Player — aparência do player completo. Ver MODULO.md */
+:root {
+  --bg: #0e0e10;
+  --surface: #1a1a1e;
+  --text: #f5f5f7;
+  --text-dim: #a1a1aa;
+  --c1: #5b21b6;
+  --c2: #db2777;
+  --c3: #f59e0b;
+  --fade: .09s;               /* duração de cada metade da troca info ⇄ letra */
+  --tile: 116px;              /* tamanho dos blocos da fila */
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  background: #000;
+  color: var(--text);
+  font-family: "SonusFont", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  display: flex; justify-content: center; align-items: center;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Moldura de celular (só no desktop) */
+.phone {
+  width: 100%; max-width: 400px; height: 100%; max-height: 860px;
+  position: relative; overflow: clip;
+  background: var(--phone-bg);
+  display: flex; flex-direction: column;
+  padding: 10px 24px 10px;
+}
+@media (min-width: 500px) { html:not(.native) .phone { border-radius: 36px; border: 8px solid #222; } }
+/* no app a moldura nunca aparece: celular com "tamanho da tela" pequeno passa de 500px e parecia computador */
+html.native .phone { max-width: none; max-height: none; }
+/* itens que viajam entre o mini-player e o player */
+.cover { view-transition-name: cover; }
+#lyricsBtn { view-transition-name: btn-lyrics; }
+#prev { view-transition-name: btn-prev; }
+#play { view-transition-name: btn-play; }
+#next { view-transition-name: btn-next; }
+#title { view-transition-name: track-title; width: fit-content; max-width: 100%; }
+#artist { view-transition-name: track-artist; width: fit-content; max-width: 100%; }
+
+/* áreas onde dá para puxar o player para baixo */
+.cover-area, .info { touch-action: none; }
+
+button { background: none; border: 0; color: inherit; cursor: pointer; display: grid; place-items: center; }
+svg { width: 24px; height: 24px; fill: currentColor; }
+
+
+/* Capa + anel de progresso. Tamanho calculado em fitCover(): o maior quadrado que cabe */
+.cover-area { flex-shrink: 0; margin-top: 8px; display: flex; justify-content: center; }
+.cover-box { width: var(--cover-size, 100%); flex-shrink: 0; }
+.ring { position: relative; width: 100%; aspect-ratio: 1 / 1; touch-action: none; }
+/* anel, capa e barrinhas em camadas próprias: quando o anel anda, só ele é redesenhado (não a tela toda) */
+.ring svg.prog { position: absolute; overflow: visible; pointer-events: none; z-index: 2; }
+.ring canvas.prog { position: absolute; pointer-events: none; z-index: 3; }
+.ring .track-path { fill: none; stroke: var(--line); stroke-width: 6; }
+.ring .fill-path { fill: none; stroke: url(#ringGrad); stroke-width: 6; stroke-linecap: butt; }
+.ring .hit { fill: none; stroke: transparent; stroke-width: 30; pointer-events: stroke; cursor: pointer; }
+.ring .knob { fill: #fff; r: 0; transition: r .15s; pointer-events: none; }
+.ring.drag .knob { r: 6px; }
+.cover {
+  position: relative; width: 100%; height: 100%;
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--c1), var(--c2) 60%, var(--c3));
+  box-shadow: 0 20px 50px rgba(0,0,0,.5);
+  display: grid; place-items: center;
+  font-size: 80px; font-weight: 700; color: rgba(255,255,255,.85);
+  transition: background .6s;
+  user-select: none;
+}
+.times { display: flex; justify-content: space-between; font-size: calc(var(--fs) * (12px)); color: var(--text-dim);
+         margin-top: 10px; font-variant-numeric: tabular-nums; transition: color .24s ease; }
+
+/* Área abaixo da capa */
+.below { position: relative; flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.below > .main-ui { flex: 1; display: flex; flex-direction: column; }
+.spacer { flex: 1; }
+
+/* Info da faixa */
+.info { position: relative; display: flex; align-items: center; gap: 12px; margin-top: 12px; height: 52px; }
+.info .txt { flex: 1; min-width: 0; }
+.info h1 { font-size: calc(var(--fs) * (22px)); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.info p { font-size: calc(var(--fs) * (15px)); color: var(--text-dim); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: color .24s ease; }
+.actions { display: flex; align-items: center; gap: 6px; }
+.act[hidden] { display: none; }               /* "A" só aparece com letra sincronizada */
+.act { width: 40px; height: 40px; border-radius: 12px; color: var(--text-dim); transition: background .3s, color .3s; }
+.act:active { transform: scale(.92); }
+.act.on { color: var(--text); background: var(--chip); }
+.act .letter { font-size: 21px; font-weight: 700; line-height: 1; font-family: Georgia, "Times New Roman", serif; }
+.act svg { width: 26px; height: 26px; }
+/* botão de baixar */
+.dl-ic { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.dl-track { stroke: currentColor; stroke-width: 2; opacity: .9; transition: opacity .3s; }
+.dl-prog { stroke: var(--text); stroke-width: 2.4; stroke-dasharray: 0 100; transform: rotate(-90deg); transform-origin: 12px 12px;
+           opacity: 0; transition: stroke-dasharray .25s linear, opacity .2s; }
+.dl-fill { fill: var(--text); transform: scale(0); transform-origin: 12px 12px; transition: transform .38s cubic-bezier(.3,1.4,.5,1); }
+.dl-arrow { stroke: currentColor; stroke-width: 2.2; transition: stroke .3s; }
+.act.dl.dl-snap .dl-fill, .act.dl.dl-snap .dl-arrow { transition: none !important; }
+.act.dl.loading { color: var(--text); }
+.act.dl.loading .dl-track { opacity: .25; }
+.act.dl.loading .dl-prog { opacity: 1; }
+/* baixando: o arco gira o tempo todo (mesmo sem saber o tamanho) e cresce com o progresso */
+.act.dl.loading .dl-prog { animation: dlGira 1s linear infinite; }
+@keyframes dlGira { from { transform: rotate(-90deg); } to { transform: rotate(270deg); } }
+.act.dl.loading .dl-arrow { animation: dlNudge 1s ease-in-out infinite; }
+@keyframes dlNudge { 50% { transform: translateY(1.5px); } }
+.act.dl.done { color: var(--text); }
+.act.dl.done .dl-fill { transform: scale(1); }
+.act.dl.done .dl-arrow { stroke: var(--bg); }
+.act.dl.done .dl-track { opacity: 0; }
+
+/* Troca info ⇄ letra em sequência: primeiro um sai, depois o outro entra (sem sobrepor) */
+.fadeable { transition: opacity var(--fade) ease var(--fade), transform var(--fade) ease var(--fade); }
+.phone.lyr-mode .fadeable { opacity: 0; transform: translateY(8px); pointer-events: none;
+                            transition-delay: 0s; }
+
+/* Fila de reprodução (carrossel): nome e @ ficam dentro do bloco */
+.queue-wrap { margin: 4px -24px -10px; }
+/* altura fixa (bloco + respiro): a fila nunca cresce por cima do player */
+.queue { display: flex; gap: 10px; overflow-x: auto; overflow-y: visible; padding: 14px 24px 16px; height: calc(var(--tile) + 30px);
+         scrollbar-width: none; touch-action: none; user-select: none; cursor: grab; }
+.queue::-webkit-scrollbar { display: none; }
+.qi { flex: 0 0 var(--tile); width: var(--tile); height: var(--tile); position: relative; border-radius: 10px;
+      overflow: hidden; transition: opacity .3s, transform .2s, box-shadow .2s, outline-color .3s;
+      box-shadow: var(--tile-shadow); outline: 2px solid transparent; outline-offset: 2px; }
+.qi .ini { position: absolute; inset: 0; display: grid; place-items: center; padding-bottom: 26px;
+           font-size: calc(var(--tile) * .33); font-weight: 700; color: rgba(255,255,255,.5); }
+.qi .meta { color: #fff; position: absolute; left: 0; right: 0; bottom: 0; padding: 20px 8px 7px;
+            background: linear-gradient(transparent, rgba(0,0,0,.65)); }
+.qi .qt { font-size: calc(var(--fs) * (calc(10px + var(--tile) * .02))); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.qi .qa { font-size: calc(var(--fs) * (calc(9px + var(--tile) * .015))); color: rgba(255,255,255,.72); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.qi.played { opacity: .45; }
+.qi.now { outline-color: var(--text); }
+.qi.lift { z-index: 5; opacity: 1; transform: scale(1.08); box-shadow: 0 12px 28px rgba(0,0,0,.6); }
+/* barrinhas "tocando agora" no bloco atual */
+.eq { position: absolute; right: 8px; top: 8px; display: none; gap: 2px; align-items: flex-end; height: 14px; }
+.qi.now .eq { display: flex; }
+/* barrinhas: altura fixa + scaleY (mesmo desenho; antes a altura animada redesenhava o bloco inteiro, capa junto) */
+.eq i { width: 3px; background: #fff; border-radius: 1px; height: 14px; transform: scaleY(.2857); transform-origin: bottom; }
+/* o movimento das barrinhas vem do relógio do player (drawEq), junto com o anel: a tela redesenha ~15×/s */
+
+/* Renovação da fila: gira rápido para a esquerda e os novos blocos entram pela direita */
+.queue.spin-out .qi { animation: spinOut .18s ease-in forwards; }
+.queue.spin-in  .qi { animation: spinIn .38s cubic-bezier(.2,.9,.3,1) backwards; animation-delay: calc(var(--i) * 35ms); }
+@keyframes spinOut { to { transform: translateX(-140px) scale(.9); opacity: 0; } }
+@keyframes spinIn  { from { transform: translateX(160px) scale(.9); opacity: 0; } }
+
+/* Controles */
+.controls { position: relative; display: flex; align-items: center; justify-content: space-between; height: 96px; margin: 22px 0 18px; }  /* fila→play (6+22) = play→fim da tela (18+10) */
+.controls .skip { width: 64px; overflow: hidden; transition: width .7s, opacity .5s; }
+.controls .skip svg { width: 32px; height: 32px; }
+/* mesmo estilo de traço para todos os ícones do player (padrão lucide) */
+.lu { fill: none; stroke: currentColor; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+.lu.solid { fill: currentColor; }
+.controls.scrubbing .skip { width: 0; opacity: 0; }
+.play {
+  width: 96px; height: 96px; border-radius: 48px; flex-shrink: 0;
+  background: var(--text); color: var(--bg);
+  position: relative; overflow: hidden; touch-action: none; user-select: none;
+  box-shadow: 0 16px 40px rgba(0,0,0,.45);
+  transition: width .7s, height .7s, border-radius .7s, transform .1s;
+}
+.play:active:not(.scrub), .skip:active { transform: scale(.92); }
+#play { touch-action: none; }
+.play.scrub { width: 100%; height: 80px; border-radius: 24px; }
+.play .icon { display: flex; align-items: center; justify-content: center; gap: 2px; }
+.play .icon svg { width: 44px; height: 44px; }
+.play .icon .lu { width: 40px; height: 40px; }
+.play .icon.combo .lu { width: 28px; height: 28px; stroke-width: 3; }
+.play .icon.combo .slash { font-size: 22px; font-weight: 300; opacity: .3; margin: 0 1px; }
+.play.scrub .icon { display: none; }
+
+/* Scrubber: forma de onda que corre sob uma lente central */
+.scrubber { position: absolute; inset: 0; opacity: 0; transition: opacity .4s; pointer-events: none; overflow: hidden; }
+.play.scrub .scrubber { opacity: 1; }
+.wave { position: absolute; top: 0; height: 100%; left: 50%; display: flex; align-items: center; }
+.wave i { flex-shrink: 0; border-radius: 2px; background: var(--bg); }
+.wave.dim { opacity: .25; }
+.wave.dim i { width: 2px; margin-right: 10px; }
+.lens { position: absolute; left: 50%; top: 50%; width: 96px; height: 85%; transform: translate(-50%, -50%);
+        border-radius: 16px; overflow: hidden; z-index: 2;
+        background: color-mix(in srgb, var(--bg) 8%, transparent); border: 1px solid color-mix(in srgb, var(--bg) 20%, transparent);
+        backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
+.lens .wave.big { left: 48px; }
+.lens .wave.big i { width: 2px; margin-right: 10px; }
+.needle { position: absolute; left: 50%; top: 50%; width: 2px; height: 75%; transform: translate(-50%, -50%);
+          background: var(--c2); border-radius: 2px; z-index: 3; }
+/* tempo do scrub: flutua acima da barra, sem ocupar espaço */
+.scrub-time { position: absolute; left: 50%; top: -6px; transform: translate(-50%, -100%);
+              font-weight: 800; font-size: calc(var(--fs) * (18px)); font-variant-numeric: tabular-nums;
+              background: color-mix(in srgb, var(--bg) 85%, transparent); padding: 2px 10px; border-radius: 8px;
+              opacity: 0; transition: opacity .5s; pointer-events: none; }
+.scrub-time.show { opacity: 1; }
+
+/* Compartilhar letra */
+.share-btn { position: absolute; left: -8px; top: 50%; margin-top: -20px;
+             width: 40px; height: 40px; border-radius: 12px; color: var(--text);
+             transition: opacity var(--fade) ease, transform var(--fade) ease, background .3s, color .24s ease; }
+.share-btn svg { width: 24px; height: 24px; }
+.share-btn.on { background: var(--chip); }
+.share-btn:active { transform: scale(.95); }
+.phone:not(.lyr-mode) .share-btn, .share-btn.hidden { opacity: 0; transform: scale(.9); pointer-events: none; }
+.phone.lyr-mode .share-btn:not(.hidden) { transition-delay: var(--fade); }
+
+.lyr.selecting .line { opacity: .36; transition: opacity .18s, background .18s; }
+.lyr.selecting .line.sel { opacity: 1; background: var(--chip); }
+.lyr.selecting .line.note { opacity: .25; pointer-events: none; }
+.selbar { position: absolute; left: -8px; right: -8px; bottom: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between;
+          padding: 22px 8px 6px; background: linear-gradient(transparent, var(--bg) 45%);
+          opacity: 0; transform: translateY(10px); pointer-events: none; transition: opacity .25s, transform .25s; }
+.lyr.selecting .selbar { opacity: 1; transform: none; pointer-events: auto; }
+.selbar .link { font-size: calc(var(--fs) * (14px)); font-weight: 500; color: var(--text-dim); padding: 8px 4px; }
+.selbar .count { font-size: calc(var(--fs) * (13px)); color: var(--text-dim); font-variant-numeric: tabular-nums; transition: color .2s; }
+.selbar .count.full { color: var(--text); font-weight: 600; }
+.selbar .go { height: 38px; padding: 0 18px; border-radius: 19px; background: var(--text); color: var(--bg);
+              font-size: calc(var(--fs) * (14px)); font-weight: 600; transition: opacity .2s; }
+.selbar .go:disabled { opacity: .35; cursor: default; }
+@keyframes nudge { 0%,100% { transform: none } 25% { transform: translateX(-4px) } 75% { transform: translateX(4px) } }
+.count.nudge { animation: nudge .25s; }
+
+/* Folha com a imagem gerada */
+.sheet { position: absolute; inset: 0; z-index: 20; background: rgba(0,0,0,.78); backdrop-filter: blur(6px);
+         display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; padding: 24px;
+         opacity: 0; pointer-events: none; transition: opacity .25s; }
+.sheet.open { opacity: 1; pointer-events: auto; }
+/* fechadas = fora do desenho (senão o WebView continua pintando camadas de tela cheia invisíveis) */
+.sheet:not(.open) { visibility: hidden; transition: opacity .25s, visibility 0s .25s; }
+.phone:not(.lyr-mode) .lyr { visibility: hidden; transition: opacity var(--fade) ease, transform var(--fade) ease, visibility 0s var(--fade); }
+.sheet img { width: min(100%, 300px); border-radius: 14px; box-shadow: 0 20px 50px rgba(0,0,0,.6);
+             transform: scale(.94); transition: transform .3s cubic-bezier(.2,.9,.3,1); }
+.sheet.open img { transform: none; }
+.sheet .row { display: flex; gap: 10px; }
+.sheet .row button { height: 42px; padding: 0 18px; border-radius: 21px; font-size: calc(var(--fs) * (14px)); font-weight: 600;
+                     background: rgba(255,255,255,.14); color: var(--text); }
+.sheet .row button.primary { background: var(--text); color: var(--bg); }
+.styles { display: flex; gap: 8px; }
+.styles button { height: 36px; padding: 0 14px 0 6px; border-radius: 18px; display: flex; align-items: center; gap: 8px;
+                 font-size: calc(var(--fs) * (13px)); font-weight: 500; color: var(--text-dim); background: rgba(255,255,255,.08);
+                 outline: 2px solid transparent; transition: outline-color .2s, color .2s; }
+.styles button.on { color: var(--text); outline-color: rgba(255,255,255,.85); }
+.styles .sw { width: 24px; height: 24px; border-radius: 50%; }
+.styles .sw.grad { background: linear-gradient(135deg, var(--c1), var(--c2) 60%, var(--c3)); }
+.styles .sw.dark { background: #3a3a3f; border: 1px solid rgba(255,255,255,.25); }
+.styles .sw.light { background: #f4f4f5; }
+.sheet .close { position: absolute; top: 14px; right: 14px; width: 40px; height: 40px; }
+
+/* Letra (substitui nome, artista, fila e botões) */
+.lyr { position: absolute; left: 0; right: 0; top: 64px; bottom: 0;
+       opacity: 0; transform: translateY(8px); pointer-events: none;
+       transition: opacity var(--fade) ease, transform var(--fade) ease; }
+.phone.lyr-mode .lyr { opacity: 1; transform: none; pointer-events: auto; transition-delay: var(--fade); }
+@property --lyrics-top-fade {
+  syntax: "<length-percentage>";
+  inherits: false;
+  initial-value: 0%;
+}
+.lyr .lines { --lyrics-top-fade: 0%; height: 100%; overflow-y: auto; scrollbar-width: none; padding: 20% 8px 60%; margin: 0 -8px;
+              -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 var(--lyrics-top-fade), #000 78%, transparent 100%);
+                      mask-image: linear-gradient(to bottom, transparent 0, #000 var(--lyrics-top-fade), #000 78%, transparent 100%);
+              transition: --lyrics-top-fade .24s ease; }
+.lyr .lines.scrolled { --lyrics-top-fade: 18%; }
+.lyr .lines::-webkit-scrollbar { display: none; }
+.lyr .line { font-size: calc(var(--fs) * (25px)); font-weight: 500; line-height: 1.38; margin-bottom: 16px; cursor: pointer;
+             padding: 2px 8px; margin-left: -8px; border-radius: 8px;
+             color: var(--text); opacity: .36; transition: opacity .22s ease; }
+.lyr .line.now { opacity: 1; }
+.lyr.plain .line { opacity: 1; cursor: default; }     /* letra sem tempo: mostra inteira */
+/* A linha atual acende inteira; as demais mudam só a opacidade. */
+.phone.paused .act.dl.loading .dl-arrow, .phone.player-hidden .act.dl.loading .dl-arrow,
+.phone.overlay-open .act.dl.loading .dl-arrow,
+html.page-hidden .phone .act.dl.loading .dl-arrow { animation-play-state: paused; }
+.lyr .empty { color: var(--text-dim); font-size: calc(var(--fs) * (16px)); padding-top: 20px; }

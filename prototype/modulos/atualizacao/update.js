@@ -7,15 +7,33 @@ window.SounosUpdate = (() => {
   const mb = b => b > 0 ? (b / 1048576).toFixed(1).replace(".", ",") + " MB" : "";
   const day = s => { if (!s) return ""; const d = new Date(s + "T12:00:00"); return isNaN(d) ? "" : d.toLocaleDateString("pt-BR", { day: "numeric", month: "long", year: "numeric" }); };
 
-  // novidades: linhas "## Grupo" viram títulos (Novidades / Ajustes / Correções); o resto, itens da lista
+  // novidades: linhas "## Grupo" separam Novidades / Ajustes / Correções. Cada grupo é um bloco que abre e fecha:
+  // fechado mostra só o resumo (primeiro item + quantos mais); tocar abre o bloco e esconde os outros (a tela não rola)
+  const seta = '<svg class="lu ug-seta" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>';
   const notesHtml = notes => {
-    let html = "", open = false;
+    const grupos = []; let g = null;
     for (const n of notes) {
-      if (/^##\s*/.test(n)) { if (open) html += "</ul>"; html += `<h4>${esc(n.replace(/^##\s*/, ""))}</h4><ul>`; open = true; }
-      else { if (!open) { html += "<ul>"; open = true; } html += `<li>${esc(n)}</li>`; }
+      if (/^##\s*/.test(n)) grupos.push(g = { t: n.replace(/^##\s*/, ""), itens: [] });
+      else (g || grupos[grupos.push(g = { t: "", itens: [] }) - 1]).itens.push(n);
     }
-    return open ? html + "</ul>" : html;
+    if (grupos.length < 2 && !grupos[0]?.t) return `<ul>${(grupos[0]?.itens || []).map(n => `<li>${esc(n)}</li>`).join("")}</ul>`;
+    return `<div class="ugs">${grupos.map((g, i) => `<section class="ug" data-g="${i}">
+      <button class="ug-head" type="button"><span class="ug-tx"><b>${esc(g.t)}</b>
+        <span class="ug-resumo">${esc(g.itens[0] || "")}${g.itens.length > 1 ? ` <i>+ ${g.itens.length - 1}</i>` : ""}</span></span>${seta}</button>
+      <ul class="ug-itens">${g.itens.map(n => `<li>${esc(n)}</li>`).join("")}</ul></section>`).join("")}</div>`;
   };
+  // abre um bloco (os outros se recolhem) ou fecha o aberto (todos voltam), com animação
+  function alternarGrupo(sec) {
+    const box = sec.closest(".ugs"), todos = [...box.children], abrir = !sec.classList.contains("on");
+    const ease = "cubic-bezier(.2,.85,.25,1)", h0 = box.offsetHeight;
+    todos.forEach(x => { x.classList.toggle("on", abrir && x === sec); x.classList.toggle("fora", abrir && x !== sec); });
+    const h1 = box.offsetHeight;
+    box.animate?.([{ height: h0 + "px" }, { height: h1 + "px" }], { duration: 340, easing: ease });
+    const lista = sec.querySelector(".ug-itens");
+    if (abrir) [...lista.children].forEach((li, i) => li.animate?.([{ opacity: 0, transform: "translateY(6px)" }, { opacity: 1, transform: "none" }],
+      { duration: 280, delay: 60 + i * 24, easing: ease, fill: "backwards" }));
+    else todos.forEach(x => x !== sec && x.animate?.([{ opacity: 0 }, { opacity: 1 }], { duration: 260, delay: 80, fill: "backwards" }));
+  }
   let changelog = {};
   fetch("changelog.json").then(r => r.json()).then(j => { changelog = j || {}; }).catch(() => {});
 
@@ -39,6 +57,7 @@ window.SounosUpdate = (() => {
       </div>`;
     phone.appendChild(el);
     const $ = s => el.querySelector(s);
+    el.addEventListener("click", e => { const h = e.target.closest(".ug-head"); if (h) alternarGrupo(h.closest(".ug")); });
     let isOpen = false, lastJust = null;
 
     function render() {

@@ -9,9 +9,12 @@ Interface e player de áudio feitos do zero; músicas via NewPipe Extractor (You
 
 ## 1. Estrutura do repositório
 
+> Mapa de módulos (onde fica cada parte): [MODULOS.md](../MODULOS.md). Guia para IAs: [CLAUDE.md](../CLAUDE.md).
+
 ```
 prototype/          Interface (HTML/CSS/JS feitos do zero). Roda no navegador com dados de
                     exemplo e, dentro do app, ligada ao player nativo. Entra no APK como assets.
+                    Cada tela é um módulo em prototype/modulos/<nome> — mapa em MODULOS.md (raiz).
 android/
   app/              App Android (Kotlin): WebView da interface, ponte JS↔Kotlin, player, serviço
   core/extractor/   "Motor": NewPipe Extractor + busca, resolução de áudio, cache, capas

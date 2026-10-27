@@ -1,0 +1,21 @@
+## Novidades
+Tela inicial nova: no topo, Ouvidos recentemente e Novidades passam para o lado
+Novidades feitas para você: lançamentos de quem você segue e ouve, e descobertas novas
+Seus artistas: quem você ouve muito aparece com o selo Seguir
+Ver tudo: artistas com Novidades e Escute novamente; playlists em grade
+Página do artista renovada: músicas mais recentes primeiro, Ver mais e álbuns maiores
+Página do álbum mais limpa
+O Sonus aprende o que você gosta (tudo fica só no seu celular)
+## Ajustes
+Fontes novas: Sora nos títulos e Urbanist no resto
+O Sonus fica igual em qualquer celular, com qualquer tamanho de tela ou de letra
+A capa do player não diminui mais em celulares com botões de navegação
+Busca de artistas só com artistas de verdade, e quem você ouve primeiro
+No artista, tudo toca em ordem aleatória
+## Correções
+Voltar de um artista ou álbum desliza sem travar
+O mini player não some mais ao abrir um artista pela busca
+Álbuns mostram o artista certo
+Capas quadradas no lugar de imagens de vídeo
+A seta de voltar aparece em qualquer capa
+Campo da busca com a fonte do Sonus

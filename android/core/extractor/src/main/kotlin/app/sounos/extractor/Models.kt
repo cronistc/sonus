@@ -56,6 +56,12 @@ data class ArtistResult(
 /** Álbum encontrado no YouTube Music. */
 data class AlbumResult(val name: String, val artist: String, val url: String, val thumbs: List<Thumb>)
 
+/** Lançamento de um artista (álbum, single ou EP), como aparece na página dele. url = playlist do álbum (abre a página). */
+data class Release(
+    val title: String, val kind: String, val year: Int?, val url: String?, val thumbs: List<Thumb>,
+    val artist: String = "", val browseId: String? = null,   // browseId: página do álbum no YouTube Music (faixas)
+)
+
 /** Página completa de um álbum, com suas faixas já no formato do player. */
 data class Album(val name: String, val artist: String, val thumbs: List<Thumb>, val items: List<Track>)
 

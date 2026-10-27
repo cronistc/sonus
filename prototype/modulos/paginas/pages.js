@@ -152,11 +152,19 @@ window.SounosPages = (() => {
     };
     el.addEventListener("pointerup", end); el.addEventListener("pointercancel", end);
   }
+  // shuffle: true = tudo embaralhado · false = em ordem · "aleatorio" = a escolhida primeiro e o resto embaralhado
+  // (com o aleatório do player ligado) · sem valor = segue o aleatório do player
   function playFrom(list, i, ctx, shuffle) {
     if (!list.length) return;
-    const activeShuffle = shuffle === true || (shuffle !== false && !!playerState().shuffle);
+    const aleatorio = shuffle === "aleatorio";
+    if (aleatorio) shuffle = undefined;
+    const activeShuffle = aleatorio || shuffle === true || (shuffle !== false && !!playerState().shuffle);
     let tracks = [...list], index = i;
-    if (shuffle === true) {
+    if (aleatorio) {
+      const escolhida = tracks[index], resto = tracks.filter((_, k) => k !== index);
+      for (let n = resto.length - 1; n > 0; n--) { const j = Math.floor(Math.random() * (n + 1)); [resto[n], resto[j]] = [resto[j], resto[n]]; }
+      tracks = [escolhida, ...resto]; index = 0;
+    } else if (shuffle === true) {
       for (let n = tracks.length - 1; n > 0; n--) { const j = Math.floor(Math.random() * (n + 1)); [tracks[n], tracks[j]] = [tracks[j], tracks[n]]; }
       index = 0;
     } else if (activeShuffle) {
@@ -165,7 +173,7 @@ window.SounosPages = (() => {
       tracks = head.concat(rest);
     }
     remember({ type: "t", track: tracks[index] });
-    const shuffleMode = shuffle === true ? true : shuffle === false ? false : null;
+    const shuffleMode = aleatorio || shuffle === true ? true : shuffle === false ? false : null;
     window.__playerShell?.prepareQueue?.(tracks, index, ctx, activeShuffle, shuffleMode);
     window.openPlayer?.();
     const request = ++playRequest;
@@ -194,10 +202,10 @@ window.SounosPages = (() => {
     }
     return { matches, playing };
   }
-  function togglePagePlayback(page, type, name, list, context) {
+  function togglePagePlayback(page, type, name, list, context, shuffle) {
     const state = syncPagePlayback(page, type, name);
     if (state.matches) return Sounos.call(state.playing ? "pause" : "play");
-    return playFrom(list, 0, context);
+    return playFrom(list, 0, context, shuffle);
   }
   const rowHtml = (t, i, extra = "", pin = false, artist = true) => `<div class="tr" data-i="${i}" data-id="${esc(t.id)}">
       <div class="cv" style="background-image:${cover(t, pin)}"></div>
@@ -395,9 +403,11 @@ window.SounosPages = (() => {
     let songs = [];
     const albumCover = (n, t) => t ? `url('${Sounos.coverUrl({ id: "album:" + (key(n) || "x"), name: n, artist, thumb: t }, false, true)}')` : `linear-gradient(135deg,${Sounos.hashColors(n).join(",")})`;
     el.innerHTML = `<div class="hero"><div class="img" style="background-image:${albumCover(name, thumb)}"></div></div>
-      <div class="ph"><div class="name"></div><div class="sub"></div></div>
-      <div class="acts"><button class="big" data-a="play" aria-label="Tocar" disabled>${I.play}</button>
-        <button class="ab" data-a="shuffle" aria-label="Aleatório">${I.shuffle}</button></div>
+      <div class="art-topo">
+        <div class="art-txt"><div class="art-linha"><div class="name"></div></div><div class="sub"></div></div>
+        <button class="ab" data-a="shuffle" aria-label="Aleatório">${I.shuffle}</button>
+        <button class="big" data-a="play" aria-label="Tocar" disabled>${I.play}</button>
+      </div>
       <div class="list"><div class="sec">Músicas</div><div class="songs">${'<div class="sk"></div>'.repeat(6)}</div></div>`;
     addBack(page);
     const $ = s => el.querySelector(s);
@@ -483,28 +493,20 @@ window.SounosPages = (() => {
     remember({ type: "a", name, thumb: artistInfo.thumb || "", url: artistInfo.url || "" });
     const page = mount("artist");
     const el = page.el;
-    let songs = [], albums = [], showAllSongs = false, artistThumb = artistInfo.thumb || "", artistCatalogSignature = "";
+    let songs = [], albums = [], mostrar = 5, artistThumb = artistInfo.thumb || "", artistCatalogSignature = "";
     const localCatalog = readArtistPageCache(name);
-    // primeiro o que já se sabe (histórico), depois o resto da rede
-    const hist = (() => {
-      try {
-        const tracks = window.__sounosHistoryTracks;
-        return (Array.isArray(tracks) ? tracks : (Sounos.call("getHistory") || []).map(e => e.track)).filter(Sounos.isSong);
-      } catch { return []; }
-    })();
-    const mine = []; hist.forEach(t => { if (key(t.artist) === key(name) && !mine.some(m => m.id === t.id)) mine.push(t); });
 
     el.innerHTML = `<div class="hero" style="background:var(--surface)"><div class="img" style="background-image:url('${photoUrl.replace(/'/g, "%27")}')"></div></div>
-      <div class="ph"><div class="name">${esc(handle(name))}</div><div class="sub">Artista</div></div>
-      <div class="acts">
+      <div class="art-topo">
+        <div class="art-txt">
+          <div class="art-linha"><div class="name">${esc(handle(name))}</div><button class="ab follow" data-a="follow" aria-label="Seguir artista"></button></div>
+        </div>
         <button class="big" data-a="play" aria-label="Tocar" disabled>${I.play}</button>
-        <button class="ab" data-a="shuffle" aria-label="Aleatório">${I.shuffle}</button>
-        <button class="ab follow" data-a="follow" aria-label="Seguir artista"></button>
       </div>
-      <div class="list">${mine.length ? `<div class="sec">Você ouviu</div>` + mine.slice(0, 5).map((t, i) => rowHtml(t, "m" + i, "", false, false)).join("") : ""}
-        <div class="albums"></div>
-        <div class="sec">Músicas</div><div class="songs">${'<div class="sk"></div>'.repeat(6)}</div>
-        <button class="all-songs" hidden></button></div>`;
+      <div class="list">
+        <div class="sec">Músicas</div><div class="songs">${'<div class="sk"></div>'.repeat(5)}</div>
+        <button class="all-songs" hidden>Ver mais</button>
+        <div class="albums"></div></div>`;
     addBack(page);
     const $ = s => el.querySelector(s);
     const followingKey = key(name);
@@ -522,22 +524,23 @@ window.SounosPages = (() => {
       const x = Number(a.dur || 0), y = Number(b.dur || 0);
       return x > 0 && y > 0 && Math.abs(x - y) <= Math.max(5, Math.max(x, y) * .03);
     };
-    const heard = mine.slice(0, 5);
+    const heard = [];                       // "Você ouviu" saiu da página: a lista é só do catálogo (mais atuais primeiro)
     const all = () => {
       const out = [...heard];
       for (const t of songs) if (!out.some(x => x.id === t.id || sameSong(x, t))) out.push(t);
       return out;
     };
-    const drawSongs = () => {
-      const shown = showAllSongs ? songs : songs.slice(0, 20);
+    // começa com as 5 mais atuais; "Ver mais" abre de 10 em 10 (as novas entram com uma subidinha)
+    const drawSongs = (antes = 0) => {
+      const shown = songs.slice(0, mostrar);
       $(".songs").innerHTML = songs.length ? shown.map((t, i) => rowHtml(t, i, "", false, false)).join("") : `<div class="note">Nenhuma música encontrada.</div>`;
-      const more = $(".all-songs");
-      more.hidden = songs.length <= 20;
-      more.textContent = showAllSongs ? "Mostrar principais" : `Ver todas · ${count(all().length)}`;
+      $(".all-songs").hidden = songs.length <= mostrar;
+      if (antes) [...$(".songs").children].slice(antes).forEach((r, i) => r.animate?.(
+        [{ opacity: 0, transform: "translateY(10px)" }, { opacity: 1, transform: "none" }],
+        { duration: 320, delay: i * 28, easing: "cubic-bezier(.2,.85,.25,1)", fill: "backwards" }));
       markNow();
     };
     paintFollow();
-    if (mine.length) $("[data-a=play]").disabled = false;
 
     const applyArtist = r => {
       if (page.closing) return;
@@ -550,8 +553,7 @@ window.SounosPages = (() => {
       artistThumb = r.thumb || artistThumb;
       $(".name").textContent = handle(String(r.name || name || "Artista").trim() || "Artista");
       const total = all().length;
-      $(".sub").textContent = total ? `Artista · ${count(total)}` : "Artista";
-      $("[data-a=play]").disabled = !(songs.length || mine.length);
+      $("[data-a=play]").disabled = !songs.length;
       drawSongs();
       if (r.isCached) {
         const metric = { name, cached: true, cacheMs: Math.round(performance.now() - intentAt), tracks: total };
@@ -608,8 +610,8 @@ window.SounosPages = (() => {
     el.addEventListener("click", e => {
       const a = e.target.closest("[data-a]")?.dataset.a;
       const ctx = { type: "artist", name };
-      if (a === "play") return togglePagePlayback(page, "artist", name, all(), ctx);
-      if (a === "shuffle") return playFrom(all(), 0, ctx, true);
+      // no artista tudo toca em aleatório (por isso não há botão de aleatório): o play embaralha o catálogo inteiro
+      if (a === "play") return togglePagePlayback(page, "artist", name, all(), ctx, true);
       if (a === "follow") {
         const list = readFollowing(), index = list.findIndex(x => x.key === followingKey);
         if (index >= 0) list.splice(index, 1);
@@ -621,11 +623,13 @@ window.SounosPages = (() => {
         window.dispatchEvent(new CustomEvent("sounos:following", { detail: list }));
         paintFollow(); return;
       }
-      if (e.target.closest(".all-songs")) { showAllSongs = !showAllSongs; return drawSongs(); }
+      if (e.target.closest(".all-songs")) { const antes = mostrar; mostrar += 10; return drawSongs(antes); }
       const album = e.target.closest("[data-album]"); if (album) { const x = albums[+album.dataset.album]; return openAlbum(x.url, x.name, x.artist, x.thumb); }
       const row = e.target.closest(".tr"); if (!row) return;
-      const i = row.dataset.i;
-      if (String(i).startsWith("m")) playFrom(mine, +i.slice(1), ctx); else playFrom(songs, +i, ctx);
+      // a música tocada vem primeiro; depois o resto do catálogo do artista, embaralhado
+      const t = songs[+row.dataset.i];
+      const lista = [t, ...all().filter(x => x.id !== t.id)];
+      playFrom(lista, 0, ctx, "aleatorio");
     });
     markNow();
     return page;

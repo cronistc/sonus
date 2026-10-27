@@ -1,0 +1,50 @@
+/* Módulo Mini player — aparência. Ver MODULO.md */
+/* Mini-player fixo embaixo: abre o player completo */
+.mini { position: absolute; left: 10px; right: 10px; bottom: 12px; height: 64px; border-radius: 14px;
+        background: var(--mini-bg); display: flex; flex-direction: column;
+        box-shadow: 0 10px 30px rgba(0,0,0,.5); cursor: pointer; overflow: hidden; }
+.mini .mrow { height: 64px; flex-shrink: 0; display: flex; align-items: center; gap: 12px; padding: 0 8px; }
+.mini .add-btn { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; margin-right: 2px;
+            color: var(--text-dim); transition: background .3s, color .3s; }
+.mini .add-btn svg { width: 22px; height: 22px; fill: currentColor; }
+.mini .add-btn[hidden] { display: none; }
+.mini .cv { width: 48px; height: 48px; border-radius: 8px; flex-shrink: 0; display: grid; place-items: center;
+            font-weight: 700; font-size: 20px; color: rgba(255,255,255,.85);
+            background: linear-gradient(135deg, var(--c1), var(--c2) 60%, var(--c3)); }
+.mini .tx { flex: 1; min-width: 0; align-self: stretch; display: flex; flex-direction: column; justify-content: center; }
+.mini { touch-action: none; }
+.mini .cv { position: relative; overflow: hidden; transition: transform .12s; }
+/* itens que viajam entre o mini-player e o player */
+.mini .cv { view-transition-name: cover; }
+#miniPrev { view-transition-name: btn-prev; }
+#miniPP { view-transition-name: btn-play; }
+#miniNext { view-transition-name: btn-next; }
+#miniT { view-transition-name: track-title; width: fit-content; max-width: 100%; }
+#miniA { view-transition-name: track-artist; width: fit-content; max-width: 100%; }
+.mini.dragging { transition: none; }
+.mini .t { font-size: calc(var(--fs) * (14px)); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mini .a { font-size: calc(var(--fs) * (12px)); color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.native .mini:not(.has-track) { display: none; }      /* no app: sem música, sem mini-player */
+.mini .ctrl { display: flex; align-items: center; gap: 2px; }
+.mini .sk { width: 36px; height: 44px; display: grid; place-items: center; }
+.mini .sk svg { width: 21px; height: 21px; stroke-width: 2.5; }
+.mini .sk:active { transform: scale(.9); }
+/* mesmo botão multifunção do player, em tamanho menor */
+.mini .pp { width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; flex-shrink: 0;
+            background: var(--text); color: var(--bg); touch-action: none; user-select: none; transition: transform .1s; }
+.mini .pp:active { transform: scale(.92); }
+.mini .pp .icon { display: flex; align-items: center; justify-content: center; }
+.mini .pp svg { width: 22px; height: 22px; stroke-width: 2.5; }
+.mini .pp .combo svg { width: 15px; height: 15px; stroke-width: 3; }
+.mini .pp .slash { font-size: 13px; opacity: .3; margin: 0 1px; }
+/* largura cheia + scaleX: mesmo desenho, mas anda sem refazer o layout a cada quadro */
+.mini .bar { position: absolute; left: 0; bottom: 0; height: 3px; width: 100%; transform: scaleX(0); transform-origin: left; transition: height .2s;
+             background: linear-gradient(90deg, var(--c1), var(--c2), var(--c3)); }
+/* a transição de transform só existe no scrub: tocando, a barra anda 1 pixel por vez (imperceptível) e uma transição
+   contínua mantinha o compositor desenhando a cada vsync (~120 quadros/s) o tempo todo */
+.mini.scrub .bar { transition: height .2s, transform .12s linear; }
+/* modo scrub: segurar o play e arrastar para o lado */
+.mini .time { display: none; font-size: calc(var(--fs) * (20px)); font-weight: 800; font-variant-numeric: tabular-nums; }
+.mini.scrub .time { display: block; }
+.mini.scrub .t, .mini.scrub .a { display: none; }
+.mini.scrub .bar { height: 6px; }

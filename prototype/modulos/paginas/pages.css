@@ -7,9 +7,10 @@
 .pg.closing { transform: translateX(100%); transition-duration: .3s; }
 .pg.dragging { transition: none; }
 .pg .pg-back { position: fixed; z-index: 5; top: 8px; left: 12px; width: 42px; height: 42px; border-radius: 14px;
-               display: grid; place-items: center; color: var(--text); background: rgba(0,0,0,.3); backdrop-filter: blur(12px);
+               display: grid; place-items: center; color: #fff; background: rgba(0,0,0,.42); backdrop-filter: blur(12px);
+               box-shadow: 0 2px 12px rgba(0,0,0,.28), inset 0 0 0 1px rgba(255,255,255,.14);   /* visível em capa clara ou escura */
                -webkit-tap-highlight-color: transparent; }
-.pg .pg-back:active { background: var(--chip); }
+.pg .pg-back:active { background: rgba(0,0,0,.6); }
 .pg .pg-back svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .phone.has-page .mini { z-index: 57; }        /* com página aberta, o mini-player continua por cima dela */
 
@@ -93,3 +94,26 @@
 .pg .sk { height: 50px; margin: 7px 8px; border-radius: 10px; background: var(--chip-soft); animation: pgPulse 1.1s ease-in-out infinite alternate; }
 html.page-hidden .pg .sk, .pg:not(.open) .sk, .phone.overlay-open .pg .sk { animation-play-state: paused; }
 @keyframes pgPulse { to { opacity: .4; } }
+
+/* Páginas de artista e de álbum: a imagem fica limpa (nada por cima, sem degradê); embaixo dela, o nome
+   (artista: com "Seguir" ao lado · álbum: com "artista · N músicas" embaixo); play à direita (álbum: aleatório à esquerda dele) */
+.pg.artist .hero::after, .pg.album .hero::after { display: none; }
+.pg.artist .art-topo, .pg.album .art-topo { display: flex; align-items: center; gap: 6px; padding: 16px 20px 6px; }
+.pg.artist .art-txt, .pg.album .art-txt { flex: 1; min-width: 0; }
+.pg.artist .art-linha, .pg.album .art-linha { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; }
+.pg.artist .art-linha .name, .pg.album .art-linha .name { text-shadow: none; font-size: calc(var(--fs) * (26px)); min-width: 0; }
+.pg.artist .art-linha .follow { min-width: 0; height: 30px; padding: 0 10px 0 8px; gap: 5px; border-radius: 15px;
+                                font-size: calc(var(--fs) * 12px); }
+.pg.artist .art-linha .follow svg { width: 15px; height: 15px; }
+.pg.artist .art-topo .sub, .pg.album .art-topo .sub { margin-top: 4px; }
+.pg.artist .art-topo .big, .pg.album .art-topo .big { flex-shrink: 0; }
+
+/* álbum: na lista, só nome, artista e ⋮ (a capa é a do próprio álbum, já lá em cima) */
+.pg.album .tr .cv { display: none; }
+/* artista: álbuns no fim, maiores */
+.pg.artist .albums .s-album { width: 150px; }
+.pg.artist .albums .s-album .pic { width: 150px; height: 150px; }
+.pg.artist .albums .s-album .n { font-size: calc(var(--fs) * (13px)); }
+.pg.artist .albums .s-album .a { font-size: calc(var(--fs) * (12px)); }
+/* artista: o nome em cima e o "Seguir/Seguindo" logo abaixo dele */
+.pg.artist .art-linha { flex-direction: column; align-items: flex-start; gap: 8px; }

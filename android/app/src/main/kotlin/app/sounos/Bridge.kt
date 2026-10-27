@@ -121,6 +121,8 @@ class Bridge(
             "getNotificationPermission" -> JSONObject().put("granted", notificationPermissionGranted()).toString()
             "getOffline" -> JSONObject().put("offline", !player.isOnline).toString()
             "getMineTracks" -> mineTracks().toString()
+            // só as baixadas (rápido): a tela inicial online não precisa conferir o cache no disco a cada desenho
+            "getDownloadedTracks" -> JSONObject().put("downloaded", Json.tracks(downloadedTracks())).toString()
             "getCoverArtistKeys" -> JSONObject().put("keys", JSONArray(if (BuildConfig.DEBUG) app.covers.knownArtistKeys() else emptyList<String>())).toString()
             "saveData" -> {
                 val key = a.optString("key")
@@ -173,7 +175,21 @@ class Bridge(
             }
             "searchArtists" -> cachedAsync(a, "searchArtists", a.getString("q")) {
                 JSONObject().put("items", JSONArray().apply {
-                    app.source.searchArtists(a.getString("q")) { android.util.Log.i("Sonus", it) }.take(8).forEach { r ->
+                    // entre artistas do mesmo nível de nome, quem a pessoa mais ouve vem antes (motor de entendimento)
+                    val afinidade = app.motor.afinidadeArtistas(app.library.history())
+                    val q = a.getString("q")
+                    val achados = app.source.searchArtists(q, { android.util.Log.i("Sonus", it) }) { afinidade[it]?.second ?: 0.0 }
+                    // artistas que a pessoa já ouve e cujo nome começa com o que foi digitado vêm primeiro,
+                    // mesmo que o YouTube Music não os traga para essas letras (ex.: "en" → Enygma)
+                    val chave = CoverStore.artistKey(q)
+                    val jaOuve = if (chave.isBlank()) emptyList() else afinidade.values
+                        .filter { (nome, _) -> nome.lowercase().split(Regex("[\\s&,/-]+")).any { CoverStore.artistKey(it).startsWith(chave) } || CoverStore.artistKey(nome).startsWith(chave) }
+                        // nomes de canal do YouTube que ficaram no histórico ("DjavanOficial", "X VEVO", "X - Topic") não são artistas
+                        .filterNot { (nome, _) -> Regex("(?i)(oficial|official|vevo|\\s-\\stopic)$").containsMatchIn(nome.trim()) }
+                        .sortedByDescending { it.second }.take(3)
+                        .filter { (nome, _) -> achados.none { CoverStore.artistKey(it.name) == CoverStore.artistKey(nome) } }
+                    jaOuve.forEach { (nome, _) -> put(JSONObject().put("name", nome).put("url", JSONObject.NULL).put("thumb", JSONObject.NULL)) }
+                    achados.take(8 - jaOuve.size).forEach { r ->
                         put(JSONObject().put("name", r.name).put("url", r.url)
                             .put("thumb", r.thumbs.maxByOrNull { it.width * it.height }?.url ?: JSONObject.NULL))
                     }
@@ -225,6 +241,24 @@ class Bridge(
                 JSONObject().put("name", photo?.name ?: name).put("url", photo?.channelUrl ?: artistUrl ?: JSONObject.NULL)
                     .put("thumb", photo?.url ?: JSONObject.NULL)
                     .put("items", Json.tracks(unique)).put("total", unique.size)
+            }
+            // Novidades (tela inicial): lançamentos recentes pesados pelo gosto (motor), com as músicas para tocar.
+            "novidades" -> async(a) {
+                val seg = a.optJSONArray("seguidos") ?: JSONArray()
+                app.motor.novidades(app.source, (0 until seg.length()).mapNotNull { i ->
+                    seg.optJSONObject(i)?.let { o -> o.optString("name").takeIf(String::isNotBlank)?.let { it to o.optString("url").takeIf(String::isNotBlank) } }
+                }, app.library.history())
+            }
+            // Lançamentos recentes de um artista.
+            "artistReleases" -> cachedAsync(a, "artistReleases", a.getString("name")) {
+                val name = a.getString("name")
+                JSONObject().put("items", JSONArray().apply {
+                    app.source.artistReleases(name, a.optString("url").takeIf { it.isNotBlank() }) { android.util.Log.i("Sonus", it) }.forEach { r ->
+                        put(JSONObject().put("title", r.title).put("kind", r.kind).put("year", r.year ?: JSONObject.NULL)
+                            .put("url", r.url ?: JSONObject.NULL).put("artist", name)
+                            .put("thumb", r.thumbs.maxByOrNull { it.width * it.height }?.url ?: JSONObject.NULL))
+                    }
+                })
             }
             "suggest" -> cachedAsync(a, "suggest", a.getString("q")) { JSONObject().put("items", JSONArray(app.source.suggestions(a.getString("q")).take(6))) }
             "prefetch" -> app.resolver.prefetch(Json.tracks(a.optJSONArray("tracks")))
@@ -288,6 +322,10 @@ class Bridge(
         }
     }
 
+    private fun downloadedTracks(): List<app.sounos.extractor.Track> = app.library.downloadedMeta().keys().asSequence().mapNotNull { id ->
+        app.library.downloadedTrack(id)?.takeIf { app.library.isDownloaded(id) }
+    }.distinctBy { it.id }.toList()
+
     private fun mineTracks(): JSONObject {
         val known = linkedMapOf<String, app.sounos.extractor.Track>()
         app.library.cachedTracks().forEach { (id, track) -> known[id] = track }
@@ -299,9 +337,7 @@ class Bridge(
                 }
             }
         }
-        val downloaded = app.library.downloadedMeta().keys().asSequence().mapNotNull { id ->
-            app.library.downloadedTrack(id)?.takeIf { app.library.isDownloaded(id) }
-        }.distinctBy { it.id }.toList()
+        val downloaded = downloadedTracks()
         val downloadedIds = downloaded.map { it.id }.toSet()
         val cached = known.values.filter { app.audio.isFreshComplete(it.id) && it.id !in downloadedIds }.distinctBy { it.id }
         app.library.pruneCached(known.values.filter { app.audio.isFreshComplete(it.id) }.map { it.id }.toSet())
