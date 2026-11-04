@@ -145,6 +145,8 @@ class Bridge(
             "getLyrics" -> onMain { player.lyricsJson().toString() }
             "getProgress" -> onMain { player.progress().toString() }
             "getHistory" -> app.library.history().toString()
+            // a tela conta o que a pessoa fez (buscou, escolheu, abriu artista/álbum/playlist/letra) para o diário do motor
+            "registrar" -> { a.optString("tipo").takeIf { it in TIPOS_DA_TELA }?.let { app.motor.acao(it, a.optJSONObject("dados") ?: JSONObject()) }; "{}" }
             // correções de metadados para playlists e buscas recentes (só manda a lista quando ela mudou)
             "trackFixes" -> app.library.fixesRev().let { rev ->
                 JSONObject().put("rev", rev).apply { if (a.optInt("rev", -1) != rev) put("fixes", app.library.fixes()) }.toString()
@@ -160,7 +162,9 @@ class Bridge(
             "saveData" -> {
                 val key = a.optString("key")
                 val value = a.optString("value")
+                val antes = if (key == "sounos.following" || key == "sounos.playlists") app.userData.load(key) else null
                 val saved = app.userData.save(key, value)
+                if (saved && (key == "sounos.following" || key == "sounos.playlists")) app.io.launch { app.motor.dadosMudaram(key, antes, value) }
                 if (saved && key == "sounos.playlists") app.io.launch {
                     val migration = app.reconcilePinnedCovers(value)
                     val trim = app.cacheBudget.trim()
@@ -210,7 +214,36 @@ class Bridge(
         }
     }
 
+    /** Ações da pessoa no player e nas músicas, para o diário do motor (só no celular). Antes de executar: o estado é o de antes. */
+    private fun anotarComando(m: String, a: JSONObject) = runCatching {
+        fun faixa(o: JSONObject?) = JSONObject().apply { o?.let { put("musica", it.optString("id")).put("titulo", it.optString("title")).put("artista", it.optString("artist")) } }
+        fun origem() = a.optJSONObject("context")?.let { c -> JSONObject().apply { c.keys().forEach { k -> c.opt(k).takeIf { it is String || it is Number || it is Boolean }?.let { put(k, it) } } } }
+        val pos = player.positionMs()
+        when (m) {
+            "playQueue" -> a.optJSONArray("tracks")?.let { t -> app.motor.acao("tocar", faixa(t.optJSONObject(a.optInt("index"))).put("origem", origem()).put("posicaoNaLista", a.optInt("index")).put("tamanhoDaLista", t.length())) }
+            "playSingle" -> app.motor.acao("tocar", faixa(a.optJSONObject("track")).put("origem", origem()))
+            "playIndex" -> app.motor.acao("tocarDaFila", JSONObject().put("posicaoNaFila", a.optInt("index")))
+            "playSuggestion" -> app.motor.acao("tocarSugestao", faixa(a.optJSONObject("track")))
+            "toggle" -> app.motor.acao(if (player.isPlaying) "pausar" else "continuar", JSONObject().put("posMs", pos))
+            "play" -> app.motor.acao("continuar", JSONObject().put("posMs", pos))
+            "pause" -> app.motor.acao("pausar", JSONObject().put("posMs", pos))
+            "next" -> app.motor.acao("avancar", JSONObject().put("posMs", pos))
+            "prev" -> app.motor.acao("voltar", JSONObject().put("posMs", pos))
+            "seek" -> app.motor.acao("posicao", JSONObject().put("deMs", pos).put("paraMs", (a.optDouble("sec") * 1000).toLong()))
+            "setRepeat" -> app.motor.acao("repetir", JSONObject().put("modo", a.optString("mode")))
+            "setShuffle" -> app.motor.acao("aleatorio", JSONObject().put("ligado", a.optBoolean("on")))
+            "move" -> app.motor.acao("fila", JSONObject().put("de", a.optInt("from")).put("para", a.optInt("to")))
+            "download" -> app.motor.acao("baixar", faixa(a.optJSONObject("track")))
+            "removeDownload" -> app.motor.acao("apagarDownload", JSONObject().put("musica", a.optString("id")))
+            "compartilhar", "compartilharImagem" -> app.motor.acao("compartilhou", JSONObject().put("como", m))
+            "copiarTexto" -> app.motor.acao("copiouTexto")
+            "salvarImagem" -> app.motor.acao("salvouImagem")
+            else -> Unit
+        }
+    }.onFailure { android.util.Log.w("Sonus", "diário: comando $m", it) }
+
     private fun command(m: String, a: JSONObject) {
+        anotarComando(m, a)
         when (m) {
             "search" -> cachedAsync(a, "search", a.getString("q")) {
                 val q = a.getString("q")
@@ -261,6 +294,8 @@ class Bridge(
             }
             // artistas parecidos com o artista pesquisado, para completar a fileira de Artistas da busca;
             // quem a pessoa já ouve sobe (motor de entendimento), o resto fica na ordem do YouTube Music
+            // tudo o que o motor guardou + os comportamentos que ele identifica (só leitura; nada sai do celular)
+            "getPerfil" -> async(a) { app.motor.perfilCompleto() }
             "relatedArtists" -> cachedAsync(a, "relatedArtists", a.getString("url")) {
                 val afinidade = app.motor.afinidadeArtistas(app.library.history())
                 JSONObject().put("items", JSONArray().apply {
@@ -668,5 +703,9 @@ class Bridge(
         main.post { runCatching { out = block() }; latch.countDown() }
         latch.await(2, TimeUnit.SECONDS)
         return out
+    }
+
+    private companion object {
+        val TIPOS_DA_TELA = setOf("buscar", "escolheuNaBusca", "abriuArtista", "abriuAlbum", "abriuPlaylist", "abriuLetra", "fechouLetra")
     }
 }

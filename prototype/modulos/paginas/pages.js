@@ -285,6 +285,7 @@ window.SounosPages = (() => {
     if (!virtual && voltarPara("playlist:" + id)) return stack.find(p => p.chave === "playlist:" + id);
     const page = mount("playlist");
     if (!virtual) page.chave = "playlist:" + id;
+    Sounos.call("registrar", { tipo: "abriuPlaylist", dados: { playlist: String(id) } });
     const el = page.el;
     const downloadTracks = () => {
       try {
@@ -497,6 +498,7 @@ window.SounosPages = (() => {
     if (voltarPara(chave)) return stack.find(p => p.chave === chave);
     const page = mount("album");
     page.chave = chave;
+    Sounos.call("registrar", { tipo: "abriuAlbum", dados: { album: name || "", artista: artist || "" } });
     const el = page.el;
     let songs = [];
     const albumCover = (n, t) => t ? `url('${Sounos.coverUrl({ id: "album:" + (key(n) || "x"), name: n, artist, thumb: t }, false, true)}')` : `linear-gradient(135deg,${Sounos.hashColors(n).join(",")})`;
@@ -590,6 +592,7 @@ window.SounosPages = (() => {
     if (voltarPara("artist:" + key(name))) return stack.find(p => p.chave === "artist:" + key(name));
     const page = mount("artist");
     page.chave = "artist:" + key(name);
+    Sounos.call("registrar", { tipo: "abriuArtista", dados: { artista: name } });          // diário do motor (só no celular)
     page.el.dataset.artista = name;                // o nome dele, nesta página, não vira link (o tratador de toque ignora)
     const el = page.el;
     let songs = [], albums = [], mostrar = 5, artistThumb = artistInfo.thumb || "", artistCatalogSignature = "";

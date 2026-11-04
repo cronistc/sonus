@@ -776,6 +776,7 @@ $("lyricsBtn").onclick = () => {
   else if (!lyricsMode && immersiveByLyrics) { immersiveByLyrics = false; setImmersive(false); }
   $("phone").classList.toggle("lyr-mode", lyricsMode);
   $("lyricsBtn").classList.toggle("on", lyricsMode);
+  try { window.Sounos?.call?.("registrar", { tipo: lyricsMode ? "abriuLetra" : "fechouLetra" }); } catch {}   // diário do motor
   if (lyricsMode) setTimeout(() => { if (lyricsMode) window.SounosTips?.offer("lyrics"); }, 700);
   if (lyricsMode) {
     lastLine = -1;

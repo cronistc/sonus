@@ -45,10 +45,45 @@ class Motor(private val dir: File, private val io: CoroutineScope, private val h
     private var ultimaPos = 0L
     private var ultimaDur = 0L
     private val atualFile = File(dir, "atual.json")
+    /** O que aconteceu durante a escuta atual (pausas, barra arrastada, letra aberta…), junto da escuta no diário. */
+    private var extras = JSONObject()
+
+    /** Tudo o que a pessoa faz, linha a linha, só no celular (ver Diario). */
+    val diario = Diario(File(dir, "diario"), io)
+
+    /** Uma ação da pessoa (vinda da ponte ou da tela): vai para o diário e conta na escuta em andamento. */
+    fun acao(tipo: String, dados: JSONObject = JSONObject()) {
+        atual?.first?.let { t -> if (!dados.has("musica")) dados.put("tocando", t.id) }        // o que tocava naquela hora
+        diario.anotar(tipo, dados)
+        val campo = when (tipo) { "pausar" -> "pausas"; "posicao" -> "arrastou"; "abriuLetra" -> "letra"; "compartilhou" -> "compartilhou"
+            "adicionouNaPlaylist" -> "playlist"; "baixar" -> "baixou"; else -> null } ?: return
+        if (atual != null && (campo != "playlist" && campo != "baixou" || dados.optString("musica") == atual?.first?.id)) extras.put(campo, extras.optInt(campo) + 1)
+    }
+
+    /** Estado do player no começo da escuta (aleatório, repetir, saída de som, rede, se estava baixada). */
+    fun estadoDaEscuta(dados: JSONObject) { dados.keys().forEach { extras.put(it, dados.get(it)) } }
+
+    // ---------- sessões (app aberto → fechado) ----------
+    private var abertoEm = 0L
+    fun abriuApp() {
+        if (abertoEm > 0) return
+        abertoEm = System.currentTimeMillis(); diario.anotar("abriuApp")
+    }
+    fun fechouApp() {
+        if (abertoEm == 0L) return
+        val ms = System.currentTimeMillis() - abertoEm; abertoEm = 0
+        diario.anotar("fechouApp", JSONObject().put("durMs", ms))
+        io.launch { lock.withLock { runCatching {
+            val p = carregar(); val se = p.optJSONObject("sessoes") ?: JSONObject().also { p.put("sessoes", it) }
+            se.put("quantas", se.optLong("quantas") + 1).put("somaMs", se.optLong("somaMs") + ms)
+            gravarPerfil(p)
+        } } }
+    }
 
     fun comecou(t: Track, contexto: JSONObject) {
         if (atual?.first?.id == t.id) return                     // mesma música (retomada depois de pausar/reabrir)
         atual = t to contexto; ultimaPos = 0; ultimaDur = t.durationSec * 1000
+        extras = JSONObject().put("comecouEm", System.currentTimeMillis())
         guardarAtual()
     }
 
@@ -65,7 +100,7 @@ class Motor(private val dir: File, private val io: CoroutineScope, private val h
             runCatching {
                 dir.mkdirs()
                 atualFile.writeText(JSONObject().put("track", app.sounos.data.Json.track(t)).put("contexto", ctx)
-                    .put("pos", ultimaPos).put("dur", ultimaDur).toString())
+                    .put("pos", ultimaPos).put("dur", ultimaDur).put("extras", extras).toString())
             }
         }
     }
@@ -75,7 +110,7 @@ class Motor(private val dir: File, private val io: CoroutineScope, private val h
         val salvo = runCatching { JSONObject(atualFile.readText()) }.getOrNull() ?: return
         val t = runCatching { app.sounos.data.Json.track(salvo.getJSONObject("track")) }.getOrNull() ?: return
         atual = t to (salvo.optJSONObject("contexto") ?: JSONObject())
-        ultimaPos = salvo.optLong("pos"); ultimaDur = salvo.optLong("dur")
+        ultimaPos = salvo.optLong("pos"); ultimaDur = salvo.optLong("dur"); extras = salvo.optJSONObject("extras") ?: JSONObject()
         if (restaurada?.id != t.id) terminou(ultimaPos, ultimaDur, "saiu")
     }
 
@@ -89,6 +124,7 @@ class Motor(private val dir: File, private val io: CoroutineScope, private val h
     /** Fecha a escuta atual: posMs = até onde tocou, durMs = duração, fim = como terminou. */
     fun terminou(posMs: Long, durMs: Long, fim: String) {
         val (t, ctx) = atual ?: return
+        val ex = extras; extras = JSONObject()
         atual = null
         guardarAtual()
         if (fim == "erro") return
@@ -97,9 +133,15 @@ class Motor(private val dir: File, private val io: CoroutineScope, private val h
         val e = JSONObject().put("at", System.currentTimeMillis()).put("id", t.id).put("titulo", t.title).put("artista", t.artist)
             .put("artistas", JSONArray(t.artists)).put("durMs", dur).put("ouviuMs", ouviu).put("fim", fim)
             .put("contexto", ctx.optString("type"))
+        // de onde veio (nome da playlist/álbum/artista…: só os valores simples do contexto) e o que aconteceu durante ela
+        val origem = JSONObject(); ctx.keys().forEach { k -> ctx.opt(k).takeIf { it is String || it is Number || it is Boolean }?.let { origem.put(k, it) } }
+        e.put("origem", origem)
+        ex.keys().forEach { k -> e.put(k, ex.get(k)) }
+        if (fim == "pulou" && ouviu < PULO_CEDO_MS) e.put("pulouCedo", true)
         io.launch {
             val generos = runCatching { generos(t) }.getOrDefault(emptyList())
             e.put("generos", JSONArray(generos))
+            diario.anotar("escuta", e, e.getLong("at"))
             lock.withLock {
                 runCatching { anotar(e) }.onFailure { android.util.Log.w("Sonus", "motor: falha ao guardar escuta", it) }
             }
@@ -119,7 +161,14 @@ class Motor(private val dir: File, private val io: CoroutineScope, private val h
         when (e.getString("fim")) {
             "completa" -> inc("completas"); "pulou" -> inc("puladas"); "voltou" -> inc("voltou"); "trocou" -> inc("trocou"); "saiu" -> inc("saiu")
         }
+        if (e.optBoolean("pulouCedo")) inc("pulouCedo")
         x.put("ultima", e.getLong("at"))
+        // em que horas a pessoa ouve isto (0–23) e as últimas 50 vezes em que tocou
+        val c = Calendar.getInstance().apply { timeInMillis = e.getLong("at") }
+        val horas = x.optJSONObject("horas") ?: JSONObject().also { x.put("horas", it) }
+        val h = c.get(Calendar.HOUR_OF_DAY).toString(); horas.put(h, horas.optLong(h) + 1)
+        val quando = x.optJSONArray("quando") ?: JSONArray().also { x.put("quando", it) }
+        quando.put(e.getLong("at")); while (quando.length() > 50) quando.remove(0)
     }
 
     private fun anotar(e: JSONObject) {
@@ -130,6 +179,14 @@ class Motor(private val dir: File, private val io: CoroutineScope, private val h
         // 2) as somas
         val p = carregar()
         p.put("escutas", p.optLong("escutas") + 1)
+        // geral: quantas escutas por hora do dia e por dia da semana
+        val c = Calendar.getInstance().apply { timeInMillis = e.getLong("at") }
+        for ((nome, v) in listOf("horas" to c.get(Calendar.HOUR_OF_DAY), "dias" to c.get(Calendar.DAY_OF_WEEK))) {
+            val o = p.optJSONObject(nome) ?: JSONObject().also { p.put(nome, it) }
+            o.put(v.toString(), o.optLong(v.toString()) + 1)
+        }
+        val fins = p.optJSONObject("fins") ?: JSONObject().also { p.put("fins", it) }
+        fins.put(e.getString("fim"), fins.optLong(e.getString("fim")) + 1)
         val musicas = p.getJSONObject("musicas")
         soma(musicas, e.getString("id"), e.getString("titulo"), e)
         musicas.getJSONObject(e.getString("id")).put("artista", e.getString("artista")).put("durMs", e.getLong("durMs"))
@@ -152,8 +209,10 @@ class Motor(private val dir: File, private val io: CoroutineScope, private val h
             val velhas = musicas.keys().asSequence().toList().sortedBy { musicas.getJSONObject(it).optLong("ultima") }.take(musicas.length() - 3000)
             velhas.forEach(musicas::remove)
         }
-        File(dir, "perfil.json.tmp").apply { writeText(p.toString()) }.renameTo(perfilFile)
+        gravarPerfil(p)
     }
+
+    private fun gravarPerfil(p: JSONObject) { dir.mkdirs(); File(dir, "perfil.json.tmp").apply { writeText(p.toString()) }.renameTo(perfilFile) }
 
     // ---------- gênero (Deezer: busca a música → álbum → gêneros do álbum), uma vez por música ----------
     private suspend fun generos(t: Track): List<String> {
@@ -382,4 +441,140 @@ class Motor(private val dir: File, private val io: CoroutineScope, private val h
         return base
     }
 
+
+    // ---------- uma vez só: escutas de antes do diário (escutas.jsonl) entram nas contas novas ----------
+    /**
+     * Horários, dias, como terminou, "pulou cedo" e as últimas vezes de cada música passaram a ser contados em 04/11/2026;
+     * as escutas guardadas desde antes já têm data e fim: são recontadas uma vez (sem somar de novo o que já estava
+     * somado: tocou, completas, tempo ouvido) e copiadas para o diário, para ele ter a história inteira.
+     */
+    fun importarAntigas() = io.launch {
+        lock.withLock {
+            runCatching {
+                val p = carregar()
+                if (p.optBoolean("importouAntigas")) return@withLock
+                val linhas = listOf(File(dir, "escutas.1.jsonl"), escutasFile).filter { it.exists() }
+                    .flatMap { f -> f.readLines().mapNotNull { runCatching { JSONObject(it) }.getOrNull() } }.sortedBy { it.optLong("at") }
+                    .let { todas ->
+                        // as que já passaram pelas contas novas (estão no diário) não entram de novo
+                        val jaContadas = File(dir, "diario").listFiles { f -> f.name.endsWith(".jsonl") && !f.name.startsWith("0000") }.orEmpty()
+                            .flatMap { f -> f.readLines().filter { "\"tipo\":\"escuta\"" in it }.mapNotNull { runCatching { JSONObject(it).optLong("at") }.getOrNull() } }.toSet()
+                        todas.filter { it.optLong("at") !in jaContadas }
+                    }
+                val c = Calendar.getInstance()
+                fun soma(grupo: String, chave: String, e: JSONObject) {
+                    val x = p.optJSONObject(grupo)?.optJSONObject(chave) ?: return
+                    c.timeInMillis = e.getLong("at")
+                    val horas = x.optJSONObject("horas") ?: JSONObject().also { x.put("horas", it) }
+                    val h = c.get(Calendar.HOUR_OF_DAY).toString(); horas.put(h, horas.optLong(h) + 1)
+                    val quando = x.optJSONArray("quando") ?: JSONArray().also { x.put("quando", it) }
+                    quando.put(e.getLong("at")); while (quando.length() > 50) quando.remove(0)
+                    if (e.optString("fim") == "pulou" && e.optLong("ouviuMs") < PULO_CEDO_MS) x.put("pulouCedo", x.optLong("pulouCedo") + 1)
+                }
+                val diarioLinhas = StringBuilder()
+                linhas.forEach { e ->
+                    c.timeInMillis = e.getLong("at")
+                    for ((nome, v) in listOf("horas" to c.get(Calendar.HOUR_OF_DAY), "dias" to c.get(Calendar.DAY_OF_WEEK))) {
+                        val o = p.optJSONObject(nome) ?: JSONObject().also { p.put(nome, it) }
+                        o.put(v.toString(), o.optLong(v.toString()) + 1)
+                    }
+                    val fins = p.optJSONObject("fins") ?: JSONObject().also { p.put("fins", it) }
+                    fins.put(e.optString("fim"), fins.optLong(e.optString("fim")) + 1)
+                    soma("musicas", e.optString("id"), e)
+                    e.optJSONArray("artistas")?.let { a -> for (i in 0 until a.length()) soma("artistas", CoverStore.artistKey(a.optString(i)), e) }
+                    e.optJSONArray("generos")?.let { a -> for (i in 0 until a.length()) soma("generos", a.optString(i).lowercase(), e) }
+                    if (e.optString("fim") == "pulou" && e.optLong("ouviuMs") < PULO_CEDO_MS) e.put("pulouCedo", true)
+                    diarioLinhas.append(JSONObject(e.toString()).put("hora", c.get(Calendar.HOUR_OF_DAY)).put("dia", c.get(Calendar.DAY_OF_WEEK))
+                        .put("tipo", "escuta").put("importada", true).toString()).append('\n')
+                }
+                // vão para um arquivo à parte no diário (o mês delas pode ser o atual: não mistura com o que já foi anotado)
+                if (linhas.isNotEmpty()) File(dir, "diario").apply { mkdirs() }.let { File(it, "0000-antes.jsonl").writeText(diarioLinhas.toString()) }
+                p.put("importouAntigas", true)
+                gravarPerfil(p)
+                android.util.Log.i("Sonus", "motor: ${linhas.size} escutas antigas recontadas")
+            }.onFailure { android.util.Log.w("Sonus", "motor: falha ao recontar escutas antigas", it) }
+        }
+    }
+
+    // ---------- o que mudou nos dados da pessoa (playlists, artistas seguidos): vira linha no diário ----------
+    fun dadosMudaram(key: String, antes: String?, depois: String) {
+        runCatching {
+            when (key) {
+                "sounos.following" -> {
+                    fun nomes(v: String?) = runCatching { JSONArray(v ?: "[]") }.getOrDefault(JSONArray()).let { a ->
+                        (0 until a.length()).mapNotNull { i -> a.opt(i).let { it as? String ?: (it as? JSONObject)?.optString("name") }?.takeIf(String::isNotBlank) } }.toSet()
+                    val a = nomes(antes); val d = nomes(depois)
+                    (d - a).forEach { acao("seguiu", JSONObject().put("artista", it)) }
+                    (a - d).forEach { acao("deixouDeSeguir", JSONObject().put("artista", it)) }
+                }
+                "sounos.playlists" -> {
+                    fun lista(v: String?) = runCatching { JSONArray(v ?: "[]") }.getOrDefault(JSONArray()).let { a ->
+                        (0 until a.length()).mapNotNull { a.optJSONObject(it) }.associateBy { it.optString("id") } }
+                    fun faixas(p: JSONObject?) = p?.optJSONArray("tracks")?.let { t -> (0 until t.length()).associate { i ->
+                        val x = t.opt(i); (if (x is JSONObject) x.optString("id") else x.toString()) to x } }.orEmpty()
+                    val a = lista(antes); val d = lista(depois)
+                    (d.keys - a.keys).forEach { acao("playlistCriada", JSONObject().put("playlist", d[it]?.optString("name"))) }
+                    (a.keys - d.keys).forEach { acao("playlistApagada", JSONObject().put("playlist", a[it]?.optString("name"))) }
+                    (d.keys intersect a.keys).forEach { id ->
+                        val n = d[id]!!.optString("name")
+                        if (a[id]!!.optString("name") != n) acao("playlistRenomeada", JSONObject().put("de", a[id]!!.optString("name")).put("para", n))
+                        val fa = faixas(a[id]); val fd = faixas(d[id])
+                        (fd.keys - fa.keys).forEach { tid -> acao("adicionouNaPlaylist", resumo(fd[tid]).put("playlist", n).put("musica", tid)) }
+                        (fa.keys - fd.keys).forEach { tid -> acao("tirouDaPlaylist", resumo(fa[tid]).put("playlist", n).put("musica", tid)) }
+                    }
+                    (d.keys - a.keys).forEach { id -> faixas(d[id]).forEach { (tid, x) -> acao("adicionouNaPlaylist", resumo(x).put("playlist", d[id]?.optString("name")).put("musica", tid)) } }
+                }
+            }
+        }.onFailure { android.util.Log.w("Sonus", "diário: diferença de $key falhou", it) }
+    }
+
+    private fun resumo(x: Any?) = JSONObject().apply {
+        (x as? JSONObject)?.let { put("titulo", it.optString("title")).put("artista", it.optString("artist")) }
+    }
+
+    // ---------- métricas e comportamentos (por enquanto só calculados e guardados; nada no app usa ainda) ----------
+    /**
+     * Retrato do uso, recalculado sob demanda: quando ouve, quanto pula, sessões, músicas do momento, esquecidas e
+     * rejeitadas, artistas em alta. Só descreve — não é regra de recomendação (essas o dono define antes).
+     */
+    suspend fun comportamentos(): JSONObject {
+        val p = lock.withLock { JSONObject(carregar().toString()) }
+        val agora = System.currentTimeMillis(); val dia = 86_400_000L
+        val musicas = p.optJSONObject("musicas") ?: JSONObject()
+        val lista = musicas.keys().asSequence().map { it to musicas.getJSONObject(it) }.toList()
+        fun vezesDesde(o: JSONObject, desde: Long) = o.optJSONArray("quando")?.let { q -> (0 until q.length()).count { q.optLong(it) >= desde } } ?: 0
+        fun topo(o: JSONObject?, n: Int) = JSONArray((o ?: JSONObject()).let { x -> x.keys().asSequence().map { it to x.optLong(it) }.sortedByDescending { it.second }.take(n).map { it.first.toInt() }.toList() })
+        val fins = p.optJSONObject("fins") ?: JSONObject(); val total = p.optLong("escutas").coerceAtLeast(1)
+        val se = p.optJSONObject("sessoes") ?: JSONObject()
+        fun item(id: String, o: JSONObject) = JSONObject().put("id", id).put("titulo", o.optString("nome")).put("artista", o.optString("artista"))
+        val artistasRecentes = HashMap<String, Int>()
+        lista.forEach { (_, o) -> val v = vezesDesde(o, agora - 14 * dia); if (v > 0) artistasRecentes.merge(o.optString("artista"), v, Int::plus) }
+        return JSONObject()
+            .put("escutas", p.optLong("escutas"))
+            .put("horasPreferidas", topo(p.optJSONObject("horas"), 3))          // 0–23
+            .put("diasPreferidos", topo(p.optJSONObject("dias"), 2))             // 1=domingo…7=sábado
+            .put("taxaCompletas", fins.optLong("completa").toDouble() / total)
+            .put("taxaPulos", fins.optLong("pulou").toDouble() / total)
+            .put("sessaoMediaMin", if (se.optLong("quantas") > 0) se.optLong("somaMs") / se.optLong("quantas") / 60000.0 else 0.0)
+            .put("duracaoPreferidaMs", p.optJSONObject("duracao")?.optLong("mediaMs") ?: 0)
+            // muito ouvidas nos últimos 14 dias
+            .put("doMomento", JSONArray(lista.map { it to vezesDesde(it.second, agora - 14 * dia) }.filter { it.second >= 3 }
+                .sortedByDescending { it.second }.take(20).map { (x, v) -> item(x.first, x.second).put("vezes", v) }))
+            // ouvia bastante e parou há mais de 30 dias
+            .put("esquecidas", JSONArray(lista.filter { (_, o) -> o.optLong("tocou") >= 5 && agora - o.optLong("ultima") > 30 * dia }
+                .sortedByDescending { it.second.optLong("tocou") }.take(20).map { (id, o) -> item(id, o).put("vezes", o.optLong("tocou")) }))
+            // pulada cedo (menos de 30 s) 2+ vezes e nunca ouvida até o fim
+            .put("rejeitadas", JSONArray(lista.filter { (_, o) -> o.optLong("pulouCedo") >= 2 && o.optLong("completas") == 0L }
+                .take(50).map { (id, o) -> item(id, o).put("pulos", o.optLong("pulouCedo")) }))
+            // ouvidas até o fim sempre (5+ vezes, nenhum pulo)
+            .put("favoritasDeVerdade", JSONArray(lista.filter { (_, o) -> o.optLong("completas") >= 5 && o.optLong("puladas") == 0L }
+                .sortedByDescending { it.second.optLong("completas") }.take(30).map { (id, o) -> item(id, o).put("vezes", o.optLong("completas")) }))
+            .put("artistasEmAlta", JSONArray(artistasRecentes.entries.sortedByDescending { it.value }.take(10).map { JSONObject().put("artista", it.key).put("vezes", it.value) }))
+    }
+
+    /** Tudo o que o motor guarda, para consulta (ponte "getPerfil"): somas + comportamentos. */
+    suspend fun perfilCompleto(): JSONObject = JSONObject().put("perfil", lock.withLock { JSONObject(carregar().toString()) })
+        .put("comportamentos", comportamentos())
+
+    private companion object { const val PULO_CEDO_MS = 30_000L }
 }

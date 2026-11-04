@@ -202,12 +202,28 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
     /** Como a música atual vai terminar quando a próxima começar (para o motor de entendimento). */
     private var fimPendente = "trocou"
 
+    /** Como a escuta começou (para o diário do motor): aleatório, repetir, por onde sai o som, rede, se estava baixada. */
+    private fun anotarEstado(t: Track) = runCatching {
+        val am = app.getSystemService(android.media.AudioManager::class.java)
+        val tipos = am.getDevices(android.media.AudioManager.GET_DEVICES_OUTPUTS).map { it.type }.toSet()
+        val saida = when {
+            tipos.any { it == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP || it == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_SCO } -> "bluetooth"
+            tipos.any { it == android.media.AudioDeviceInfo.TYPE_WIRED_HEADPHONES || it == android.media.AudioDeviceInfo.TYPE_WIRED_HEADSET || it == android.media.AudioDeviceInfo.TYPE_USB_HEADSET } -> "fone"
+            else -> "altoFalante"
+        }
+        val cm = app.getSystemService(android.net.ConnectivityManager::class.java)
+        val rede = when { cm.activeNetwork == null -> "semRede"; cm.isActiveNetworkMetered -> "dados"; else -> "wifi" }
+        app.motor.estadoDaEscuta(JSONObject().put("aleatorio", shuffle).put("repetir", repeat.name.lowercase())
+            .put("saida", saida).put("rede", rede).put("baixada", app.library.downloadedMeta().has(t.id))
+            .put("volume", am.getStreamVolume(android.media.AudioManager.STREAM_MUSIC).toDouble() / am.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC).coerceAtLeast(1)))
+    }
+
     /** afterError: a faixa não carregou — pula de verdade, mesmo com "repetir uma" (repetir uma faixa quebrada travava o player). */
     fun next(auto: Boolean = false, afterError: Boolean = false) {
         if (index < 0) return
         fimPendente = when { afterError -> "erro"; auto -> "completa"; else -> "pulou" }
         if (auto && repeat == Repeat.ONE && !afterError) {
-            app.motor.terminou(durationMs, durationMs, "completa"); currentTrack?.let { app.motor.comecou(it, context) }
+            app.motor.terminou(durationMs, durationMs, "completa"); currentTrack?.let { app.motor.comecou(it, context); anotarEstado(it) }
             engine.seekTo(0); engine.play(); return
         }
         when {
@@ -377,7 +393,7 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
                 engine.load(source, startMs, playWhenReady = playWhenReady, knownGainDb = app.library.gain(t.id))
                 val ctx = JSONObject(context.toString())
                 grava { app.library.addHistory(track, ctx) }
-                app.motor.comecou(track, context)
+                app.motor.comecou(track, context); anotarEstado(track)
                 launch(Dispatchers.IO) {                                   // capa (fica guardada) + cores do fundo
                     runCatching {
                         app.covers.get(track, pin = app.library.isDownloaded(track.id), large = true) { android.util.Log.i("Sonus", "cover $it") }

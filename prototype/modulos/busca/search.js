@@ -367,6 +367,7 @@
       q = q.trim(); if (!q) return showRecent();
       input.value = q; bar.classList.add("has-text");
       remember({ type: "q", text: q });
+      Sounos.call("registrar", { tipo: "buscar", dados: { q } });                        // diário do motor (só no celular)
       input.blur();
       showResults(q);
     }
@@ -375,6 +376,9 @@
       if (q) remember({ type: "q", text: q });
     }
     function pick(type, id) {
+      const escolha = type === "nt" ? resultTracks[+id] && { musica: resultTracks[+id].id, titulo: resultTracks[+id].title, artista: resultTracks[+id].artist }
+        : type === "na" ? resultArtists[+id] && { artista: resultArtists[+id].name } : type === "nal" ? resultAlbums[+id] && { album: resultAlbums[+id].name, artista: resultAlbums[+id].artist } : null;
+      if (escolha) Sounos.call("registrar", { tipo: "escolheuNaBusca", dados: { ...escolha, oque: { nt: "musica", na: "artista", nal: "album" }[type], posicao: +id, q: input.value.trim() } });
       if (type === "nt") return playTrack(resultTracks[+id]);
       if (type === "na") {
         const a = resultArtists[+id]; if (!a) return;

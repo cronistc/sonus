@@ -225,6 +225,7 @@ class MainActivity : Activity() {
         super.onPause()
         SounosApp.instance.player.saveSession()
         SounosApp.instance.updater.foreground = false
+        SounosApp.instance.motor.fechouApp()                       // diário: quanto tempo o app ficou aberto na tela
     }
     override fun onResume() {
         super.onResume()
@@ -233,6 +234,7 @@ class MainActivity : Activity() {
         web.evaluateJavascript("window.__sounosPageActive?.(true)", null)
         web.evaluateJavascript("window.dispatchEvent(new Event('sounos:resume'))", null)
         SounosApp.instance.updater.run { foreground = true; maybeCheck() }
+        SounosApp.instance.motor.abriuApp()
     }
 
     override fun onDestroy() {

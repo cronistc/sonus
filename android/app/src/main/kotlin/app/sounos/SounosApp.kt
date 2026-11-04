@@ -67,6 +67,7 @@ class SounosApp : Application() {
         }
         lyrics = Lyrics(File(filesDir, "lyrics"), Sounos.http)
         motor = app.sounos.motor.Motor(File(filesDir, "motor"), io, Sounos.http)     // motor de entendimento: aprende o uso, no celular
+        motor.importarAntigas()                                    // uma vez: escutas de antes contam nos horários/comportamentos
         player = PlayerController(this)
         // a sessão restaurada não emite estado: cria a MediaSession já pausada, para o play do fone/carro funcionar ao abrir
         runCatching { app.sounos.player.MediaSessionHolder.sync(this) }

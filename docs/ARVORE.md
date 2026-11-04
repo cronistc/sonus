@@ -240,7 +240,7 @@ following, artistPageCache, tips, tipsVersion, boasVindas`.
 | `files/downloads/` | músicas baixadas |
 | `files/covers/` | capas fixadas (baixadas e playlists) |
 | `files/lyrics/`, `files/userdata/`, `files/backups/`, `files/update/` | letras; espelho do localStorage; cópias dos prefs; APK novo |
-| `files/motor/` | `escutas.jsonl` (gira em 2 MB → `.1`), `perfil.json` (somas), `atual.json` (escuta em andamento) |
+| `files/motor/` | `diario/AAAA-MM.jsonl` (tudo o que a pessoa faz, um arquivo por mês, até 200 MB; `0000-antes.jsonl` = escutas de antes de 04/11/2026), `escutas.jsonl` (gira em 2 MB → `.1`), `perfil.json` (somas, horários, sessões), `atual.json` (escuta em andamento) |
 | `cache/audio/` | músicas ouvidas (até 6 GB; no A54 em 27/10: ~1,3 GB) |
 | `cache/covers/`, `cache/metadata/`, `cache/cores2/` + `files/cores2/` | capas de navegação; respostas da rede; cores das capas |
 | `files/userdata/sounos.updAviso.json` | **resto de versão antiga** (nenhum código lê mais) |
@@ -360,7 +360,7 @@ Medido: 1ª abertura do player depois de iniciar o app ~10 quadros de 33–75 ms
 Ganchos no `PlayerController`: `startCurrent → trocando(id, pos, dur, fimPendente)`, carregou → `comecou`,
 a cada 10 s tocando e em `saveSession` → `marcar`, ao abrir → `retomar`, `next` grava `fimPendente`
 (`completa | pulou | erro`), `prev` grava `voltou`; o resto é `trocou`; app fechado no meio = `saiu`.
-Cada escuta vai para `escutas.jsonl` e soma em `perfil.json` (música, artista, gênero do Deezer, faixas de duração).
+Cada escuta vai para `escutas.jsonl` e para o diário, e soma em `perfil.json` (música, artista, gênero do Deezer, faixas de duração, horas do dia, dias da semana, últimas 50 vezes, pulos cedo). O diário (`motor/Diario.kt`) guarda também cada ação: tocar, pausar, pular, arrastar a barra, aleatório/repetir, busca e o que foi escolhido nela, páginas e letra abertas, playlists, seguir, baixar, compartilhar, abrir/fechar o app. Ponte `registrar` (tela → diário) e `getPerfil` (somas + comportamentos).
 `pontos = minutos ouvidos + 2×completas − 1,5×puladas`. Usado em: Novidades e ordem da busca de artistas.
 **Regra do dono:** não acrescentar regra de recomendação sem combinar.
 
