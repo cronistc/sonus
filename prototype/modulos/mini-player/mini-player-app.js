@@ -12,7 +12,17 @@
     document.querySelector(".scroll").animate([
       { transform: "none" }, { transform: "translateY(-10px) scale(.97)", offset: .4 }, { transform: "none" }], o);
   }
-  function applyState(st) {
+  // Player aberto por cima: a tela inicial está escondida. O que só ela mostra (cores, mini player, blocos do Início)
+  // espera o player começar a descer (home-native chama __homeEmDia). Refazer isso a cada estado de cada troca de
+  // música recalculava a tela inicial inteira junto com o player — parte dos engasgos ao trocar.
+  let atrasado = false;
+  window.__homeEmDia = () => { if (atrasado && A.S) { atrasado = false; applyState(A.S, true); } };
+  function applyState(st, agora = false) {
+    if (!agora && window.__playerOpen && stateSeen && $("mini").classList.contains("has-track") && st.current) {
+      A.S = st; playing = !!st.playing; shuffle = st.shuffle; repeat = st.repeat;
+      pos = (st.positionMs || 0) / 1000; last = performance.now();
+      atrasado = true; return;
+    }
     const before = shownId;
     A.S = st; const S = st;
     const t = cur();
@@ -30,8 +40,8 @@
     fitHome();                             // blocos se reajustam à nova altura disponível
     if (appeared) miniRise();
     if (!t) return;
-    (st.colors || []).forEach((c, k) => root.setProperty(`--c${k + 1}`, c));
-    window.SounosSyncSystemBars?.();
+    SounosCores.aplicar(st.colors || []);
+    window.SounosSyncSystemBars?.(false);   // só avisa o app se a cor mudou (cada troca de música manda vários estados)
     if (before !== t.id) { shownId = t.id; resetMiniBar(); loadMini(); if (before) SonusInicio.render(); }
     if (homeCanAnimate()) drawMiniProgress();   // barra já na posição nova (não espera o próximo ciclo do relógio)
     SounosTips?.offer("mini");
@@ -41,7 +51,7 @@
     $("miniIni").textContent = "";
     $("miniCv").style.background = bg(t);
     $("miniT").textContent = t.title;
-    $("miniA").textContent = Sounos.handle(Sounos.artistLine(t));
+    $("miniA").innerHTML = Sounos.artistHtml(t);   // cada nome abre a página do artista
     if (!miniFirst) {
       swapIn($("miniCv"), { opacity: .3, transform: "scale(.85)" });
       swapIn($("miniT"), { opacity: 0, transform: "translateX(12px)" });

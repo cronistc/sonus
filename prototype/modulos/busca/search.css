@@ -33,33 +33,41 @@
 .sbar input::-webkit-search-cancel-button { display: none; }
 
 /* Conteúdo (recentes / sugestões / resultados) */
-.sbody { position: absolute; left: 0; right: 0; top: 66px; bottom: 0; overflow-y: auto; scrollbar-width: none;
-         padding: 4px 0 40px; opacity: 0; transform: translateY(10px);
+.sbody { position: absolute; left: 0; right: 0; top: calc(66px + var(--sb-topo)); bottom: 0; overflow-y: auto; scrollbar-width: none;
+         padding: 4px 0 calc(var(--mini-h, 0px) + 40px + var(--sb-base)); opacity: 0; transform: translateY(10px);   /* a lista rola até acima do mini-player */
          transition: opacity .28s ease, transform .28s ease; }
 .sbody::-webkit-scrollbar { display: none; }
 .search-ov.open .sbody { opacity: 1; transform: none; transition-delay: .16s; }
 
 .spanel > * { animation: sIn .32s cubic-bezier(.2,.85,.25,1) both; animation-delay: calc(var(--k, 0) * 22ms); }
+/* resultados: entrada um pouco mais calma (respiro + passo maior) — as capinhas chegam enquanto a lista entra */
+.spanel.res > * { animation-duration: .42s; animation-delay: calc(90ms + var(--k, 0) * 35ms); }
 .spanel.still > * { animation: none; }          /* mesma tela atualizando (cada letra digitada): sem reanimar */
 @keyframes sIn { from { opacity: 0; transform: translateY(6px); } }
 
 .s-head { display: flex; align-items: baseline; justify-content: space-between; padding: 10px 20px 8px; }
 .s-head h3 { font-size: calc(var(--fs) * (16px)); font-weight: 700; }
 .s-head button { font-size: calc(var(--fs) * (13px)); font-weight: 500; color: var(--text-dim, #a1a1aa); background: none; border: 0; cursor: pointer; }
+.s-head button { position: relative; }
+.s-head button::after { content: ""; position: absolute; inset: -14px -10px; }   /* toque >= 44px */
 
 .s-row { display: flex; align-items: center; gap: 12px; width: 100%; padding: 8px 20px; background: none; border: 0;
          color: var(--text, #f5f5f7); text-align: left; cursor: pointer; font: inherit; }
 .s-row:active { background: var(--chip-soft, rgba(255,255,255,.05)); }
-.s-row .ic { width: 44px; height: 44px; flex-shrink: 0; border-radius: 8px; display: grid; place-items: center;
+.s-row .ic { width: 48px; height: 48px; flex-shrink: 0; border-radius: 8px; display: grid; place-items: center;
              font-weight: 700; font-size: 18px; color: rgba(255,255,255,.85); background: var(--s-surface); }
 .s-row .ic.round { border-radius: 50%; }
-.s-row .ic svg { width: 20px; height: 20px; fill: none; stroke: var(--text-dim, #a1a1aa); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.s-row .ic.mos { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; overflow: hidden; }   /* playlist no histórico: mosaico 2x2 */
+.s-row .ic.mos i { background-size: cover; background-position: center; }
+.s-row .ic svg { width: 20px; height: 20px; fill: none; stroke: var(--icon-dim, #d6d6dc); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
 .s-row .tx { flex: 1; min-width: 0; }
 .s-row .t { font-size: calc(var(--fs) * (15px)); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .s-row .t b { font-weight: 700; }
 .s-row .t .typed { color: var(--text-dim, #a1a1aa); font-weight: 500; }
-.s-row .a { font-size: calc(var(--fs) * (12.5px)); color: var(--text-dim, #a1a1aa); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
-.s-row .x, .s-row .fill { width: 36px; height: 36px; display: grid; place-items: center; color: var(--text-dim, #a1a1aa); flex-shrink: 0; }
+.s-row .a { font-size: calc(var(--fs) * (13px)); color: var(--text-dim, #a1a1aa); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
+.s-row .x, .s-row .fill { width: 36px; height: 36px; display: grid; place-items: center; color: var(--icon-dim, #d6d6dc); flex-shrink: 0; }
+.s-row .x, .s-row .fill { position: relative; }
+.s-row .x::after, .s-row .fill::after { content: ""; position: absolute; inset: -6px -8px -6px -4px; }   /* toque 48px */
 .s-row .x svg, .s-row .fill svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
 .s-row.sug .ic { width: 36px; height: 36px; }
 .s-row.sug { padding-top: 6px; padding-bottom: 6px; }
@@ -73,7 +81,12 @@
 .s-best .cv { width: 88px; height: 88px; border-radius: 10px; flex-shrink: 0; display: grid; place-items: center;
               font-size: 34px; font-weight: 700; color: rgba(255,255,255,.85); }
 .s-best .cv.round { border-radius: 50%; }
-.s-best > div:last-child { flex: 1; min-width: 0; }
+.s-best > .s-best-tx { flex: 1; min-width: 0; }
+.s-best .tr-more { align-self: center; margin-right: -8px; }
+/* "Ver mais" das músicas (mesmo desenho do da página do artista) */
+.s-mais { display: block; margin: 8px auto 14px; min-height: 42px; padding: 0 18px; border: 1px solid var(--line-strong);
+          border-radius: 22px; color: var(--text); font-size: calc(var(--fs) * 14px); font-weight: 600; text-align: center; }
+.s-mais:active { background: var(--chip); }
 .s-best .t { font-size: calc(var(--fs) * (20px)); font-weight: 700; }
 .s-best .a { font-size: calc(var(--fs) * (13px)); color: var(--text-dim, #a1a1aa); margin-top: 4px; }
 .s-best .t, .s-best .a { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

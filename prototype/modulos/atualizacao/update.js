@@ -85,6 +85,12 @@ window.SounosUpdate = (() => {
       $(".upd-notes").innerHTML = notes.length
         ? `<h3>${has ? "O que há de novo" : "Nesta versão"}</h3>${meta ? `<div class="meta">${esc(meta)}</div>` : ""}${notesHtml(notes)}`
         : (meta ? `<div class="meta">${esc(meta)}</div>` : "");
+      // novidade desta versão: o widget, opcional, direto daqui (só se ainda não há nenhum na tela inicial)
+      if (!has && window.Sounos?.native && !Sounos.call("temWidget")?.tem) {
+        $(".upd-notes").insertAdjacentHTML("beforeend", `<button class="set-row upd-widget" type="button" style="margin-top:16px;border-radius:16px;background:var(--surface-2, rgba(255,255,255,.07))"><div class="tx"><div class="t">Widget na tela inicial</div>
+          <div class="d">Opcional. A música tocando e os controles; toque no A para ver a letra.</div></div><span class="pill">Adicionar</span></button>`);
+        $(".upd-notes .upd-widget").onclick = e => { if (Sounos.call("adicionarWidget", { tipo: "completo" })?.ok) e.currentTarget.querySelector(".pill").textContent = "Pedido"; };
+      }
       const btn = $(".upd-btn");
       btn.hidden = !has && u.status !== "error";          // na versão mais recente: só a mensagem e as novidades
       btn.querySelector("span").textContent = {

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- textos dos widgets na lista de widgets do celular -->
+<resources>
+    <string name="widget_barra">Barra: capa, nome e controles</string>
+    <string name="widget_capa">Capa: a capa da música com o botão de tocar</string>
+    <string name="widget_completo">Completo: capa grande e controles grandes</string>
+</resources>

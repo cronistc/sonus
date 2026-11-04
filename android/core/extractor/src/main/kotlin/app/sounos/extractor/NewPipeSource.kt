@@ -3,6 +3,8 @@ package app.sounos.extractor
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import org.schabi.newpipe.extractor.playlist.PlaylistInfo
@@ -31,14 +33,14 @@ class NewPipeSource(private val service: StreamingService = ServiceList.YouTube)
             if (page == null) {
                 val info = SearchInfo.getInfo(service, handler)
                 SearchPage(
-                    items = info.relatedItems.mapNotNull(::toTrack).sortedBy { if (MusicPicks.isJunk(it, query = query)) 1 else 0 },
+                    items = musicas(info.relatedItems.mapNotNull(::toTrack)).sortedBy { if (MusicPicks.isJunk(it, query = query)) 1 else 0 },
                     nextPage = info.nextPage,
                     serviceSuggestion = info.searchSuggestion?.takeIf { it.isNotBlank() },
                     corrected = info.isCorrectedSearch,
                 )
             } else {
                 val more = SearchInfo.getMoreItems(service, handler, page)
-                SearchPage(more.items.mapNotNull(::toTrack), more.nextPage, null, false)
+                SearchPage(musicas(more.items.mapNotNull(::toTrack)), more.nextPage, null, false)
             }
         }
 
@@ -56,7 +58,7 @@ class NewPipeSource(private val service: StreamingService = ServiceList.YouTube)
             val k = CoverStore.artistKey(a.name)
             val nomes = a.name.lowercase().split(Regex("[\\s&,/-]+")).map(CoverStore::artistKey)
             return when {
-                q.isNotBlank() && k == q -> 0
+                q.isNotBlank() && (k == q || CoverStore.mesmoNome(a.name, query)) -> 0
                 q.isNotBlank() && k.startsWith(q) -> 1
                 palavras.isNotEmpty() && palavras.all { p -> nomes.any { it.startsWith(p) } } -> 2
                 q.isNotBlank() && k.contains(q) -> 3
@@ -126,7 +128,7 @@ class NewPipeSource(private val service: StreamingService = ServiceList.YouTube)
             name = albumName(info.name),
             artist = artista ?: info.uploaderName ?: "",
             thumbs = albumThumbs(info.thumbnails.map(::toThumb)),
-            items = ytm.ifEmpty { info.relatedItems.mapNotNull(::toTrack) },
+            items = musicas(ytm.ifEmpty { info.relatedItems.mapNotNull(::toTrack) }),
         )
     }
 
@@ -160,8 +162,9 @@ class NewPipeSource(private val service: StreamingService = ServiceList.YouTube)
         )
         // reserva imediata: "relacionados" do vídeo, só os que são MÚSICA (canais "Topic" do YouTube Music)
         val related = info.relatedItems.filterIsInstance<StreamInfoItem>().filter(::isSong).mapNotNull(::toTrack)
-        // o rádio quase sempre já chegou junto; se não, a música começa sem esperar e o rádio entra depois
-        val quick = radioJob?.let { withTimeoutOrNull(300) { it.await() } }
+        // o rádio quase sempre já chegou junto; se não, a música começa SEM esperar (antes esperava até 300 ms) e o rádio entra depois
+        @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+        val quick = radioJob?.takeIf { it.isCompleted }?.getCompleted()
         val later = if (quick == null && radioJob != null)
             CoroutineScope(Dispatchers.IO).async { radioJob.await()?.takeIf { it.isNotEmpty() }?.let { MusicPicks.clean(it, exclude = listOf(track)) } }
         else null
@@ -174,6 +177,39 @@ class NewPipeSource(private val service: StreamingService = ServiceList.YouTube)
         val loc = org.schabi.newpipe.extractor.NewPipe.getPreferredLocalization()
         val gl = org.schabi.newpipe.extractor.NewPipe.getPreferredContentCountry().countryCode
         ytm.track(videoId, loc.languageCode, gl)
+    }
+
+    /** Parece clipe/vídeo? Música do YouTube Music tem capa quadrada (ou imagem do googleusercontent); vídeo só a miniatura 16:9. */
+    private fun pareceVideo(t: Track) = t.thumbs.isNotEmpty() && t.thumbs.none { (it.width > 0 && kotlin.math.abs(it.width - it.height) <= 2) ||
+        it.url.contains("googleusercontent.com") || it.url.contains("ggpht.com") }
+
+    // videoId → a faixa que vale (a versão em música, ou ela mesma quando não existe); só guarda resposta de verdade (falha de rede não)
+    private val versoes = java.util.concurrent.ConcurrentHashMap<String, Track>()
+    private val capaDaMusica by lazy { CapaDaMusica(Sounos.http) }
+
+    /** Clipe (OMV/UGC) → a mesma faixa em versão música (ATV: contraparte do YouTube Music, ou busca com mesmo título-base, artista e ±4 s). */
+    private suspend fun musica(t: Track): Track {
+        val id = t.videoId ?: return t
+        versoes[id]?.let { return it }
+        val r = withTimeoutOrNull(4_000) { runCatching { capaDaMusica.resolver(t) }.getOrNull() } ?: return t
+        val achada = r.videoId?.takeIf { !r.musica && it != id }
+            ?.let { runCatching { ytm.track(it) }.getOrNull() }
+            // o título e o artista da versão em música valem; se vierem vazios, fica o clipe
+            ?.takeIf { it.title.isNotBlank() && it.artist.isNotBlank() }
+        val final = achada ?: t
+        versoes[id] = final
+        return final
+    }
+
+    /** Troca por música os itens que são clipe, no máximo 4 consultas ao mesmo tempo; sem repetir a música que já estava na lista. */
+    private suspend fun musicas(list: List<Track>): List<Track> {
+        if (list.none(::pareceVideo)) return list
+        val sem = Semaphore(4)
+        // teto de 8 s no total: o que não deu tempo fica como veio (o que já foi conferido fica guardado para a próxima)
+        val novos = withTimeoutOrNull(8_000) {
+            kotlinx.coroutines.coroutineScope { list.map { t -> async { if (pareceVideo(t)) sem.withPermit { musica(t) } else t } }.map { it.await() } }
+        } ?: list.map { t -> t.videoId?.let { versoes[it] } ?: t }
+        return novos.distinctBy { it.id }
     }
 
     private fun isSong(s: StreamInfoItem) = s.uploaderName.orEmpty().endsWith(" - Topic", ignoreCase = true)
@@ -198,11 +234,56 @@ class NewPipeSource(private val service: StreamingService = ServiceList.YouTube)
     private suspend fun artistChannel(query: String, knownUrl: String?, trace: (String) -> Unit): String? =
         knownUrl?.let(::channelId)
             ?: searchArtistsAll(query, trace).asSequence()
-                .filter { CoverStore.artistKey(it.name) == CoverStore.artistKey(query) }
+                .filter { CoverStore.mesmoNome(it.name, query) }
                 .maxWithOrNull(compareBy<ArtistResult> { it.verified }.thenBy { it.subscriberCount.coerceAtLeast(0) })
                 ?.url?.let(::channelId)?.takeIf { it.isNotBlank() }
 
     private fun channelId(url: String): String? = Regex("UC[A-Za-z0-9_-]{22}").find(url)?.value
+
+    /**
+     * A mesma música de um link de outro app ([LinkDeMusica]): busca só músicas "artista título" e fica com a que tem o
+     * título-base igual ([CapaDaMusica.chaveTitulo]) e o mesmo artista; com duração conhecida, a mais próxima (±6 s).
+     * Sem nenhuma exata, aceita título que contém o outro (ex.: "(feat. …)") do mesmo artista.
+     */
+    suspend fun encontrar(p: LinkDeMusica.Pedido): Track? = withContext(Dispatchers.IO) {
+        // link de um clipe: vale a versão em música dele, se houver (o clipe só se não existir)
+        p.videoId?.let { id -> return@withContext runCatching { current(id)?.let { musica(it) } }.getOrNull() }
+        if (p.titulo.isBlank()) return@withContext null
+        // o nome cru de cada resultado guarda o "(Ao Vivo)" que o toTrack tira do título
+        val crus = HashMap<String, String>()
+        val itens = runCatching {
+            val handler = service.searchQHFactory.fromQuery("${p.artista} ${p.titulo}".trim(), listOf(SearchFilter.SONGS.youtube), "")
+            musicas(SearchInfo.getInfo(service, handler).relatedItems.mapNotNull { i -> toTrack(i)?.also { crus[it.id] = i.name.orEmpty() } })
+        }.getOrDefault(emptyList())
+        val chave = CapaDaMusica.chaveTitulo(p.titulo)
+        val artista = CoverStore.artistKey(p.artista)
+        fun mesmoArtista(t: Track) = artista.isBlank() || (t.artists + t.artist).any { a ->
+            val k = CoverStore.artistKey(a); k == artista || (k.length > 3 && artista.contains(k)) || (artista.length > 3 && k.contains(artista)) }
+        fun duracaoOk(t: Track) = p.durSec <= 0 || t.durationSec <= 0 || kotlin.math.abs(t.durationSec - p.durSec) <= 6
+        // ao vivo / acústico pedidos: a versão igual vem antes (a chave do título ignora "(Ao Vivo)")
+        val versao = Regex("(?i)ao vivo|\\blive\\b|ac[uú]stic").find(p.titulo)?.value?.lowercase()
+        val exatas = itens.filter { CapaDaMusica.chaveTitulo(it.title) == chave && mesmoArtista(it) }
+            .sortedBy { t -> val nome = crus[t.id] ?: t.title
+                if (versao != null && Regex("(?i)ao vivo|\\blive\\b|ac[uú]stic").containsMatchIn(nome)) 0 else if (versao == null && Regex("(?i)ao vivo|\\blive\\b").containsMatchIn(nome)) 2 else 1 }
+        exatas.firstOrNull(::duracaoOk) ?: exatas.firstOrNull()
+            ?: itens.firstOrNull { t -> val k = CapaDaMusica.chaveTitulo(t.title); (k.contains(chave) || chave.contains(k)) && k.isNotBlank() && mesmoArtista(t) && duracaoOk(t) }
+    }
+
+    /** Canal do YouTube de um link (/@nome, /c/…, /channel/UC…): nome do artista (sem " - Topic") e endereço com o id UC. */
+    suspend fun canal(url: String): Pair<String, String>? = withContext(Dispatchers.IO) {
+        runCatching { org.schabi.newpipe.extractor.channel.ChannelInfo.getInfo(service, url) }.getOrNull()?.let { c ->
+            TitleNormalizer.cleanArtist(c.name.orEmpty()).ifBlank { null }?.let { it to "https://www.youtube.com/channel/${c.id}" }
+        }
+    }
+
+    /** O álbum de um link de outro app: o primeiro álbum com o mesmo nome-base e o mesmo artista. */
+    suspend fun encontrarAlbum(p: LinkDeMusica.Pedido): AlbumResult? {
+        if (p.titulo.isBlank()) return null
+        val chave = CapaDaMusica.chaveTitulo(p.titulo); val artista = CoverStore.artistKey(p.artista)
+        val albuns = runCatching { searchAlbums("${p.artista} ${p.titulo}".trim()) }.getOrDefault(emptyList())
+        return albuns.firstOrNull { CapaDaMusica.chaveTitulo(it.name) == chave && (artista.isBlank() || CoverStore.artistKey(it.artist).let { k -> k == artista || artista.contains(k) || k.contains(artista) }) }
+            ?: albuns.firstOrNull { CapaDaMusica.chaveTitulo(it.name).let { k -> k.contains(chave) || chave.contains(k) } }
+    }
 
     /** Rádio do YouTube Music a partir de uma música (a mesma lista que o app oficial toca em seguida). */
     // Só músicas (com capa quadrada): rádio do YouTube Music; se ele falhar, o mix do YouTube filtrado para músicas.

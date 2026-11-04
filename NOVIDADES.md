@@ -1,5 +1,34 @@
 # Novidades do Sonus
 
+## Sunshine Beta 1.3 (0.1.1.3) — 27/10/2026
+
+**Baixar:** [Sonus.apk](https://raw.githubusercontent.com/cronistc/sonus/updates/Sonus.apk) · [página do Sonus](https://cronistc.github.io)
+
+### Novidades
+- Compartilhar a letra como imagem: escolha até 6 linhas e um dos seis modelos (Capa viva, Clave, Onda, Capa cheia, Ingresso, Fita)
+- Compartilhar artista, álbum e playlist como imagem, com as cores da capa
+- Links do Sonus: quem tem o app abre direto nele; quem não tem vê a música e pode baixar o Sonus
+- Mande sua playlist por link: quem recebe salva uma cópia no Sonus
+- Abra playlists do Spotify, Deezer, Apple Music e YouTube Music pelo link (até 100 músicas)
+- Widgets para a tela inicial: Barra, Capa e Completo, com a cor da música
+- Letra no widget: toque no A e a letra acompanha a música na tela inicial
+- O volume das músicas fica sempre igual, sem uma mais alta que a outra
+- A próxima música começa mais rápido
+### Ajustes
+- O play das páginas de artista, álbum e playlist também troca para aleatório (arraste para baixo)
+- Páginas com o nome numa linha só e o botão de compartilhar
+- O app ocupa a tela inteira, até atrás das barras do celular
+- Dicas mais calmas: uma por vez, só quando você abre a tela dela
+- O player ficou mais leve e a capa não pisca mais ao trocar de música
+### Correções
+- Limpar o cache não apaga mais as músicas que tocam sem internet
+- Clipes não entram mais na fila do artista, só a música
+- O botão voltar com o menu ⋮ aberto fecha só o menu
+- Dois toques rápidos no − da playlist não apagam duas músicas
+- A capa aparece logo na notificação e na tela de bloqueio
+- A letra aparece mesmo com a música pausada ao abrir o app
+- Nomes de artista com símbolos não quebram mais a tela
+
 ## Sunshine Beta 1.1 (0.1.1.1) — 26/10/2026
 
 **Baixar:** [Sonus.apk](https://raw.githubusercontent.com/cronistc/sonus/updates/Sonus.apk)

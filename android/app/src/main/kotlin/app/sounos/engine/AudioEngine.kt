@@ -48,13 +48,38 @@ class AudioEngine(private val callbacks: Callbacks) {
     @Volatile var normalize: Boolean = true
     /** "Pular silêncio": corta o silêncio do começo e do fim da música. */
     @Volatile var skipSilence: Boolean = true
+    /** Ganho de partida para música ainda não medida (o típico das músicas da pessoa; ver Loudness). */
+    @Volatile var palpiteGanho: Float = 0f
     @Volatile var duckVolume: Float = 1f
         set(v) { field = v; session?.setVolume(v) }
 
     fun load(source: Source, startMs: Long, playWhenReady: Boolean, knownGainDb: Float?) {
+        // a próxima já aquecida (mesmo arquivo, do começo, mesmo volume): só solta o play — troca na hora
+        val a = aquecida; aquecida = null
+        if (a != null && startMs == 0L && source is Source.LocalFile && a.serve(source, knownGainDb)) {
+            session?.finish()
+            session = a
+            a.setVolume(duckVolume)
+            a.ativar(playWhenReady)
+            return
+        }
+        a?.finish()
         session?.finish()
         session = Session(source, startMs * 1000, playWhenReady, knownGainDb).also { it.start() }
     }
+
+    // ---------- próxima música aquecida ----------
+    // Enquanto a atual toca, a próxima (já inteira no celular) fica aberta: decodificador ligado, silêncio do começo
+    // pulado e ~0,5 s de som já escrito na saída de áudio, parada. Na troca, load() só dá o play nela (~0 ms em vez de
+    // ~300 ms abrindo arquivo, decodificador e saída e esperando o primeiro lote). Uma por vez; qualquer mudança a descarta.
+    @Volatile private var aquecida: Session? = null
+    fun aquecer(source: Source.LocalFile, gainDb: Float?) {
+        val a = aquecida
+        if (a != null && a.serve(source, gainDb)) return
+        a?.finish()
+        aquecida = Session(source, 0, false, gainDb, aquecendo = true).also { it.start() }
+    }
+    fun descartarAquecida() { aquecida?.finish(); aquecida = null }
 
     fun play() = session?.changePlaying(true)
     fun pause() = session?.changePlaying(false)
@@ -65,16 +90,32 @@ class AudioEngine(private val callbacks: Callbacks) {
     fun positionMs(): Long = session?.positionUs()?.div(1000) ?: 0
     fun durationMs(): Long = session?.durationUs?.div(1000) ?: 0
     fun currentGainDb(): Float = session?.loudness?.gainDb ?: 0f
-    fun measuredGainDb(): Float? = session?.loudness?.measuredGainDb()
+    fun measuredGainDb(minSeg: Double = 20.0): Float? = session?.loudness?.measuredGainDb(minSeg)
+    fun segundosMedidos(): Double = session?.loudness?.segundosMedidos() ?: 0.0
 
     private inner class Session(
         private val source: Source,
         startUs: Long,
         playWhenReady: Boolean,
-        knownGainDb: Float?,
+        private val knownGainDb: Float?,
+        aquecendo: Boolean = false,
     ) : Thread("sounos-audio") {
         @Volatile var running = true
         @Volatile var playing = playWhenReady
+        // aquecendo: ainda não é a música da vez — decodifica e enche a saída parada, sem avisar nada ao player
+        @Volatile private var aquecendo = aquecendo
+        @Volatile private var abastecida = false      // saída aquecida cheia (ou a música acabou antes disso)
+        @Volatile private var falhou = false
+        private var prontaMs = -1L                    // duração já lida (guardada por `lock`): avisada ao ativar
+
+        /** Serve para tocar [s] do começo com este volume? (aquecida, viva e sem erro) */
+        fun serve(s: Source.LocalFile, gainDb: Float?) = source == s && gainDb == knownGainDb && running && !falhou && codecError == null
+        /** A aquecida vira a música da vez. */
+        fun ativar(p: Boolean) {
+            val dur = synchronized(lock) { aquecendo = false; prontaMs }
+            if (dur >= 0) main.post { if (running) callbacks.onReady(dur) }
+            changePlaying(p)
+        }
         @Volatile var track: AudioTrack? = null
         @Volatile var durationUs = 0L
         @Volatile private var pendingSeekUs = startUs.takeIf { it > 0 } ?: -1L
@@ -86,7 +127,7 @@ class AudioEngine(private val callbacks: Callbacks) {
         @Volatile private var awaitHead = false      // depois de um seek: ainda esperando o AudioTrack começar a andar
         private var bufferingNow = false
         @Volatile private var eosReached = false     // saída decodificada até o fim (trava a posição de andar para trás)
-        val loudness = Loudness().apply { reset(knownGainDb) }
+        val loudness = Loudness().apply { reset(knownGainDb, palpiteGanho) }
         private val lock = Object()
         private val ts = AudioTimestamp()
         // pular silêncio (só mexe na thread de áudio)
@@ -269,7 +310,8 @@ class AudioEngine(private val callbacks: Callbacks) {
                 android.util.Log.i("Sonus", "motor: decodificador ${codec.name} multi=$multi")
                 var at = newTrack(sampleRate, channels)
                 val dur = durationUs / 1000
-                main.post { if (running) callbacks.onReady(dur) }
+                val avisaJa = synchronized(lock) { prontaMs = dur; !aquecendo }
+                if (avisaJa) main.post { if (running) callbacks.onReady(dur) }
 
                 var pcm = ShortArray(8192)
                 val batch = ArrayList<MediaCodec.BufferInfo>()
@@ -283,7 +325,7 @@ class AudioEngine(private val callbacks: Callbacks) {
 
                 while (running) {
                     // pausado: dorme até tocar, procurar ou fechar
-                    synchronized(lock) { while (running && !playing && pendingSeekUs < 0) lock.wait(250) }
+                    synchronized(lock) { while (running && !playing && pendingSeekUs < 0 && !(aquecendo && !abastecida)) lock.wait(250) }
                     if (!running) break
                     codecError?.let { throw it }
 
@@ -376,7 +418,7 @@ class AudioEngine(private val callbacks: Callbacks) {
                         codec.releaseOutputBuffer(item.index, false)
                         if (eosFlag) {
                             outEos = true; finishHeld(at, channels)
-                            eosReached = true
+                            eosReached = true; abastecida = true
                             // MODE_STREAM: se o head nunca saiu do zero desde o flush, o limiar de início travou o track;
                             // stop() toca o que sobrou. Se já está tocando, mantém o fim natural (stop() zeraria o head).
                             val h0 = runCatching { at.playbackHeadPosition.toLong() and 0xFFFFFFFFL }.getOrDefault(1L)
@@ -385,7 +427,7 @@ class AudioEngine(private val callbacks: Callbacks) {
                     } else if (!outEos) {
                         // nada a fazer: dorme até o decodificador entregar algo (ou seek/pausa/fim acordarem)
                         synchronized(lock) {
-                            if (running && playing && pendingSeekUs < 0 && codecError == null && readyOut.isEmpty() && (inEos || freeIn.isEmpty()))
+                            if (running && (playing || (aquecendo && !abastecida)) && pendingSeekUs < 0 && codecError == null && readyOut.isEmpty() && (inEos || freeIn.isEmpty()))
                                 lock.wait(if (awaitHead) 10L else 500L)     // depois de um seek, olha o head como antes (~a cada 10 ms)
                         }
                     }
@@ -417,7 +459,8 @@ class AudioEngine(private val callbacks: Callbacks) {
                     }
                 }
             } catch (t: Throwable) {
-                if (running) main.post { callbacks.onError(t) }
+                falhou = true
+                if (running && !aquecendo) main.post { if (running) callbacks.onError(t) }
             } finally {
                 runCatching { codec?.stop() }; runCatching { codec?.release() }
                 cbThread?.quitSafely()
@@ -514,7 +557,16 @@ class AudioEngine(private val callbacks: Callbacks) {
         private fun writeAll(at: AudioTrack, pcm: ShortArray, n: Int, channels: Int) {
             var off = 0
             while (off < n && running && pendingSeekUs < 0) {
-                if (!playing) { synchronized(lock) { lock.wait(100) }; continue }
+                if (!playing) {
+                    if (aquecendo && !abastecida) {
+                        // aquecendo: escreve na saída parada até encher (o AudioTrack guarda e toca ao dar play)
+                        val w = at.write(pcm, off, n - off, AudioTrack.WRITE_NON_BLOCKING)
+                        if (w < 0) throw IllegalStateException("AudioTrack.write = $w")
+                        if (w > 0) { off += w; framesWritten += w / channels; continue }
+                        abastecida = true
+                    }
+                    synchronized(lock) { lock.wait(100) }; continue
+                }
                 val w = at.write(pcm, off, n - off, AudioTrack.WRITE_NON_BLOCKING)
                 if (w < 0) throw IllegalStateException("AudioTrack.write = $w")
                 if (w > 0) { off += w; framesWritten += w / channels }

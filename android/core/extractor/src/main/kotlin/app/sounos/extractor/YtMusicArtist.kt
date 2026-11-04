@@ -100,7 +100,7 @@ class YtMusicArtist(private val client: OkHttpClient) {
             }
         }
         walk(browse("VL$playlistId"))
-        return parseTracks(rows, fallbackArtist)
+        return parseTracks(rows, fallbackArtist, comVideos = true)
     }
 
     /** Faixas de um lançamento (página do álbum/single). */
@@ -254,7 +254,8 @@ class YtMusicArtist(private val client: OkHttpClient) {
         return result
     }
 
-    private fun parseTracks(items: JsonArray, fallbackArtist: String): List<Track> = items.mapNotNull { value ->
+    // comVideos: playlist importada traz também clipes (o NewPipeSource troca cada um pela versão em música); catálogo do artista, não
+    private fun parseTracks(items: JsonArray, fallbackArtist: String, comVideos: Boolean = false): List<Track> = items.mapNotNull { value ->
         val r = (value as? JsonObject)?.getObject("musicResponsiveListItemRenderer") ?: return@mapNotNull null
         val columns = r.getArray("flexColumns").mapNotNull { (it as? JsonObject)?.getObject("musicResponsiveListItemFlexColumnRenderer") }
         val titleRuns = columns.firstOrNull()?.path("text")?.getArray("runs") ?: return@mapNotNull null
@@ -267,7 +268,7 @@ class YtMusicArtist(private val client: OkHttpClient) {
             ?: r.path("playlistItemData").getString("videoId") ?: return@mapNotNull null
         val type = watch.path("watchEndpointMusicSupportedConfigs", "watchEndpointMusicConfig").getString("musicVideoType")
             ?: overlayWatch.path("watchEndpointMusicSupportedConfigs", "watchEndpointMusicConfig").getString("musicVideoType")
-        if (type != null && type !in ACCEPTED_TYPES) return@mapNotNull null
+        if (type != null && type !in ACCEPTED_TYPES && !comVideos) return@mapNotNull null
 
         val credited = columns.getOrNull(1)?.path("text")?.getArray("runs")?.let(YtMusicRadio(client)::artistsFromRuns).orEmpty()
         val firstArtist = credited.firstOrNull() ?: fallbackArtist
@@ -396,7 +397,10 @@ class YtMusicArtist(private val client: OkHttpClient) {
         private const val FALLBACK_VERSION = "1.20241016.01.00"
         private const val ALBUM_WORKERS = 5
         private const val MAX_PAGES = 30
-        private val ACCEPTED_TYPES = setOf("MUSIC_VIDEO_TYPE_ATV", "MUSIC_VIDEO_TYPE_OMV", "MUSIC_VIDEO_TYPE_PRIVATELY_OWNED_TRACK")
+        // só a música em si (ATV = áudio do álbum). Clipes (OMV) ficam de fora como no rádio (YtMusicRadio): vêm com trechos,
+        // falas e apresentações — "universo de coisas que eu desconheço (1/2)" entrava na fila do artista como clipe.
+        // As versões de áudio chegam pelos álbuns e singles do artista.
+        private val ACCEPTED_TYPES = setOf("MUSIC_VIDEO_TYPE_ATV", "MUSIC_VIDEO_TYPE_PRIVATELY_OWNED_TRACK")
         private const val UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36"
     }
 }

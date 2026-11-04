@@ -85,8 +85,19 @@ class Library(context: Context) {
     fun downloadsBytes(): Long = downloadsDir.listFiles()?.sumOf { it.length() } ?: 0
 
     // ---------- volume medido ----------
-    fun gain(id: String): Float? = prefs.getFloat("gain:$id", Float.NaN).takeIf { !it.isNaN() }
-    fun setGain(id: String, db: Float) = prefs.edit().putFloat("gain:$id", db).apply()
+    // Ganho do volume equilibrado por música. "lufs:" = medido em LUFS (desde 27/10/2026); os "gain:" antigos (volume
+    // cru, outra escala) não valem mais e são remedidos aos poucos.
+    fun gain(id: String): Float? = prefs.getFloat("lufs:$id", Float.NaN).takeIf { !it.isNaN() }
+    fun setGain(id: String, db: Float) { prefs.edit().putFloat("lufs:$id", db).apply(); palpite = null }
+    /** Uma vez: apaga os "gain:" antigos (medida antiga, sem uso) — eram centenas de entradas no arquivo de preferências. */
+    fun limparGanhosAntigos() {
+        val velhos = prefs.all.keys.filter { it.startsWith("gain:") }
+        if (velhos.isNotEmpty()) prefs.edit().apply { velhos.forEach(::remove) }.apply()
+    }
+    @Volatile private var palpite: Float? = null
+    /** Ganho típico das músicas da pessoa (mediana dos já medidos): ponto de partida de uma música ainda não medida. */
+    fun palpiteGanho(): Float = palpite ?: prefs.all.entries.asSequence().filter { it.key.startsWith("lufs:") }
+        .mapNotNull { it.value as? Float }.sorted().toList().let { l -> if (l.size < 5) 0f else l[l.size / 2] }.also { palpite = it }
 
     // ---------- última sessão ----------
     fun saveSession(o: JSONObject) = prefs.edit().putString("session", withFixes(o).toString()).apply()

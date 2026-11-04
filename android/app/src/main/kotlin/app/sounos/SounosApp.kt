@@ -55,7 +55,10 @@ class SounosApp : Application() {
         audio = AudioCache(File(cacheDir, "audio"), Sounos.http, maxTotalBytes = 6L * 1024 * 1024 * 1024) // cache de música: até 6 GB, sem prazo (encolhe se faltar espaço)
         cacheBudget = DiskCacheBudget(listOf(File(cacheDir, "covers"), File(cacheDir, "metadata")))
         metadata = DiskMetadataCache(File(cacheDir, "metadata"), cacheBudget)
-        covers = CoverStore(File(filesDir, "covers"), File(cacheDir, "covers"), Sounos.http, budget = cacheBudget) // capas fixadas ficam fora do LRU
+        covers = CoverStore(File(filesDir, "covers"), File(cacheDir, "covers"), Sounos.http, budget = cacheBudget,
+            capaDaMusica = app.sounos.extractor.CapaDaMusica(Sounos.http)) // capas fixadas ficam fora do LRU
+        covers.aoTrocarCapa = { app.sounos.data.CoverColors.forget(it) }     // capa trocada: cores do fundo recalculadas
+        io.launch { library.limparGanhosAntigos() }       // volume equilibrado passou a ser medido em LUFS (27/10/2026)
         io.launch {
             downloadCheck.join()
             val migration = reconcilePinnedCovers()

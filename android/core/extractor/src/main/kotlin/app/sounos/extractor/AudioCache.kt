@@ -37,6 +37,7 @@ class AudioCache(
     fun file(id: String) = File(dir, safe(id) + ".audio")
     private fun lenFile(id: String) = File(dir, safe(id) + ".len")
     private fun usedFile(id: String) = File(dir, safe(id) + ".used")
+    private fun itagFile(id: String) = File(dir, safe(id) + ".itag")
 
     fun length(id: String): Long = file(id).length()
     /** Tamanho total do áudio (-1 se ainda não conhecido). */
@@ -84,6 +85,7 @@ class AudioCache(
         locks.getOrPut(id) { Mutex() }.withLock {
             if (isExpired(id, System.currentTimeMillis())) deleteEntry(id)
             var current = audio
+            if (!alinhaItag(id, current)) return@withLock true
             if (current.contentLength > 0) lenFile(id).writeText(current.contentLength.toString())
             var retries = 0
             while (true) {
@@ -137,6 +139,8 @@ class AudioCache(
                 if (!ok) {
                     if (refresh == null || retries++ >= 2) return@withLock false
                     current = refresh()
+                    if (!alinhaItag(id, current)) return@withLock true
+                    if (current.contentLength > 0) lenFile(id).writeText(current.contentLength.toString())
                 }
             }
             @Suppress("UNREACHABLE_CODE") false
@@ -154,9 +158,10 @@ class AudioCache(
         tmp.renameTo(target)
     }.getOrDefault(false)
 
-    fun clear(): Long {
+    /** Apaga o cache de áudio, menos o que está tocando/na fila e [guardar] (as músicas completas da biblioteca). */
+    fun clear(guardar: Set<String> = emptySet()): Long {
         var freed = 0L
-        val keep = protectedIds.map(::safe).toSet() + active.keys
+        val keep = (protectedIds + guardar).map(::safe).toSet() + active.keys
         dir.listFiles()?.forEach { f ->
             val id = f.nameWithoutExtension
             if (id !in keep) { freed += f.length(); f.delete() }
@@ -189,7 +194,22 @@ class AudioCache(
     }
 
     private fun deleteEntry(id: String) {
-        file(id).delete(); lenFile(id).delete(); usedFile(id).delete()
+        file(id).delete(); lenFile(id).delete(); usedFile(id).delete(); itagFile(id).delete()
+    }
+
+    /**
+     * O arquivo é de UM stream (itag): bytes de outra qualidade (Wi-Fi ↔ dados móveis) não se emendam, dava áudio corrompido.
+     * false = já está inteiro noutra qualidade (serve como está); pela metade noutra qualidade, recomeça do zero.
+     */
+    private fun alinhaItag(id: String, a: ResolvedAudio): Boolean {
+        val novo = a.itag.toString()
+        val antes = runCatching { itagFile(id).readText().trim() }.getOrNull()
+        if (antes != null && antes != novo && length(id) > 0) {
+            if (isComplete(id)) return false
+            deleteEntry(id)
+        }
+        runCatching { itagFile(id).writeText(novo) }
+        return true
     }
 
     private fun parseTotal(contentRange: String?): Long? = contentRange?.substringAfterLast('/')?.trim()?.toLongOrNull()

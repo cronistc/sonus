@@ -296,4 +296,90 @@ class Motor(private val dir: File, private val io: CoroutineScope, private val h
             .put("peso", peso)
     }
 
+    // ---------- Seu Mix ----------
+    /**
+     * Playlist "Seu Mix" (pedido do dono, 27/10/2026): a pessoa ouve o que gosta, mesmo sem nunca ter ouvido a música.
+     * Mistura, ~23 faixas:
+     *  - 9 das MAIS OUVIDAS (sorteio com peso pelas vezes que tocou e pelo gosto do artista, para variar a cada mix);
+     *  - até 5 NOVIDADES bem próximas: lançamentos (este ano e o anterior) dos artistas que a pessoa MAIS ouve, só
+     *    músicas que ela ainda não ouviu;
+     *  - até 7 INÉDITAS de artistas que ela já ouve (rádio do YouTube Music das músicas preferidas: mesmo estilo);
+     *  - 2 DESCOBERTAS: artista que ela não conhece, do mesmo rádio (mesmo gênero/estilo).
+     * Embaralhado sem repetir artista em seguida, as conhecidas espalhadas entre as novas.
+     * Devolve as músicas e os artistas principais (para a capa).
+     */
+    suspend fun mix(source: NewPipeSource, historico: JSONArray): JSONObject = coroutineScope {
+        val ano = Calendar.getInstance().get(Calendar.YEAR)
+        val afinidade = afinidadeArtistas(historico)
+        fun gosto(t: Track) = t.artists.ifEmpty { listOf(t.artist) }.maxOfOrNull { afinidade[CoverStore.artistKey(it)]?.second ?: 0.0 } ?: 0.0
+        // histórico: faixa + vezes que tocou (só músicas de verdade: duração razoável, sem karaokê/cover)
+        val ouvidas = (0 until historico.length()).mapNotNull { i ->
+            historico.optJSONObject(i)?.let { e -> runCatching { app.sounos.data.Json.track(e.getJSONObject("track")) }.getOrNull()?.let { it to e.optInt("n", 1) } }
+        }.filterNot { (t, _) -> app.sounos.extractor.MusicPicks.isJunk(t) }
+        val jaOuviu = ouvidas.mapTo(HashSet()) { it.first.id }
+        val chavesOuvidas = ouvidas.mapTo(HashSet()) { app.sounos.extractor.MusicPicks.songKey(it.first) }
+        fun nova(t: Track) = t.id !in jaOuviu && app.sounos.extractor.MusicPicks.songKey(t) !in chavesOuvidas && !app.sounos.extractor.MusicPicks.isJunk(t)
+
+        // 1) mais ouvidas: as 40 do topo, sorteio com peso
+        // (a mesma música com dois ids — clipe e áudio — entra uma vez só)
+        val topo = ouvidas.sortedByDescending { (t, n) -> n + gosto(t) * 3 }.distinctBy { app.sounos.extractor.MusicPicks.songKey(it.first) }.take(40)
+        val favoritas = sorteioComPeso(topo.map { (t, n) -> t to (n + gosto(t) * 3 + 1.0) }, 9)
+
+        // sementes do rádio: 3 das favoritas, de artistas diferentes
+        val sementes = favoritas.distinctBy { CoverStore.artistKey(it.artist) }.take(3)
+        val preferidos = afinidade.values.sortedByDescending { it.second }.take(4).map { it.first }
+        val radioJobs = sementes.map { s -> async(Dispatchers.IO) { runCatching { source.radio(s.videoId ?: return@runCatching emptyList()) }.getOrDefault(emptyList()) } }
+        val lancJobs = preferidos.map { nome ->
+            async(Dispatchers.IO) {
+                runCatching { source.artistReleases(nome, null) }.getOrDefault(emptyList())
+                    .filter { (it.year ?: 0) >= ano - 1 && it.browseId != null }.take(2)
+                    .flatMap { r -> runCatching { source.releaseTracks(r.browseId!!, nome) }.getOrDefault(emptyList()).take(2) }
+            }
+        }
+        val radio = radioJobs.awaitAll().flatten().filter(::nova).distinctBy { app.sounos.extractor.MusicPicks.songKey(it) }
+        // 2) novidades bem próximas (só de quem a pessoa mais ouve)
+        val novidades = lancJobs.awaitAll().flatten().filter(::nova).distinctBy { app.sounos.extractor.MusicPicks.songKey(it) }.shuffled().take(5)
+        val usadas = (favoritas + novidades).mapTo(HashSet()) { app.sounos.extractor.MusicPicks.songKey(it) }
+        // 3) inéditas de artistas que ela já ouve · 4) descobertas (artista desconhecido, mesmo estilo)
+        val doRadio = radio.filter { app.sounos.extractor.MusicPicks.songKey(it) !in usadas }
+        val ineditas = doRadio.filter { gosto(it) > 0 }.shuffled().take(7)
+        val descobertas = doRadio.filter { gosto(it) == 0.0 }.take(6).shuffled().take(2)
+
+        val musicas = misturar(favoritas, novidades + ineditas, descobertas)
+        val artistas = musicas.groupingBy { it.artist }.eachCount().entries
+            .sortedByDescending { (nome, n) -> n + (afinidade[CoverStore.artistKey(nome)]?.second ?: 0.0) * 4 }
+            .map { it.key }.filter(String::isNotBlank).take(3)
+        JSONObject().put("musicas", app.sounos.data.Json.tracks(musicas)).put("artistas", JSONArray(artistas))
+            .put("partes", JSONObject().put("favoritas", favoritas.size).put("novidades", novidades.size)
+                .put("ineditas", ineditas.size).put("descobertas", descobertas.size))
+    }
+
+    private fun <T> sorteioComPeso(itens: List<Pair<T, Double>>, n: Int): List<T> {
+        val resto = itens.toMutableList(); val out = mutableListOf<T>()
+        while (out.size < n && resto.isNotEmpty()) {
+            var r = Math.random() * resto.sumOf { it.second }
+            val i = resto.indexOfFirst { r -= it.second; r <= 0 }.takeIf { it >= 0 } ?: resto.lastIndex
+            out += resto.removeAt(i).first
+        }
+        return out
+    }
+
+    /** Conhecidas espalhadas entre as novas (começa por uma conhecida), descobertas no meio; nunca o mesmo artista em seguida. */
+    private fun misturar(conhecidas: List<Track>, novas: List<Track>, descobertas: List<Track>): List<Track> {
+        val a = ArrayDeque(conhecidas.shuffled()); val b = ArrayDeque(novas.shuffled())
+        val base = mutableListOf<Track>()
+        while (a.isNotEmpty() || b.isNotEmpty()) {
+            a.removeFirstOrNull()?.let(base::add)
+            b.removeFirstOrNull()?.let(base::add)
+            if (b.size > a.size + 2) b.removeFirstOrNull()?.let(base::add)
+        }
+        descobertas.forEachIndexed { i, t -> base.add(minOf(base.size, (base.size * (i + 1)) / (descobertas.size + 1)), t) }
+        // separa artistas repetidos em sequência (troca com o próximo diferente)
+        for (i in 1 until base.size) if (CoverStore.artistKey(base[i].artist) == CoverStore.artistKey(base[i - 1].artist)) {
+            val j = (i + 1 until base.size).firstOrNull { CoverStore.artistKey(base[it].artist) != CoverStore.artistKey(base[i - 1].artist) } ?: continue
+            val x = base[i]; base[i] = base[j]; base[j] = x
+        }
+        return base
+    }
+
 }

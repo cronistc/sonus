@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Arquivos que o Sonus entrega a outros apps (imagem do trecho da letra etc.): só a pasta cache/compartilhar -->
+<paths>
+    <cache-path name="compartilhar" path="compartilhar/" />
+</paths>

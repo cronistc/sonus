@@ -1,4 +1,6 @@
 // Módulo Player — capa, anel de progresso, letra, fila, botões e gestos. Ver MODULO.md
+// texto vindo da internet (títulos, nomes) antes de entrar em innerHTML
+const escHtml = x => String(x ?? "").replace(/[&<>"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
 // marca se a página entrou com a transição animada (para conferir no protótipo)
 addEventListener("pagereveal", e => {
   window.__enteredWithTransition = !!e.viewTransition;
@@ -87,16 +89,45 @@ function layoutRing() {
   lastRingPixel = -1;
   ["x", "y", "width", "height"].forEach((k, i) => { $("maskBg").setAttribute(k, vb[i]); $("ringMask").setAttribute(k, vb[i]); });
   $("fadeStart").setAttribute("cx", w / 2); $("fadeStart").setAttribute("cy", T);
-  RING_LEN = ringPath.getTotalLength();
+  RING.geo = { x0: w / 2, L, T, R, B, r };
+  RING_LEN = comprimentoAnel(RING.geo);
   ringPts = null;
+}
+// Ponto do contorno a uma distância do início (topo, no meio), calculado (antes: ringPath.getPointAtLength, que consulta
+// a página e forçava o layout a cada desenho do anel — várias vezes por troca de música)
+function comprimentoAnel({ x0, L, T, R, B, r }) {
+  return (R - r - x0) + 2 * (B - T - 2 * r) + (R - L - 2 * r) + (x0 - L - r) + 2 * Math.PI * r;
+}
+function pontoNoAnel(d, { x0, L, T, R, B, r }) {
+  const q = Math.PI * r / 2, arco = (cx, cy, a0, t) => ({ x: cx + r * Math.cos(a0 + t / r), y: cy + r * Math.sin(a0 + t / r) });
+  const trechos = [
+    [R - r - x0, t => ({ x: x0 + t, y: T })],
+    [q, t => arco(R - r, T + r, -Math.PI / 2, t)],
+    [B - T - 2 * r, t => ({ x: R, y: T + r + t })],
+    [q, t => arco(R - r, B - r, 0, t)],
+    [R - L - 2 * r, t => ({ x: R - r - t, y: B })],
+    [q, t => arco(L + r, B - r, Math.PI / 2, t)],
+    [B - T - 2 * r, t => ({ x: L, y: B - r - t })],
+    [q, t => arco(L + r, T + r, Math.PI, t)],
+    [x0 - L - r, t => ({ x: L + r + t, y: T })],
+  ];
+  for (const [len, f] of trechos) { if (d <= len) return f(Math.max(0, d)); d -= len; }
+  return { x: x0, y: T };
 }
 // Barra em volta da capa: UMA cor, a mais chamativa da capa (--c4, escolhida pelo app), com as pontas
 // esfumaçadas. Desenhada num canvas: muda só quando a ponta avança um pixel, sem gradiente girando.
 const FADE_STOPS = [[0, 1], [.25, .898], [.5, .533], [.75, .169], [1, 0]];   // mesmo esfumaçado de antes
 let ringColor = null, lastRingPixel = -1;
+// cores/tema mudaram: redesenha o anel no próximo quadro, uma vez só (o estilo do <html> muda várias vezes seguidas numa
+// troca de música — cores, tamanho da capa — e redesenhar na hora forçava o recálculo do estilo a cada mudança)
+let anelPendente = 0;
 new MutationObserver(() => {
   ringColor = null; lastRingPixel = -1;
-  if (playerCanAnimate()) drawRingFill((track().dur > 1 ? Math.min(pos / track().dur, 1) : 0) * 1000);
+  if (anelPendente) return;
+  anelPendente = requestAnimationFrame(() => {
+    anelPendente = 0;
+    if (playerCanAnimate()) drawRingFill((track().dur > 1 ? Math.min(pos / track().dur, 1) : 0) * 1000);
+  });
 }).observe(document.documentElement, { attributes: true, attributeFilter: ["style", "data-theme"] });
 function drawRingFill(P) {
   if (!RING) return;
@@ -108,14 +139,17 @@ function drawRingFill(P) {
   const cv = $("ringCanvas"), g = cv.getContext("2d");
   g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, cv.width, cv.height);
   if (P <= 0) return;
-  if (!ringColor) { const cs = getComputedStyle(document.documentElement); ringColor = (cs.getPropertyValue("--c4") || cs.getPropertyValue("--c3")).trim() || "#fff"; }
+  // cor do anel: lida do estilo do <html> (onde as cores da música são postas) sem forçar recálculo; só cai no computado
+  // quando não há cor posta ali (protótipo/tema padrão)
+  if (!ringColor) { const rs = document.documentElement.style; ringColor = (rs.getPropertyValue("--c4") || rs.getPropertyValue("--c3")).trim();
+    if (!ringColor) { const cs = getComputedStyle(document.documentElement); ringColor = (cs.getPropertyValue("--c4") || cs.getPropertyValue("--c3")).trim() || "#fff"; } }
   const L = P / 1000 * RING_LEN;
   g.setTransform(dpr, 0, 0, dpr, -vb[0] * dpr, -vb[1] * dpr);
   g.lineWidth = SW; g.lineCap = "butt"; g.strokeStyle = ringColor;
   g.setLineDash([L, RING_LEN * 2]); g.stroke(path);
   const r = Math.max(0, Math.min(FADE_PX, L / 2));                      // barra curta → esfumaçado menor
   if (r < .5) return;
-  const head = ringPath.getPointAtLength(L), start = ringPath.getPointAtLength(0);
+  const head = pontoNoAnel(L, RING.geo), start = pontoNoAnel(0, RING.geo);
   g.setLineDash([]); g.globalCompositeOperation = "destination-out";
   for (const p of [start, head]) {
     const gr = g.createRadialGradient(p.x, p.y, 0, p.x, p.y, r);
@@ -130,7 +164,8 @@ const EASE = "cubic-bezier(.2,.85,.25,1)";
 const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
 function swapIn(el, from, ms = 320) {
   if (reduceMotion || !el.animate) return;
-  el.animate([from, { opacity: 1, transform: "none" }], { duration: ms, easing: EASE });
+  el._swap?.cancel();                       // troca rápida: a animação anterior sai (sem getAnimations, que recalcula estilo)
+  return el._swap = el.animate([from, { opacity: 1, transform: "none" }], { duration: ms, easing: EASE });
 }
 
 // ---- Faixa atual ----
@@ -138,10 +173,11 @@ let firstLoad = true;
 function loadCurrent() {
   pos = 0;
   const t = track(), root = document.documentElement.style;
-  t.c.forEach((col, k) => root.setProperty(`--c${k+1}`, col));
+  if (window.SounosCores) SounosCores.aplicar(t.c); else t.c.forEach((col, k) => root.setProperty(`--c${k+1}`, col));
   $("cover").textContent = t.title[0];
   $("title").textContent = t.title;
-  $("artist").textContent = toHandle(t.artist);
+  // cada artista é um nome próprio que abre a página DELE (mecanismo comum: Sounos.artistHtml + tratador em base/native.js)
+  $("artist").innerHTML = t.raw ? Sounos.artistHtml(t.raw) : Sounos.artistLink(toHandle(t.artist));
   // troca de música: capa "assenta" e nome/@ entram deslizando (na 1ª carga quem anima é a transição entre telas)
   if (!firstLoad) {
     swapIn($("cover"), { opacity: .35, transform: "scale(.94)" }, 420);
@@ -213,9 +249,9 @@ function buildQueue() {
   queue.innerHTML = shownList().map((ti, i) => {
     const t = tracks[ti];
     return `<div class="qi" data-t="${ti}" style="--i:${i};background:linear-gradient(135deg,${t.c[0]},${t.c[1]} 60%,${t.c[2]})">
-      <div class="ini">${t.title[0]}</div>
+      <div class="ini">${escHtml((t.title || " ")[0])}</div>
       <span class="eq"><i></i><i></i><i></i></span>
-      <div class="meta"><div class="qt">${t.title}</div><div class="qa">${toHandle(t.artist)}</div></div></div>`;
+      <div class="meta"><div class="qt">${escHtml(t.title)}</div><div class="qa">${t.raw ? Sounos.artistHtml(t.raw) : Sounos.artistLink(toHandle(t.artist))}</div></div></div>`;
   }).join("");
   markQueue();
 }
@@ -226,7 +262,15 @@ function markQueue() {
     el.classList.toggle("played", isBase && i < base.cur);
   });
 }
+// Com animação (troca de música), mede depois que o quadro foi desenhado: medir na hora, com a tela recém-mexida,
+// obrigava o navegador a recalcular o estilo do player inteiro no meio da troca (~40 ms). Sem animação, mede já.
+let centerT = 0;
 function centerQueue(smooth = true) {
+  cancelAnimationFrame(centerT); clearTimeout(centerT); centerT = 0;
+  if (smooth) { centerT = requestAnimationFrame(() => { centerT = setTimeout(() => { centerT = 0; centerNow(true); }, 0); }); return; }
+  centerNow(false);
+}
+function centerNow(smooth) {
   if (qg.mode) return;
   if (queueMode() === "sugg") return queue.scrollTo({ left: 0, behavior: smooth ? "smooth" : "auto" });
   const el = queue.children[base.cur]; if (!el) return;
@@ -254,8 +298,8 @@ const contentX = clientX => clientX - queue.getBoundingClientRect().left + queue
 queue.addEventListener("pointerdown", e => {
   cancelAnimationFrame(qg.raf);
   try { queue.setPointerCapture(e.pointerId); } catch {}
-  const item = e.target.closest(".qi");
-  Object.assign(qg, { mode: "pending", x: e.clientX, y: e.clientY, sl: queue.scrollLeft, item,
+  const item = e.target.closest(".qi"), nome = e.target.closest(".art-nome");   // nome de artista: no toque abre a página dele (e não toca)
+  Object.assign(qg, { mode: "pending", x: e.clientX, y: e.clientY, sl: queue.scrollLeft, item, nome,
                       vx: 0, lastX: e.clientX, lastT: performance.now() });
   if (item) qg.holdT = setTimeout(() => startDrag(e.clientX), 350);
 });
@@ -275,6 +319,7 @@ queue.addEventListener("pointermove", e => {
 function endQueueGesture(tap) {
   clearTimeout(qg.holdT);
   const mode = qg.mode; qg.mode = null;
+  if (mode === "pending" && tap && qg.nome && Sounos.openArtist(qg.nome.dataset.artista, qg.nome.dataset.url)) { qg.nome = null; return; }
   if (mode === "pending" && tap && qg.item) {
     const i = [...queue.children].indexOf(qg.item), ti = +qg.item.dataset.t;
     if (queueMode() === "sugg") { if (ti !== nowT) playSuggestion(ti); }
@@ -381,7 +426,9 @@ lyricLines.addEventListener("scroll", () => {
 function buildLyrics() {
   const box = $("lines"), t = track();
   box.innerHTML = ""; lastLine = -1; lyrMarked = -2; lyrMarkedFor = null;
-  box.classList.remove("scrolled"); box.scrollTop = 0;
+  // voltar ao topo força o layout da página inteira: com a letra fechada fica para quando ela abrir
+  box.classList.remove("scrolled");
+  if (inLyrics()) box.scrollTop = 0; else box.dataset.topo = "1";
   exitSelect();
   $("shareBtn").classList.toggle("hidden", !t.lrc);
   if (t.lrc === undefined) { box.innerHTML = '<div class="empty">…</div>'; return; }   // letra ainda carregando
@@ -475,6 +522,7 @@ function refreshNativePosition() {
 }
 function setPlayerVisible(visible) {
   playerVisible = !!visible;
+  if (playerVisible && medidasPendentes) { medidasPendentes = false; semTransicao(() => { fitCover(); layoutRing(); render(); }); }
   $("phone").classList.toggle("player-hidden", !playerVisible);
   if (playerVisible) window.SounosTips?.offer("player");
   if (playerCanAnimate()) refreshNativePosition();
@@ -520,27 +568,30 @@ const LU = {
   repeat:  '<svg class="lu" viewBox="0 0 24 24"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>',
   repeat1: '<svg class="lu" viewBox="0 0 24 24"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/><path d="M11 10h1v4"/></svg>',
 };
-let lastIconKey = "", lastModes = null, flash = null;
+let lastIconKey = "", lastModes = null, flash = null, flashT = 0;
 // O botão mostra sempre play/pausa. Ao trocar um modo (aleatório / repetir), o ícone do modo aparece
-// por um instante (apagado = desligou) e volta para play/pausa — a música não para.
+// por um instante (cinza = desligou) e volta para play/pausa — a música não para.
+// O retorno tem relógio próprio: antes dependia do relógio do player, que não anda com a música pausada
+// (o ícone do modo ficava preso no botão).
 function renderPlayIcon() {
   const modes = shuffle + "|" + repeat;
   if (lastModes !== null && modes !== lastModes) {
-    const [s0, r0] = lastModes.split("|");
-    const html = String(shuffle) !== s0 ? LU.shuffle : (repeat === "one" ? LU.repeat1 : LU.repeat);
-    const off = String(shuffle) !== s0 ? !shuffle : repeat === "off";
-    flash = { key: "m" + modes, html: `<span style="display:flex;opacity:${off ? .35 : 1}">${html}</span>`, until: performance.now() + 850 };
+    const [s0] = lastModes.split("|");
+    const sh = String(shuffle) !== s0;
+    const html = sh ? LU.shuffle : (repeat === "one" ? LU.repeat1 : LU.repeat);
+    const off = sh ? !shuffle : repeat === "off";
+    flash = { key: "m" + modes, html, off, until: performance.now() + 850 };
+    clearTimeout(flashT); flashT = setTimeout(renderPlayIcon, 860);
   }
   lastModes = modes;
-  let key, html, combo = false;
-  if ($("phone").classList.contains("loading")) { flash = null; key = playing ? "pause" : "play"; html = playing ? LU.pause : LU.play; }
-  else if (flash && performance.now() < flash.until) { key = flash.key; html = flash.html; }
-  else if (playing) { flash = null; key = "pause"; html = LU.pause; }
-  else              { flash = null; key = "play"; html = LU.play; }
+  let key, html, off = false;
+  if (flash && performance.now() < flash.until) { key = flash.key; html = flash.html; off = flash.off; }
+  else { flash = null; key = playing ? "pause" : "play"; html = playing ? LU.pause : LU.play; }
   if (key === lastIconKey) return;
   lastIconKey = key;
-  const el = $("playIcon"), first = !el.innerHTML; el.innerHTML = html; el.classList.toggle("combo", combo);
-  if (!first) swapIn(el, { opacity: 0, transform: "scale(.5) rotate(-12deg)" }, 260);   // ícone troca com giro curto
+  const el = $("playIcon"), first = !el.innerHTML; el.innerHTML = html;
+  el.classList.toggle("mode", !!flash); el.classList.toggle("off", off);
+  if (!first) swapIn(el, { opacity: 0, transform: "scale(.6) rotate(-8deg)" }, 300);   // troca com giro curto e macio
 }
 
 // Forma de onda (mock: no app virá da amplitude real do áudio)
@@ -594,12 +645,14 @@ playBtn.addEventListener("pointerdown", e => {
   try { playBtn.setPointerCapture(e.pointerId); } catch {}
   Object.assign(g, { x: e.clientX, y: e.clientY, holding: false, moved: false, startedScrub: false, dir: null, shuffled: false });
   if (scrubbing) clearTimeout(g.idleT);
-  g.holdT = setTimeout(() => g.holding = true, 200);
+  if (!scrubbing) playBtn.classList.add("press");
+  g.holdT = setTimeout(() => { g.holding = true; if (!g.moved && !scrubbing) playBtn.classList.add("hold"); }, 200);
 });
+const soltaBotao = () => playBtn.classList.remove("press", "hold");
 playBtn.addEventListener("pointermove", e => {
   if (!playBtn.hasPointerCapture(e.pointerId)) return;
   const dx = e.clientX - g.x, dy = e.clientY - g.y;
-  if (!g.dir && Math.hypot(dx, dy) > 10) { g.moved = true; g.dir = Math.abs(dx) > Math.abs(dy) ? "h" : "v"; }
+  if (!g.dir && Math.hypot(dx, dy) > 10) { g.moved = true; g.dir = Math.abs(dx) > Math.abs(dy) ? "h" : "v"; playBtn.classList.remove("hold"); }
   // deslizar para cima/baixo = aleatório (segurando ou não)
   if (g.dir === "v" && !g.shuffled && Math.abs(dy) > 32) { toggleShuffle(); g.shuffled = true; clearTimeout(g.holdT); return; }
   if (g.holding) {
@@ -612,7 +665,7 @@ playBtn.addEventListener("pointermove", e => {
   }
 });
 playBtn.addEventListener("pointerup", () => {
-  clearTimeout(g.holdT);
+  clearTimeout(g.holdT); soltaBotao();
   if (scrubbing) {
     if (!g.startedScrub && !g.moved) setScrubbing(false); else resetIdle();
   } else if (g.moved) {
@@ -624,7 +677,7 @@ playBtn.addEventListener("pointerup", () => {
   }
   g.holding = false;
 });
-playBtn.addEventListener("pointercancel", () => { clearTimeout(g.holdT); g.holding = false; });
+playBtn.addEventListener("pointercancel", () => { clearTimeout(g.holdT); g.holding = false; soltaBotao(); });
 
 // ---- Baixar: um toque e pronto (sem janela, sem aviso). No app: baixa áudio + capa + metadados + letra
 // para o armazenamento privado; a partir daí a música toca offline. Aqui o progresso é simulado. ----
@@ -723,8 +776,10 @@ $("lyricsBtn").onclick = () => {
   else if (!lyricsMode && immersiveByLyrics) { immersiveByLyrics = false; setImmersive(false); }
   $("phone").classList.toggle("lyr-mode", lyricsMode);
   $("lyricsBtn").classList.toggle("on", lyricsMode);
+  if (lyricsMode) setTimeout(() => { if (lyricsMode) window.SounosTips?.offer("lyrics"); }, 700);
   if (lyricsMode) {
     lastLine = -1;
+    const box = $("lines"); if (box.dataset.topo) { delete box.dataset.topo; box.scrollTop = 0; }
     requestAnimationFrame(() => { if (lyricsMode) syncLyrics(); });
   } else exitSelect();
 };
@@ -734,8 +789,8 @@ window.__sonusBack = () => {
   return true;
 };
 
-// ---- Compartilhar letra: escolher até 10 linhas → imagem com faixa, @artista e trechos ----
-const MAX_LINES = 10;
+// ---- Compartilhar letra: escolher até 6 linhas → imagem com faixa, @artista e trechos ----
+const MAX_LINES = 6;                           // mais que isso não cabe bem nos cartões (compartilhar/cartao.js)
 let selecting = false, selected = new Set();
 const isNote = txt => !txt.replace(/[♪♫\s]/g, "");
 function enterSelect() { selecting = true; selected.clear(); updateSel(); $("lyr").classList.add("selecting"); $("shareBtn").classList.add("on"); }
@@ -750,100 +805,27 @@ function updateSel() {
   const lines = $("lines");
   lines.querySelectorAll(".line.sel").forEach(el => el.classList.remove("sel"));
   selected.forEach(i => lines.children[i]?.classList.add("sel"));
-  $("selCount").textContent = `${selected.size}/${MAX_LINES}`;
-  $("selCount").classList.toggle("full", selected.size === MAX_LINES);
+  const n = selected.size;
+  $("selCount").textContent = !n ? "Escolha as linhas" : `${n} ${n === 1 ? "linha escolhida" : "linhas escolhidas"}${n === MAX_LINES ? " · máximo" : ""}`;
   $("selGo").disabled = selected.size === 0;
 }
 $("shareBtn").onclick = () => selecting ? exitSelect() : enterSelect();
 $("selCancel").onclick = exitSelect;
 
-// Desenha o bloco de imagem (1080×1350) no canvas, do zero
-function wrapLines(ctx, text, maxW) {
-  const words = text.split(" "), out = []; let line = "";
-  words.forEach(w => {
-    const test = line ? line + " " + w : w;
-    if (ctx.measureText(test).width > maxW && line) { out.push(line); line = w; } else line = test;
+// "Compartilhar" da barra: a folha com os modelos de imagem (modulos/compartilhar/cartao.js)
+$("selGo").onclick = () => {
+  const t = track(); if (!t?.lrc || !selected.size) return;
+  const idx = [...selected].sort((a, b) => a - b), linhas = [];
+  idx.forEach((li, k) => { if (k && li !== idx[k - 1] + 1) linhas.push("…"); linhas.push(parseWordTags(t.lrc, li)); });   // trechos separados: "…"
+  const ultimo = idx[idx.length - 1], seguinte = t.lrc[ultimo + 1];
+  const raw = t.raw || {};
+  const c4 = getComputedStyle(document.documentElement).getPropertyValue("--c4").trim();
+  window.SonusLetraCartao?.abrir({
+    id: raw.id || t.id, titulo: t.title, artista: window.Sounos?.artistLine?.(raw) || toHandle(t.artist), linhas,
+    ini: t.lrc[idx[0]][0], fim: seguinte ? seguinte[0] : t.lrc[ultimo][0] + 5, dur: t.dur,
+    cores: [...(t.c || []), c4].filter(Boolean), capaUrl: t.cover, link: window.SounosCompartilhar?.musicaLink({ ...raw, id: raw.id || t.id, title: raw.title || t.title, artist: raw.artist || t.artist }) || "",
   });
-  if (line) out.push(line);
-  return out;
-}
-// Estilos do bloco: fundo, cor do texto e da capinha
-const CARD_STYLES = {
-  grad:  t => ({ bg: t.c, shade: .38, text: "#fff", sub: "rgba(255,255,255,.75)", thumb: t.c, ini: "rgba(255,255,255,.85)" }),
-  dark:  () => ({ bg: ["#3f3f45", "#323237", "#26262a"], shade: 0, text: "#fff", sub: "rgba(255,255,255,.7)",
-                  thumb: ["#8a8a90", "#6a6a70", "#55555a"], ini: "rgba(255,255,255,.9)" }),
-  light: () => ({ bg: ["#fafafa", "#f1f1f3", "#e7e7ea"], shade: 0, text: "#111113", sub: "rgba(17,17,19,.6)",
-                  thumb: ["#d4d4d8", "#c4c4c9", "#b4b4ba"], ini: "rgba(255,255,255,.95)" }),
 };
-// Desenha o bloco no canvas. Largura fixa (1080); a ALTURA acompanha o tamanho dos trechos escolhidos.
-function makeCard(style = "grad") {
-  const t = track(), st = CARD_STYLES[style](t), W = 1080, P = 90, S = 132, MAX_H = 1920;
-  const font = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
-  const meas = document.createElement("canvas").getContext("2d");
-  // monta as linhas (trechos separados ganham um respiro); só diminui a fonte se passar da altura máxima
-  const idx = [...selected].sort((a, b) => a - b), maxW = W - 2 * P, top = P + S + 80;
-  let size = 68, layout, textH;
-  for (; size >= 34; size -= 2) {
-    meas.font = `800 ${size}px ${font}`;
-    const lh = size * 1.22;
-    layout = []; let y = 0;
-    idx.forEach((li, k) => {
-      if (k && li !== idx[k - 1] + 1) { layout.push(["...", y, true]); y += lh; }   // trechos não sequenciais
-      wrapLines(meas, t.lrc[li][1], maxW).forEach(l => { layout.push([l, y]); y += lh; });
-    });
-    textH = y;
-    if (top + textH + P <= MAX_H) break;
-  }
-  const H = Math.round(top + textH + P);
-
-  const cv = document.createElement("canvas"); cv.width = W; cv.height = H;
-  const ctx = cv.getContext("2d");
-  const grad = (x0, y0, x1, y1, c) => { const g = ctx.createLinearGradient(x0, y0, x1, y1);
-    g.addColorStop(0, c[0]); g.addColorStop(.6, c[1]); g.addColorStop(1, c[2]); return g; };
-  ctx.fillStyle = grad(0, 0, W, H, st.bg); ctx.fillRect(0, 0, W, H);
-  if (st.shade) { ctx.fillStyle = `rgba(0,0,0,${st.shade})`; ctx.fillRect(0, 0, W, H); }
-  // cabeçalho: capinha + nome da faixa + @artista
-  ctx.beginPath(); ctx.roundRect(P, P, S, S, 14); ctx.fillStyle = grad(P, P, P + S, P + S, st.thumb); ctx.fill();
-  ctx.fillStyle = st.ini; ctx.font = `800 64px ${font}`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-  ctx.fillText(t.title[0], P + S / 2, P + S / 2 + 2);
-  ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
-  const tx = P + S + 32, tw = W - tx - P;
-  ctx.fillStyle = st.text; ctx.font = `800 46px ${font}`;
-  ctx.fillText(wrapLines(ctx, t.title, tw)[0], tx, P + 60);
-  ctx.fillStyle = st.sub; ctx.font = `500 34px ${font}`;
-  ctx.fillText(toHandle(t.artist), tx, P + 108);
-  // trechos
-  ctx.font = `800 ${size}px ${font}`;
-  layout.forEach(([l, y, sep]) => { ctx.fillStyle = sep ? st.sub : st.text; ctx.fillText(l, P, top + y + size); });
-  return cv;
-}
-let cardCanvas = null, cardStyle = "grad";
-function renderCard() {
-  cardCanvas = makeCard(cardStyle);
-  $("cardImg").src = cardCanvas.toDataURL("image/png");
-  [...$("cardStyles").children].forEach(b => b.classList.toggle("on", b.dataset.style === cardStyle));
-}
-$("cardStyles").onclick = e => {
-  const b = e.target.closest("button"); if (!b) return;
-  cardStyle = b.dataset.style; renderCard();
-};
-$("selGo").onclick = () => { renderCard(); $("sheet").classList.add("open"); };
-const closeSheet = () => $("sheet").classList.remove("open");
-$("sheetClose").onclick = closeSheet;
-$("sheet").onclick = e => { if (e.target === $("sheet")) closeSheet(); };
-const cardName = () => `${track().title} - letra.png`;
-function saveCard() {
-  const a = document.createElement("a");
-  a.href = cardCanvas.toDataURL("image/png"); a.download = cardName(); a.click();
-}
-$("saveCard").onclick = saveCard;
-// Compartilhar pelo sistema (Android abre a folha de apps); sem suporte → salva a imagem
-$("sendCard").onclick = () => cardCanvas.toBlob(async blob => {
-  const file = new File([blob], cardName(), { type: "image/png" });
-  if (navigator.canShare && navigator.canShare({ files: [file] })) {
-    try { await navigator.share({ files: [file], title: track().title }); } catch {}
-  } else saveCard();
-});
 
 // O anel só mostra o andamento: avançar/voltar é pelo botão de play (segurar e arrastar)
 const ring = $("ring");
@@ -881,9 +863,28 @@ function fitCover() {
   root.setProperty("--tile", tile + "px");
 }
 fitCover();
-new ResizeObserver(fitCover).observe($("phone"));
+// Escondido (no app o player fica carregado por baixo da tela inicial) não refaz medidas: abrir o teclado da busca
+// redimensionava o quadro e o player escondido gastava 50–100 ms por quadro. Refaz ao aparecer (setPlayerVisible).
+// Escondido, mede UMA vez quando a tela para de mudar (400 ms depois) e sem a transição de --cover-size: deixar para a
+// hora de abrir fazia a capa animar de tamanho junto com a subida do player — a página inteira recalculava a cada
+// quadro (30–50 ms) e a 1ª abertura depois de iniciar o app engasgava.
+var medidasPendentes = false, medidasT = 0;
+function semTransicao(fn) {
+  const r = document.documentElement;
+  r.style.transition = "none"; fn(); getComputedStyle(r).getPropertyValue("--cover-size"); r.style.transition = "";
+}
+function medirEscondido() {
+  if (playerVisible || !medidasPendentes) return;
+  medidasPendentes = false;
+  semTransicao(() => { fitCover(); layoutRing(); render(); });
+}
+const quandoVisivel = fn => () => {
+  if (window.Sounos?.native && !playerVisible) { medidasPendentes = true; clearTimeout(medidasT); medidasT = setTimeout(medirEscondido, 400); return; }
+  fn();
+};
+new ResizeObserver(quandoVisivel(fitCover)).observe($("phone"));
 layoutRing();
-new ResizeObserver(() => { layoutRing(); render(); }).observe($("cover"));
+new ResizeObserver(quandoVisivel(() => { layoutRing(); render(); })).observe($("cover"));
 // Vindo da tela inicial: ?t=faixa (música solta → lista aleatória) · ?p=playlist
 const qp = new URLSearchParams(location.search);
 if (!window.Sounos?.native) {

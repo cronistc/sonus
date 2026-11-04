@@ -2,28 +2,42 @@
 (() => {
   const TIPS_KEY = "sounos.tips";
   const VERSION_KEY = "sounos.tipsVersion";
+  // Uma dica por vez, só quando a pessoa abre a tela da dica (offer(tela)): a primeira da lista que ela ainda não viu.
+  // As outras daquela tela ficam para as próximas vezes. Ordem = importância. `version` = versionCode em que a ferramenta
+  // chegou (quem atualiza vê só as das versões novas; quem instala agora vê todas, aos poucos).
+  // REGRA: toda versão nova traz as dicas das suas ferramentas novas (com o versionCode dela).
   const TIPS = [
-    { id: "busca-basica", version: "0.1.2", screen: "home", selector: "#searchBtn", text: "Toque na lupa para encontrar músicas e abrir suas pesquisas." },
-    { id: "nova-playlist", version: "0.1.2", screen: "home", selector: "#playlists .blk.new", text: "Toque em Nova playlist para criar uma lista e escolher as músicas." },
-    { id: "artistas-da-home", version: "0.1.2", screen: "home", selector: "#artists .ar", text: "Toque num artista para ver as músicas que você ouviu dele." },
-    { id: "mini-abrir-player", version: "0.1.2", screen: "mini", selector: "#miniOpen", text: "Toque no título ou puxe o mini-player para cima para abrir o player." },
-    { id: "mini-adicionar-playlist", version: "0.1.3", screen: "mini", selector: "#miniAdd", text: "Toque em + para adicionar a música atual a uma playlist." },
-    { id: "minhas-musicas-offline", version: "0.1.3", screen: "offline", selector: "#recentTitle", text: "Sem internet, Minhas músicas reúne downloads e faixas em cache." , when: () => document.getElementById("offlineMark")?.hidden === false },
-    { id: "busca-albuns-artistas", version: "0.1.3", screen: "search-results", selector: ".search-ov.open .sbar", text: "A busca também mostra álbuns e vários artistas. Toque neles para abrir.", when: () => !!document.querySelector(".search-ov.open .s-album, .search-ov.open .s-art") },
-    { id: "pagina-artista", version: "0.1.2", screen: "artist", selector: ".pg.artist .ph .name", text: "No perfil do artista, toque numa faixa para ouvi-la." },
-    { id: "albuns-do-artista", version: "0.1.3", screen: "artist-albums", selector: ".pg.artist .albums .s-album", text: "Toque num álbum para abrir a lista completa de faixas." },
-    { id: "player-toque-repetir", version: "0.1.2", screen: "player", selector: "#play", text: "Toque para tocar ou pausar. Segure e solte para alternar: repetir fila, repetir faixa (ícone com 1) ou desligar." },
-    { id: "player-aleatorio", version: "0.1.2", screen: "player", selector: "#play", text: "Deslize para cima ou para baixo no botão para alternar o aleatório. As setas cruzadas indicam essa mudança." },
-    { id: "player-buscar-faixa", version: "0.1.2", screen: "player", selector: "#play", text: "Segure o botão e arraste para os lados para avançar ou voltar na música." },
-    { id: "player-letra", version: "0.1.2", screen: "player", selector: "#lyricsBtn", text: "Toque no A para abrir a letra. Toque numa linha para ir até esse trecho." },
-    { id: "player-fila", version: "0.1.2", screen: "player", selector: "#queueWrap", text: "Toque numa faixa para ouvi-la; arraste para percorrer a fila e segure uma capa para reordenar." },
-    { id: "player-sugestoes", version: "0.1.2", screen: "suggestions", selector: "#queueWrap", text: "Ao repetir uma faixa, a fila mostra sugestões. Toque numa para ouvi-la." },
+    // tela inicial
+    { id: "busca-basica", version: "0.1.2", screen: "home", selector: "#searchBtn", text: "Procure qualquer música, artista ou álbum aqui." },
+    { id: "nova-playlist", version: "0.1.2", screen: "home", selector: "#playlists .blk.new", text: "Crie suas playlists aqui." },
+    { id: "artistas-da-home", version: "0.1.2", screen: "home", selector: "#artists .ar", text: "Seus artistas ficam aqui. Toque para abrir o perfil." },
+    { id: "minhas-musicas-offline", version: "0.1.3", screen: "offline", selector: "#recentTitle", text: "Sem internet, aqui ficam as músicas que tocam offline.", when: () => document.getElementById("offlineMark")?.hidden === false },
+    // mini-player
+    { id: "mini-abrir-player", version: "0.1.2", screen: "mini", selector: "#miniOpen", text: "Toque ou puxe para cima para abrir o player." },
+    { id: "mini-adicionar-playlist", version: "0.1.3", screen: "mini", selector: "#miniAdd", text: "Guarde a música atual numa playlist." },
+    // busca
+    { id: "busca-albuns-artistas", version: "0.1.3", screen: "search-results", selector: ".search-ov.open .sbar", text: "A busca também traz álbuns e artistas.", when: () => !!document.querySelector(".search-ov.open .s-album, .search-ov.open .s-art") },
+    // páginas
+    { id: "pagina-aleatorio", version: 13, screen: "artist", selector: ".pg.artist.open .big[data-a=play]", text: "Arraste o play para baixo para trocar entre em ordem e aleatório." },
+    { id: "compartilhar-artista", version: 13, screen: "artist", selector: ".pg.artist.open .compart", text: "Novo: compartilhe o artista como imagem. Quem tem o Sonus abre direto no app." },
+    { id: "albuns-do-artista", version: "0.1.3", screen: "artist-albums", selector: ".pg.artist .albums .s-album", text: "Os álbuns do artista estão aqui." },
+    { id: "compartilhar-album", version: 13, screen: "album", selector: ".pg.album.open .compart", text: "Novo: compartilhe o álbum como imagem ou link." },
+    { id: "compartilhar-playlist", version: 13, screen: "playlist", selector: ".pg.playlist.open [data-a=compartilhar]", text: "Novo: mande sua playlist por link. Quem recebe salva uma cópia no Sonus." },
+    // player
+    { id: "player-toque-repetir", version: "0.1.2", screen: "player", selector: "#play", text: "Toque para tocar ou pausar. Segure para repetir." },
+    { id: "player-letra", version: "0.1.2", screen: "player", selector: "#lyricsBtn", text: "Veja a letra. Toque numa linha para ir até ela." },
+    { id: "player-aleatorio", version: "0.1.2", screen: "player", selector: "#play", text: "Deslize o play para cima ou para baixo para ligar o aleatório." },
+    { id: "player-buscar-faixa", version: "0.1.2", screen: "player", selector: "#play", text: "Segure o play e arraste para os lados para avançar ou voltar." },
+    { id: "player-fila", version: "0.1.2", screen: "player", selector: "#queueWrap", text: "Sua fila. Segure uma capa para mudar a ordem." },
+    { id: "player-sugestoes", version: "0.1.2", screen: "suggestions", selector: "#queueWrap", text: "Repetindo uma música, aqui aparecem sugestões parecidas." },
+    { id: "compartilhar-letra", version: 13, screen: "lyrics", selector: "#shareBtn", text: "Novo: escolha até 6 linhas e compartilhe como imagem." },
   ];
 
   const top = (() => { try { return window.top; } catch { return window; } })();
   const hub = top.__sounosTipsHub ||= { active: null, pending: [], queued: new Set(), nextAt: 0, lastTouch: 0, pointers: new Set(), timer: 0 };
   const TIP_DURATION = 30000;                     // some sozinha em 30 s (ou no ×, ou usando o próprio botão)
-  const TIP_GAP = 1400;                          // respiro entre uma dica e a próxima
+  const TIP_GAP = 30000;                         // depois de uma dica, nenhuma outra por meio minuto (nada em sequência)
+  const TIP_DELAY = 900;                         // a tela aparece primeiro; a dica vem logo depois
   const EXIT_DURATION = 240;
   const parse = key => { try { return JSON.parse(localStorage.getItem(key)); } catch { return null; } };
   // Dicas comparam pelo versionCode (só sobe), nunca pelo nome: a contagem do nome reinicia a cada versão grande
@@ -90,7 +104,8 @@
       if (document.querySelector("#phone.has-page")) return false;
     }
     if (screen === "search-results" && !document.querySelector(".search-ov.open")) return false;
-    if ((screen === "player" || screen === "suggestions") && document.querySelector(".add-ov.open, .sheet.open")) return false;
+    if ((screen === "album" || screen === "playlist") && !target.closest(".pg.open")) return false;
+    if ((screen === "player" || screen === "suggestions" || screen === "lyrics") && document.querySelector(".add-ov.open, .sheet.open")) return false;
     if (screen.startsWith("artist") && !target.closest(".pg.artist.open")) return false;
     if (target.closest("#phone.player-hidden")) return false;
     return true;
@@ -150,7 +165,10 @@
       bubble.style.maxWidth = `${Math.max(0, vw - 2 * pad)}px`;
       const tr = target.getBoundingClientRect();
       const bw = bubble.offsetWidth, bh = bubble.offsetHeight;      // já com o texto e sem o efeito do transform
-      const spaceBelow = vh - tr.bottom - gap - pad, spaceAbove = tr.top - gap - pad;
+      // o balão nunca cobre o mini-player: ele é o limite de baixo (se não couber embaixo, abre em cima mesmo cobrindo um pedaço do conteúdo)
+      const mini = document.querySelector(".mini.has-track"), mr = mini && mini.getClientRects().length ? mini.getBoundingClientRect() : null;
+      const limite = mr && mr.top > tr.bottom ? Math.min(vh, mr.top - 6) : vh;
+      const spaceBelow = limite - tr.bottom - gap - pad, spaceAbove = tr.top - gap - pad;
       const below = spaceBelow >= bh || (spaceAbove < bh && spaceBelow >= spaceAbove);   // cabe embaixo; senão em cima; senão onde há mais espaço
       const left = Math.max(pad, Math.min(vw - bw - pad, tr.left + tr.width / 2 - bw / 2));
       const rawTop = below ? tr.bottom + gap : tr.top - bh - gap;
@@ -167,9 +185,9 @@
       bubble.style.setProperty("--dica-salto", below ? "-9px" : "9px");
     };
     reposition();
-    state.seen[entry.tip.id] = true;
-    const active = { tip: entry.tip, bubble, target, remaining: TIP_DURATION, timeout: 0, paused: false, startedAt: 0,
-      close: () => finishTip(entry.tip, bubble) };
+    if (!entry.previa) state.seen[entry.tip.id] = true;       // previa (auditoria): mostra o balão sem marcar como vista
+    const active = { tip: entry.previa ? null : entry.tip, bubble, target, remaining: TIP_DURATION, timeout: 0, paused: false, startedAt: 0,
+      close: () => finishTip(entry.previa ? null : entry.tip, bubble) };
     hub.active = active;
     bubble.querySelector(".sonus-dica-fechar").addEventListener("click", e => {
       e.stopPropagation();
@@ -185,7 +203,7 @@
       bubble.classList.add("visivel");
       runTipTimer(active);
     });
-    save();
+    if (!entry.previa) save();
   }
   function schedulePump(delay) {
     if (hub.timer) return;
@@ -209,17 +227,28 @@
     }
     entry.api.placeTip(entry, target);
   }
+  // a tela abriu: no máximo UMA dica (a primeira da lista ainda não vista); se já há uma esperando ou na tela, nada
   function offer(screen) {
-    for (const tip of TIPS) {
-      if (tip.screen !== screen || !eligible(tip)) continue;
-      const target = document.querySelector(tip.selector);
-      if (!visible(target) || hub.queued.has(tip.id)) continue;
-      hub.queued.add(tip.id);
-      hub.pending.push({ tip, doc: document, api, screen });
-    }
+    if (hub.active || hub.pending.length || Date.now() < hub.nextAt) return;   // uma dica por vez, com intervalo
+    const tip = TIPS.find(t => t.screen === screen && eligible(t) && visible(document.querySelector(t.selector)));
+    if (!tip) return;
+    hub.queued.add(tip.id);
+    hub.pending.push({ tip, doc: document, api, screen });
+    hub.nextAt = Math.max(hub.nextAt, Date.now() + TIP_DELAY);
     pump();
   }
-  const api = { offer, contextActive, placeTip };
+  // Auditoria visual: mostra o balão de uma dica (por id) SEM marcar como vista nem gravar nada.
+  // Uso (DevTools): SounosTips.previa("busca-basica"). O alvo precisa existir na página atual (senão usa o telefone).
+  function previa(id) {
+    const tip = TIPS.find(t => t.id === id);
+    if (!tip) return "dica desconhecida: " + TIPS.map(t => t.id).join(", ");
+    if (hub.active) hub.active.close();
+    const target = document.querySelector(tip.selector);
+    if (!target) return "alvo não existe nesta tela: " + tip.selector;
+    placeTip({ tip, doc: document, api, screen: tip.screen, previa: true }, target);
+    return "ok";
+  }
+  const api = { offer, contextActive, placeTip, previa };
   document.addEventListener("pointerdown", e => {
     hub.pointers.add(`${window === top ? "top" : "frame"}:${e.pointerId}`);
     hub.lastTouch = Date.now();

@@ -10,6 +10,15 @@
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION" />
 
+    <!-- ver qual app abre cada endereço de música (os que outro app já é dono não dá para marcar no Sonus) -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="https" />
+        </intent>
+    </queries>
+
     <application
         android:name=".SounosApp"
         android:allowBackup="false"
@@ -17,6 +26,14 @@
         android:roundIcon="@mipmap/ic_launcher"
         android:label="Sonus"
         android:theme="@style/Theme.Sounos">
+        <!-- entrega a imagem compartilhada (trecho da letra) a outros apps, sem expor outros arquivos -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="app.sounos.arquivos"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/arquivos_compartilhados" />
+        </provider>
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -28,7 +45,71 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Links de música (Spotify, Deezer, Apple Music, Tidal, YouTube/YT Music, Amazon, SoundCloud, song.link):
+                 sem o app do serviço, o Sonus abre o link e toca a mesma música. No Android 12+ a pessoa liga isso uma vez
+                 (Antes de começar / Configurações levam à tela "Abrir por padrão" do Android). -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" />
+                <data android:scheme="http" />
+                <data android:host="open.spotify.com" />
+                <data android:host="spotify.link" />
+                <data android:host="www.deezer.com" />
+                <data android:host="deezer.com" />
+                <data android:host="deezer.page.link" />
+                <data android:host="link.deezer.com" />
+                <data android:host="dzr.page.link" />
+                <data android:host="music.apple.com" />
+                <data android:host="tidal.com" />
+                <data android:host="listen.tidal.com" />
+                <data android:host="music.youtube.com" />
+                <data android:host="www.youtube.com" />
+                <data android:host="youtube.com" />
+                <data android:host="m.youtube.com" />
+                <data android:host="youtu.be" />
+                <data android:host="music.amazon.com" />
+                <data android:host="music.amazon.com.br" />
+                <data android:host="soundcloud.com" />
+                <data android:host="on.soundcloud.com" />
+                <data android:host="m.soundcloud.com" />
+                <data android:host="song.link" />
+                <data android:host="album.link" />
+            </intent-filter>
+            <!-- Links do próprio Sonus (compartilhar música, álbum, artista): o site tem o assetlinks.json com a chave do
+                 Sonus, então o Android abre direto no app, sem perguntar. Quem não tem o app vê a página do site.
+                 O endereço também está em LinkDeMusica.SITE_HOST e no SounosCompartilhar (native.js). -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" />
+                <data android:host="cronistc.github.io" />
+                <data android:pathPrefix="/s" />
+            </intent-filter>
+            <!-- Compartilhar › Sonus (texto com o link) -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
         </activity>
+        <!-- widgets da tela inicial (widget/Widgets.kt): três desenhos -->
+        <receiver android:name=".widget.Widgets$Botoes" android:exported="false" />
+        <service android:name=".widget.LetraService" android:exported="false" android:permission="android.permission.BIND_REMOTEVIEWS" />
+        <receiver android:name=".widget.Widgets$Barra" android:exported="true" android:label="Sonus · Barra">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_barra" />
+        </receiver>
+        <receiver android:name=".widget.Widgets$Capa" android:exported="true" android:label="Sonus · Capa">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_capa" />
+        </receiver>
+        <receiver android:name=".widget.Widgets$Completo" android:exported="true" android:label="Sonus · Completo">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_completo" />
+        </receiver>
         <receiver android:name=".update.InstallResult" android:exported="false" />
         <receiver android:name=".update.Updated" android:exported="false">
             <intent-filter><action android:name="android.intent.action.MY_PACKAGE_REPLACED" /></intent-filter>

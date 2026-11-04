@@ -2,13 +2,14 @@
 .bv-tela {
   position: absolute; inset: 0; z-index: 80; display: flex; flex-direction: column;
   color: var(--text); background: var(--phone-bg);
+  padding-top: var(--sb-topo);
   transform: translateX(100%);
   transition: transform .42s cubic-bezier(.2,.85,.25,1);
   font-family: "SonusFont", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 .bv-tela.visivel { transform: none; }
 .bv-tela.saindo { transform: translateX(100%); pointer-events: none; }
-.bv-head { min-height: 56px; padding: 0 16px; display: flex; align-items: center; flex-shrink: 0; }
+.bv-head { min-height: 56px; padding: 0 20px; display: flex; align-items: center; flex-shrink: 0; }
 .bv-head h1 { font-size: calc(var(--fs) * 20px); font-weight: 700; }
 .bv-body { flex: 1; overflow-y: auto; scrollbar-width: none; padding: 12px 0 24px; }
 .bv-body::-webkit-scrollbar { display: none; }
@@ -17,7 +18,9 @@
 .bv-row:active:not(:disabled) { background: var(--chip-soft); }
 .bv-row:disabled { opacity: 1; cursor: default; }
 .bv-row .pill { pointer-events: none; flex-shrink: 0; }
-.bv-foot { flex-shrink: 0; padding: 12px 24px max(28px, env(safe-area-inset-bottom)); }
+.bv-row .pill.ok { display: inline-flex; align-items: center; background: none; color: var(--icon-dim); padding: 0 0 0 4px; }     /* já ativo: só "✓ Ativo", sem cara de botão */
+.bv-row .pill.ok::before { content: "\2713\00a0"; font-weight: 700; }
+.bv-foot { flex-shrink: 0; padding: 12px 24px calc(28px + var(--sb-base)); }
 .bv-comecar { height: 54px; }
 @media (prefers-reduced-motion: reduce) {
   .bv-tela { transition-duration: .01ms; }

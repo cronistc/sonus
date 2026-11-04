@@ -4,13 +4,19 @@ import android.os.Handler
 import android.os.Looper
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
+import app.sounos.data.CoverColors
 import app.sounos.data.Json
 import app.sounos.extractor.MusicPicks
 import app.sounos.extractor.CoverStore
 import app.sounos.extractor.SearchFilter
 import app.sounos.extractor.TitleNormalizer
 import app.sounos.extractor.Track
+import app.sounos.extractor.LinkDeMusica
+import app.sounos.widget.Widgets
+import app.sounos.extractor.Sounos as SonusHttp
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.coroutineScope
 import app.sounos.player.PlayerController
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -49,6 +55,7 @@ class Bridge(
     private val listener: (String, JSONObject) -> Unit = { name, payload -> send(name, payload) }
     private val updListener: (JSONObject) -> Unit = { send("update", it) }
     private val searchPages = ConcurrentHashMap<String, Page>()
+    private val atualizadoEm = ConcurrentHashMap<String, Long>()     // chave de metadados → última vez que veio da rede
     private val searchPageLocks = ConcurrentHashMap<String, Mutex>()
     @Volatile private var pageActive = true
 
@@ -68,6 +75,7 @@ class Bridge(
     fun attach() {
         player.addListener(listener); app.updater.addListener(updListener)
         runCatching { connectivity.registerDefaultNetworkCallback(netCallback) }
+        bibliotecaMudou()                                 // "Minhas músicas" já pronta antes da 1ª página pedir
     }
     fun detach() {
         player.removeListener(listener); app.updater.removeListener(updListener); scope.cancel()
@@ -75,7 +83,23 @@ class Bridge(
     }
     fun setPageActive(active: Boolean) { pageActive = active }
 
+    // "Minhas músicas" (baixadas + cache inteiro) e o armazenamento custam centenas de ms (histórico inteiro, arquivos
+    // no disco) e eram pedidos de forma síncrona a cada desenho: a página de baixadas travava ~1,4 s e a tela inicial
+    // offline ~0,7 s. Ficam prontos na memória e são refeitos em segundo plano quando a biblioteca muda.
+    @Volatile private var mineCache: String? = null
+    @Volatile private var storageCache: Pair<Long, String>? = null
+    private val mineGeracao = java.util.concurrent.atomic.AtomicInteger()
+    private fun bibliotecaMudou() {
+        mineCache = null; storageCache = null
+        val g = mineGeracao.incrementAndGet()
+        app.io.launch {
+            val novo = runCatching { mineTracks().toString() }.getOrNull() ?: return@launch
+            if (mineGeracao.get() == g) mineCache = novo
+        }
+    }
+
     fun send(name: String, payload: Any) {
+        if (name == "library" || name == "offline" || (name == "download" && payload is JSONObject && (payload.optBoolean("done") || payload.has("error")))) bibliotecaMudou()
         // Com a tela apagada, evita acordar a WebView quatro vezes por segundo só para atualizar o tempo.
         if (name == "progress" && (!pageActive || !app.getSystemService(android.os.PowerManager::class.java).isInteractive)) return
         val js = "window.__sounos&&window.__sounos.emit(${JSONObject.quote(name)},$payload)"
@@ -89,18 +113,27 @@ class Bridge(
     fun call(method: String, args: String?): String {
         val a = runCatching { JSONObject(args?.ifBlank { "{}" } ?: "{}") }.getOrDefault(JSONObject())
         // pedido malformado nunca derruba o app (nem a música)
-        return runCatching { sync(method, a) }.getOrElse { android.util.Log.w("Sonus", "leitura $method falhou", it); "{}" }
+        return runCatching { sync(method, a) }.getOrElse {
+            android.util.Log.w("Sonus", "leitura $method falhou", it)
+            // pedido com resposta (Sounos.ask) que quebrou antes de começar (ex.: parâmetro faltando): responde com erro,
+            // senão a promessa da tela ficava pendurada para sempre
+            a.optString("reqId").takeIf(String::isNotBlank)?.let { req -> send("reply", JSONObject().put("error", it.message ?: "erro").put("reqId", req)) }
+            "{}"
+        }
     }
 
     private fun sync(method: String, a: JSONObject): String {
         return when (method) {
             "getState" -> onMain { player.state().toString() }
+            // de ponta a ponta: altura das barras do sistema em px do aparelho (a interface divide pelo devicePixelRatio)
+            "getMedidas" -> JSONObject().put("topo", MainActivity.barraTopo).put("base", MainActivity.barraBase).toString()
             "openingReady" -> {
                 main.post {
                     web.alpha = 1f
-                    (web.context as? MainActivity)?.applyWindowTheme(app.library.settings().optString("theme", "gradient"))
-                    // O início usa a cor sólida do splash; depois da abertura, a interface envia os tons atuais do gradiente.
-                    web.evaluateJavascript("window.SounosSyncSystemBars?.()", null)
+                    // barras na cor lisa do splash (a mesma do 1º quadro da abertura). A cor da música entra UMA vez, quando
+                    // o fundo do app aparece na animação (opening.js chama SounosSyncSystemBars). Antes as barras passavam
+                    // por vermelho → azul padrão → vermelho em meio segundo: a abertura "piscava" de cor.
+                    (web.context as? MainActivity)?.applyWindowTheme(app.library.settings().optString("theme", "gradient"), opening = true)
                     // a palavra nativa fica por cima mais um instante (está no mesmo lugar do 1º quadro da animação):
                     // assim nunca aparece um quadro vazio na troca
                     main.postDelayed({
@@ -120,7 +153,7 @@ class Bridge(
             "getBatteryOptimization" -> JSONObject().put("enabled", batteryOptimizationIgnored()).toString()
             "getNotificationPermission" -> JSONObject().put("granted", notificationPermissionGranted()).toString()
             "getOffline" -> JSONObject().put("offline", !player.isOnline).toString()
-            "getMineTracks" -> mineTracks().toString()
+            "getMineTracks" -> mineCache ?: mineTracks().toString().also { mineCache = it }
             // só as baixadas (rápido): a tela inicial online não precisa conferir o cache no disco a cada desenho
             "getDownloadedTracks" -> JSONObject().put("downloaded", Json.tracks(downloadedTracks())).toString()
             "getCoverArtistKeys" -> JSONObject().put("keys", JSONArray(if (BuildConfig.DEBUG) app.covers.knownArtistKeys() else emptyList<String>())).toString()
@@ -138,14 +171,42 @@ class Bridge(
             "loadData" -> JSONObject().put("value", app.userData.load(a.optString("key")) ?: JSONObject.NULL).toString()
             "getDownloads" -> app.library.downloadedMeta().toString()
             "getNetwork" -> JSONObject().put("metered", metered()).toString()
-            "getStorage" -> JSONObject()
+            // link de música recebido (tocado/compartilhado): entrega uma vez
+            "getPendingLink" -> JSONObject().put("texto", MainActivity.linkPendente ?: JSONObject.NULL).also { MainActivity.linkPendente = null }.toString()
+            // "Abrir links de música no Sonus" (Android 12+: a pessoa marca os endereços em Abrir por padrão)
+            "getLinksStatus" -> linksStatus().toString()
+            "temWidget" -> JSONObject().put("tem", Widgets.existe(app)).also { o -> Widgets.contagem(app).forEach { (k, v) -> o.put(k, v) } }.toString()
+            // "Adicionar à tela inicial": o Android mostra a confirmação e põe o widget escolhido na tela
+            "adicionarWidget" -> {
+                val cls = when (a.optString("tipo")) { "capa" -> Widgets.Capa::class.java; "completo" -> Widgets.Completo::class.java; else -> Widgets.Barra::class.java }
+                val am = android.appwidget.AppWidgetManager.getInstance(app)
+                JSONObject().put("ok", am.isRequestPinAppWidgetSupported && am.requestPinAppWidget(android.content.ComponentName(app, cls), null, null)).toString()
+            }
+            "getStorage" -> storageCache?.takeIf { System.currentTimeMillis() - it.first < 30_000 }?.second ?: JSONObject()
                 .put("deviceBytes", runCatching { android.os.StatFs(app.filesDir.path).totalBytes }.getOrDefault(0L))
                 .put("freeBytes", runCatching { android.os.StatFs(app.filesDir.path).availableBytes }.getOrDefault(0L))
                 .put("downloadsBytes", app.library.downloadsBytes())
                 .put("downloadsCount", app.library.downloadedMeta().length())
                 .put("cacheBytes", app.audio.sizeBytes() + app.cacheBudget.sizeBytes())
-                .toString()
+                .toString().also { storageCache = System.currentTimeMillis() to it }
             else -> { main.post { runCatching { command(method, a) }.onFailure { android.util.Log.w("Sonus", "comando $method falhou", it) } }; "{}" }
+        }
+    }
+
+    // Capas da busca: a lista mostra capinhas (~10 KB, rota mini). No Wi-Fi, depois que elas chegaram, a capa no tamanho
+    // da fila (400 px) vem aos poucos — as 4 primeiras logo, o resto 2 de cada vez —, pronta se a música for tocada.
+    // Nos dados móveis só as capinhas: a de fila vem quando a música entra de verdade na fila.
+    private var capasBusca: kotlinx.coroutines.Job? = null
+    private fun capasDaBusca(items: List<app.sounos.extractor.Track>) {
+        capasBusca?.cancel()
+        val cm = app.getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+        if (cm.isActiveNetworkMetered || items.isEmpty()) return
+        capasBusca = app.io.launch {
+            kotlinx.coroutines.delay(1500)
+            items.chunked(2).forEachIndexed { i, par ->
+                if (i == 2) kotlinx.coroutines.delay(1000)                 // depois das 4 primeiras, um respiro
+                par.map { t -> launch { runCatching { app.covers.get(t, pin = false, large = false, conferirAntes = false) } } }.forEach { it.join() }
+            }
         }
     }
 
@@ -157,6 +218,9 @@ class Bridge(
                 val nextPage = page.nextPage
                 if (nextPage == null) searchPages.remove(q) else searchPages[q] = nextPage
                 app.resolver.prefetch(page.items.take(1))                       // início instantâneo do 1º (os outros disputavam a rede com as capas)
+                // 2º e 3º depois que as capas da lista já chegaram: quase sempre a escolha está entre os três primeiros.
+                main.postDelayed({ app.resolver.prefetch(page.items.drop(1).take(2)) }, 1500)
+                capasDaBusca(page.items)
                 JSONObject().put("items", Json.tracks(page.items)).put("suggestion", page.serviceSuggestion ?: JSONObject.NULL)
                     .put("hasMore", nextPage != null)
             }
@@ -249,6 +313,14 @@ class Bridge(
                     seg.optJSONObject(i)?.let { o -> o.optString("name").takeIf(String::isNotBlank)?.let { it to o.optString("url").takeIf(String::isNotBlank) } }
                 }, app.library.history())
             }
+            // Seu Mix (tela inicial): mistura montada pelo motor; cores da capa = a cor principal das capas das primeiras músicas.
+            "mix" -> async(a) {
+                val r = app.motor.mix(app.source, app.library.history())
+                val faixas = Json.tracks(r.optJSONArray("musicas"))
+                val cores = faixas.asSequence().mapNotNull { t -> app.covers.local(t.id, t.thumbs.firstOrNull()?.url) }
+                    .map { f -> CoverColors.of(f) }.map { it.first() }.distinct().take(3).toList()
+                r.put("cores", JSONArray(cores))
+            }
             // Lançamentos recentes de um artista.
             "artistReleases" -> cachedAsync(a, "artistReleases", a.getString("name")) {
                 val name = a.getString("name")
@@ -294,8 +366,13 @@ class Bridge(
                 send("state", player.state()); send("library", JSONObject())
                 send("storage", JSONObject(call("getStorage", "{}")))
             }
-            "setSettings" -> { app.library.saveSettings(a); player.applySettings(a); app.applyStartTheme(a.optString("theme", "gradient"))
-                (web.context as? MainActivity)?.applyWindowTheme(a.optString("theme", "gradient")) }
+            "setSettings" -> {
+                val temaAntes = app.library.settings().optString("theme", "gradient")
+                app.library.saveSettings(a); player.applySettings(a); app.applyStartTheme(a.optString("theme", "gradient"))
+                // a tela manda os ajustes ao abrir: repintar a janela aí punha o azul padrão do Gradiente no meio do splash.
+                // Só repinta se o TEMA mudou (as cores da música vêm em seguida por setSystemBars)
+                if (a.optString("theme", "gradient") != temaAntes) (web.context as? MainActivity)?.applyWindowTheme(a.optString("theme", "gradient"))
+            }
             "setSystemBars" -> (web.context as? MainActivity)?.applyWindowTheme(
                 a.optString("theme", app.library.settings().optString("theme", "gradient")),
                 statusColor = a.optString("statusColor").takeIf { it.isNotBlank() },
@@ -309,17 +386,152 @@ class Bridge(
             "checkUpdate" -> app.updater.check()
             "installUpdate" -> app.updater.install()
             "allowInstalls" -> app.updater.openInstallPermission()
+            "openLinkSettings" -> {
+                fun abrir(acao: String) = app.startActivity(android.content.Intent(acao, android.net.Uri.parse("package:${app.packageName}")).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+                // sem a tela "Abrir por padrão" (Android < 12 ou fabricante que a tirou): os detalhes do app
+                runCatching { abrir(if (android.os.Build.VERSION.SDK_INT >= 31) android.provider.Settings.ACTION_APP_OPEN_BY_DEFAULT_SETTINGS else android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS) }
+                    .recoverCatching { abrir(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS) }
+            }
+            // link de outro app → a mesma música, álbum, artista ou playlist no Sonus
+            "abrirLink" -> async(a) { abrirLink(a.optString("texto")) }
+            // imagem (trecho da letra): base64 de um JPEG/PNG → arquivo em cache/compartilhar → tela de compartilhar do
+            // Android com a imagem e o texto (link da música). Sem o próprio Sonus na lista.
+            "compartilharImagem" -> runCatching {
+                val arq = imagemTemporaria(a.optString("dados"), a.optString("tipo", "image/jpeg"))
+                val uri = androidx.core.content.FileProvider.getUriForFile(app, "app.sounos.arquivos", arq)
+                val envio = android.content.Intent(android.content.Intent.ACTION_SEND).setType(a.optString("tipo", "image/jpeg"))
+                    .putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                    .apply { a.optString("texto").takeIf(String::isNotBlank)?.let { putExtra(android.content.Intent.EXTRA_TEXT, it) } }
+                    .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                envio.clipData = android.content.ClipData.newRawUri("", uri)       // prévia da imagem na tela de compartilhar
+                val escolha = android.content.Intent.createChooser(envio, a.optString("titulo").ifBlank { null })
+                    .putExtra(android.content.Intent.EXTRA_EXCLUDE_COMPONENTS, arrayOf(android.content.ComponentName(app, MainActivity::class.java)))
+                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                app.startActivity(escolha)
+            }
+            // salva a imagem na galeria (Pictures/Sonus); Android 10+ não pede permissão
+            "salvarImagem" -> JSONObject().put("ok", runCatching { salvarNaGaleria(a.optString("dados"), a.optString("nome", "Sonus"), a.optString("tipo", "image/jpeg")) }
+                .onFailure { android.util.Log.w("Sonus", "salvar imagem falhou", it) }.getOrDefault(false)).toString()
+            "copiarTexto" -> onMain {
+                val cm = app.getSystemService(android.content.ClipboardManager::class.java)
+                cm.setPrimaryClip(android.content.ClipData.newPlainText(a.optString("rotulo", "Sonus"), a.optString("texto")))
+                "{}"
+            }
+            // compartilhar música/álbum/artista: a tela de compartilhar do Android com o texto e o link (sem o próprio Sonus)
+            "compartilhar" -> runCatching {
+                val envio = android.content.Intent(android.content.Intent.ACTION_SEND).setType("text/plain")
+                    .putExtra(android.content.Intent.EXTRA_TEXT, a.optString("texto"))
+                    .putExtra(android.content.Intent.EXTRA_SUBJECT, a.optString("titulo"))
+                val escolha = android.content.Intent.createChooser(envio, a.optString("titulo").ifBlank { null })
+                    .putExtra(android.content.Intent.EXTRA_EXCLUDE_COMPONENTS, arrayOf(android.content.ComponentName(app, MainActivity::class.java)))
+                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                app.startActivity(escolha)
+            }
             // links da tela "Apoie o Sonus" abrem no navegador do celular (só https)
             "openUrl" -> a.optString("url").takeIf { it.startsWith("https://") }?.let { u ->
                 app.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(u)).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }
             "seenUpdate" -> app.updater.clearJustUpdated()
             "setUpdateUrl" -> app.updater.setTestUrl(a.optString("url").ifBlank { null })      // só em build de teste
             "clearCache" -> app.io.launch {
-                app.audio.clear(); app.cacheBudget.clear()
+                // as músicas completas da biblioteca ("Minhas músicas", tocam offline) ficam, como a tela promete
+                val minhas = app.library.cachedTracks().keys.filter { app.audio.isFreshComplete(it) }.toSet()
+                app.audio.clear(minhas); app.cacheBudget.clear()
                 send("library", JSONObject())
                 send("storage", JSONObject(call("getStorage", "{}")))
             }
         }
+    }
+
+    private fun bytesDe(dados: String): ByteArray = android.util.Base64.decode(dados.substringAfter("base64,"), android.util.Base64.DEFAULT)
+
+    /** Grava a imagem em cache/compartilhar (o provedor de arquivos entrega só essa pasta). Uma por vez: a anterior sai. */
+    private fun imagemTemporaria(dados: String, tipo: String): java.io.File {
+        val pasta = java.io.File(app.cacheDir, "compartilhar").apply { mkdirs(); listFiles()?.forEach { it.delete() } }
+        return java.io.File(pasta, "sonus-${System.currentTimeMillis()}.${if (tipo.endsWith("png")) "png" else "jpg"}").apply { writeBytes(bytesDe(dados)) }
+    }
+
+    private fun salvarNaGaleria(dados: String, nome: String, tipo: String): Boolean {
+        val bytes = bytesDe(dados)
+        val ext = if (tipo.endsWith("png")) "png" else "jpg"
+        val limpo = nome.replace(Regex("[\\\\/:*?\"<>|]"), " ").trim().take(80).ifBlank { "Sonus" }
+        if (android.os.Build.VERSION.SDK_INT >= 29) {
+            val valores = android.content.ContentValues().apply {
+                put(android.provider.MediaStore.Images.Media.DISPLAY_NAME, "$limpo.$ext")
+                put(android.provider.MediaStore.Images.Media.MIME_TYPE, tipo)
+                put(android.provider.MediaStore.Images.Media.RELATIVE_PATH, "Pictures/Sonus")
+            }
+            val uri = app.contentResolver.insert(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, valores) ?: return false
+            app.contentResolver.openOutputStream(uri)?.use { it.write(bytes) } ?: return false
+            return true
+        }
+        return false
+    }
+
+    /** Link de outro app de música → a mesma música (ou o álbum) no Sonus. */
+    private suspend fun abrirLink(texto: String): JSONObject {
+        val p = LinkDeMusica(SonusHttp.http).ler(texto) ?: return JSONObject().put("erro", "link")
+        val base = JSONObject().put("servico", p.servico).put("titulo", p.titulo).put("artista", p.artista)
+        if (p.tipo == "artista") {
+            // YouTube: o canal dá o nome; outros apps: o nome (a página do artista acha o canal pelo nome exato)
+            val (nome, url) = p.canalUrl?.let { app.source.canal(it) } ?: (p.artista to null)
+            if (nome.isBlank()) return base.put("erro", "nao_achei")
+            return base.put("tipo", "artista").put("nome", nome).put("url", url ?: JSONObject.NULL)
+        }
+        val listaUrl = p.playlistUrl
+        if (p.tipo == "playlist" && listaUrl != null) {
+            // playlist do YouTube / YT Music: a lista já vem com as músicas, sem procurar uma a uma
+            val lista = runCatching { app.source.album(listaUrl) }.getOrNull() ?: return base.put("erro", "nao_achei")
+            val tracks = lista.items.distinctBy { it.id }.take(LinkDeMusica.MAX_FAIXAS)
+            if (tracks.isEmpty()) return base.put("erro", "nao_achei")
+            return base.put("tipo", "playlist").put("titulo", lista.name).put("artista", lista.artist).put("tracks", Json.tracks(tracks)).put("total", tracks.size)
+        }
+        if (p.tipo == "playlist") {
+            // cada música da playlist procurada como um link de música (4 de cada vez); as não achadas ficam de fora
+            val sem = kotlinx.coroutines.sync.Semaphore(if (p.faixas.all { it.videoId != null }) 8 else 4)   // pelo id é rápido (playlist do Sonus)
+            // andamento para a tela ("Procurando 37 de 100") a cada música, no máximo umas 4 vezes por segundo
+            val feitas = java.util.concurrent.atomic.AtomicInteger(); var ultimo = 0L
+            send("linkProgresso", JSONObject().put("feitas", 0).put("total", p.faixas.size).put("titulo", p.titulo).put("servico", p.servico))
+            val achadas = kotlinx.coroutines.coroutineScope {
+                p.faixas.map { f -> async { sem.withPermit { runCatching { app.source.encontrar(f) }.getOrNull() }.also {
+                    val n = feitas.incrementAndGet(); val agora = System.currentTimeMillis()
+                    if (agora - ultimo > 250 || n == p.faixas.size) { ultimo = agora; send("linkProgresso", JSONObject().put("feitas", n).put("total", p.faixas.size).put("titulo", p.titulo).put("servico", p.servico)) }
+                } } }.awaitAll()
+            }.filterNotNull().distinctBy { it.id }
+            if (achadas.isEmpty()) return base.put("erro", "nao_achei")
+            return base.put("tipo", "playlist").put("tracks", Json.tracks(achadas)).put("total", p.faixas.size)
+        }
+        if (p.tipo == "album") {
+            p.playlistUrl?.let { return base.put("tipo", "album").put("url", it) }
+            val al = app.source.encontrarAlbum(p) ?: return base.put("erro", "nao_achei")
+            return base.put("tipo", "album").put("url", al.url).put("titulo", al.name).put("artista", al.artist)
+                .put("thumb", al.thumbs.maxByOrNull { it.width * it.height }?.url ?: JSONObject.NULL)
+        }
+        val t = app.source.encontrar(p) ?: return base.put("erro", "nao_achei")
+        return base.put("tipo", "musica").put("track", Json.track(t))
+    }
+
+    /** Quantos endereços de música o Sonus pode abrir (Android 12+: a pessoa marca em "Abrir por padrão"). */
+    private fun linksStatus(): JSONObject {
+        if (android.os.Build.VERSION.SDK_INT < 31) return JSONObject().put("ligado", true).put("suportado", true)
+        return runCatching {
+            val dvm = app.getSystemService(android.content.pm.verify.domain.DomainVerificationManager::class.java)
+            val st = dvm.getDomainVerificationUserState(app.packageName) ?: return@runCatching JSONObject().put("ligado", false)
+            // endereço que outro app já verificou (YouTube, YT Music, Amazon Music instalados) o Android não deixa marcar:
+            // a marcação volta sozinha. Esses saem da conta, senão o pedido de "marcar todos" nunca termina.
+            val pm = app.packageManager
+            fun apps(host: String) = runCatching {
+                pm.queryIntentActivities(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://$host/"))
+                    .addCategory(android.content.Intent.CATEGORY_BROWSABLE), android.content.pm.PackageManager.MATCH_ALL)
+                    .map { it.activityInfo.packageName }.toSet()
+            }.getOrDefault(emptySet())
+            val navegadores = apps("sonus.invalid") + app.packageName
+            val mapa = st.hostToStateMap.filter { (host, estado) ->
+                estado != android.content.pm.verify.domain.DomainVerificationUserState.DOMAIN_STATE_NONE || (apps(host) - navegadores).isEmpty()
+            }
+            val ativos = mapa.values.count { it != android.content.pm.verify.domain.DomainVerificationUserState.DOMAIN_STATE_NONE }
+            JSONObject().put("suportado", true).put("ativos", ativos).put("total", mapa.size)
+                .put("ligado", st.isLinkHandlingAllowed && mapa.isNotEmpty() && ativos >= mapa.size)
+        }.getOrElse { JSONObject().put("ligado", true) }
     }
 
     private fun downloadedTracks(): List<app.sounos.extractor.Track> = app.library.downloadedMeta().keys().asSequence().mapNotNull { id ->
@@ -388,11 +600,17 @@ class Bridge(
             }.onFailure { android.util.Log.w("Sonus", "cache metadados leitura falhou metodo=$method", it) }.getOrNull()
             val readMs = (System.nanoTime() - readStarted) / 1_000_000
             android.util.Log.i("Sonus", "metadados metodo=$method etapa=disco_ms=$readMs cache=${cached != null}")
+            // abriu a mesma página há pouco (artista, álbum, busca): o que está no disco basta, sem refazer na rede
+            // (abrir o mesmo artista 5 vezes baixava a discografia inteira 5 vezes)
+            // resposta guardada vazia nunca é "recente": tenta de novo (uma falha passageira deixava a página vazia 10 min)
+            val vazio = { o: JSONObject -> o.optJSONArray("items")?.length() == 0 }
+            val recente = cached != null && !vazio(cached) && method != "search" && System.currentTimeMillis() - (atualizadoEm[cacheKey] ?: 0) < 10 * 60_000L
             if (cached != null) {
                 val first = JSONObject(cached.toString())
                 if (method == "search") first.put("hasMore", false) // o cursor do NewPipe não sobrevive à sessão
                 first.put("isCached", true)
                 send("reply", first.put("reqId", req))
+                if (recente) return@launch
             }
 
             val networkStarted = System.nanoTime()
@@ -405,6 +623,12 @@ class Bridge(
             }
 
             val result = fresh.getOrThrow().put("isCached", false)
+            // veio vazio da rede mas o guardado tem conteúdo: fica o guardado (não troca página boa por vazia)
+            if (vazio(result) && cached != null && !vazio(cached)) {
+                android.util.Log.i("Sonus", "metadados metodo=$method etapa=rede_vazia mantido=cache")
+                return@launch
+            }
+            if (!vazio(result)) atualizadoEm[cacheKey] = System.currentTimeMillis()
             val writeStarted = System.nanoTime()
             val trim = runCatching { withContext(Dispatchers.IO) { app.metadata.write(cacheKey, result.toString()) } }
                 .onFailure { android.util.Log.w("Sonus", "cache metadados gravação falhou metodo=$method", it) }.getOrNull()

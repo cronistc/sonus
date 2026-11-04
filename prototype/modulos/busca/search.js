@@ -64,6 +64,7 @@
   // mesma regra das outras telas: minúsculo, sem acento, espaço vira "_", o resto sai
   const toHandle = name => String(name ?? "").trim();  // nome do artista como vem (sem @)
   const artistLine = t => toHandle(Sounos.artistLine?.(t) || t?.artist || "");
+  const artistHtml = t => Sounos.artistHtml(t);          // nomes que abrem a página do artista (já escapados)
   function lev(a, b, max) {                                 // distância de edição (com transposição)
     if (Math.abs(a.length - b.length) > max) return max + 1;
     const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
@@ -131,7 +132,7 @@
     fill:   '<svg viewBox="0 0 24 24"><path d="M7 17 17 7M8 7h9v9"/></svg>',
   };
   const grad = c => `linear-gradient(135deg,${c[0]},${c[1]} 60%,${c[2]})`;
-  const esc = s => s.replace(/[&<>"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
+  const esc = s => String(s ?? "").replace(/[&<>"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
   // destaca em negrito o que a pessoa ainda não digitou (como nos buscadores)
   function emphasize(label, q) {
     const qq = norm(q);
@@ -149,6 +150,10 @@
     if (type === "a") return `<div class="ic round ${extra}" style="background:${grad(item.c)}">${esc(item.name[0])}</div>`;
     if (type === "p") {
       if (item.cover) return `<div class="ic ${extra}" style="background:url('${item.cover.replace(/'/g, "%27")}') center/cover no-repeat"></div>`;
+      // no app as faixas são objetos com id (sem .c): mosaico 2x2 com as capas, como nas playlists da tela inicial
+      const objs = (item.tracks || []).filter(x => x && typeof x === "object" && x.id);
+      if (objs.length) return `<div class="ic mos ${extra}">${[0, 1, 2, 3].map(k => objs[Math.min(k, objs.length - 1)]).map(t =>
+        `<i style="background:url('${Sounos.coverUrl(t).replace(/'/g, "%27")}') center/cover no-repeat, ${grad(Sounos.hashColors(t.id))}"></i>`).join("")}</div>`;
       const first = item.tracks?.[0], song = typeof first === "object" ? first : tracks[first];
       return `<div class="ic ${extra}" style="background:${song?.c ? grad(song.c) : "var(--s-surface)"}">${esc(item.name?.[0] || "♪")}</div>`;
     }
@@ -169,7 +174,7 @@
       <div class="sbody"></div>`;
     phone.appendChild(ov);
     const bar = ov.querySelector(".sbar"), input = ov.querySelector("input"), body = ov.querySelector(".sbody");
-    let isOpen = false, view = "", moreResults = null;
+    let isOpen = false, view = "", moreResults = null, verMais = null;
     let history = readHistory();
     if (!history.length && !NATIVE) history = [{ type: "q", text: "lofi para estudar" }, { type: "a", name: "MC Mockup" }, { type: "t", i: 3 }, { type: "q", text: "chuva" }];
     function syncHistory(next = readHistory()) {
@@ -251,7 +256,7 @@
       const anchorId = anchor?.dataset.id, anchorTop = anchor?.getBoundingClientRect().top;
       view = name; lastHtml = html;
       if (same) morph(body.firstElementChild, html);
-      else body.innerHTML = `<div class="spanel">${html}</div>`;
+      else body.innerHTML = `<div class="spanel${name === "res" ? " res" : ""}">${html}</div>`;
       if (anchorId !== undefined) {
         const next = body.querySelector(`.s-row[data-pick="nt"][data-id="${anchorId}"]`);
         if (next) body.scrollTop += next.getBoundingClientRect().top - anchorTop;
@@ -284,12 +289,12 @@
       if (!history.length) return setPanel('<div class="s-empty">Suas pesquisas aparecem aqui.</div>', "recent");
       setPanel(`<div class="s-head"><h3>Pesquisas recentes</h3><button data-act="clear-all">Limpar</button></div>` +
         history.map((h, k) => {
-          let ic, t, a;
+          let ic, t, a;                      // a: HTML pronto (os textos fixos não têm dados; os nomes de artista já saem escapados)
           if (h.type === "q") { ic = cover("q"); t = esc(h.text); a = "Pesquisa"; }
-          else if (h.type === "t" && h.track) { ic = realCover(h.track); t = esc(h.track.title); a = "Música · " + artistLine(h.track); }
-          else if (h.type === "a" && NATIVE) { ic = realArtist(h); t = toHandle(h.name); a = "Artista"; }
-          else if (h.type === "t") { const x = tracks[h.i]; ic = cover("t", x); t = esc(x.title); a = "Música · " + artistLine(x); }
-          else if (h.type === "a") { const x = artists.find(y => y.name === h.name); ic = cover("a", x); t = toHandle(x.name); a = "Artista"; }
+          else if (h.type === "t" && h.track) { ic = realCover(h.track); t = esc(h.track.title); a = "Música · " + artistHtml(h.track); }
+          else if (h.type === "a" && NATIVE) { ic = realArtist(h); t = esc(toHandle(h.name)); a = "Artista"; }
+          else if (h.type === "t") { const x = tracks[h.i]; ic = cover("t", x); t = esc(x.title); a = "Música · " + artistHtml(x); }
+          else if (h.type === "a") { const x = artists.find(y => y.name === h.name); ic = cover("a", x); t = esc(toHandle(x.name)); a = "Artista"; }
           else if (h.type === "p") {
             const x = D.getPlaylists().find(p => p.id === h.id) || playlists[h.i] || h;
             ic = cover("p", x); t = esc(x.name || h.name || "Playlist"); a = "Playlist";
@@ -316,7 +321,7 @@
         pastQ.map(h => `<button class="s-row sug" data-q="${esc(h.text)}">${cover("q")}<div class="tx"><div class="t">${emphasize(h.text, q)}</div></div>
           <span class="fill" data-fill="${esc(h.text)}">${ICON.fill}</span></button>`).join("") +
         list.map(c => `<button class="s-row sug" data-pick="${c.type}" data-id="${c.type === "a" ? esc(c.item.name) : c.item.i}">
-          ${cover(c.type, c.item)}<div class="tx"><div class="t">${emphasize(c.label, q)}</div><div class="a">${c.sub}</div></div>
+          ${cover(c.type, c.item)}<div class="tx"><div class="t">${emphasize(c.label, q)}</div><div class="a">${c.type === "t" ? artistHtml(c.item) : esc(c.sub)}</div></div>
           <span class="fill" data-fill="${esc(c.label)}">${ICON.fill}</span></button>`).join(""), "sug");
     }
 
@@ -345,14 +350,14 @@
         <div class="s-head"><h3>Melhor resultado</h3></div>
         <button class="s-best" data-pick="${best.type}" data-id="${best.type === "a" ? esc(best.item.name) : best.item.i}">
           <div class="cv ${best.type === "a" ? "round" : ""}" style="background:${bestBg}">${esc((best.type === "a" ? best.item.name : best.label)[0])}</div>
-          <div><div class="t">${esc(best.label)}</div><div class="a">${best.type === "t" ? "Música · " + best.sub : best.sub}</div></div>
+          <div><div class="t">${esc(best.label)}</div><div class="a">${best.type === "t" ? "Música · " + artistHtml(best.item) : best.sub}</div></div>
         </button>` +
         (songs.length ? `<div class="s-head"><h3>Músicas</h3></div>` + songs.map(c => `
           <button class="s-row" data-pick="t" data-id="${c.item.i}">${cover("t", c.item)}
-            <div class="tx"><div class="t">${esc(c.item.title)}</div><div class="a">${artistLine(c.item)}</div></div></button>`).join("") : "") +
+            <div class="tx"><div class="t">${esc(c.item.title)}</div><div class="a">${artistHtml(c.item)}</div></div></button>`).join("") : "") +
         (arts.length ? `<div class="s-head"><h3>Artistas</h3></div><div class="s-hrow">` + arts.map(c => `
           <button class="s-art" data-pick="a" data-id="${esc(c.item.name)}"><div class="pic" style="background:${grad(c.item.c)}">${esc(c.item.name[0])}</div>
-            <div class="n">${toHandle(c.item.name)}</div></button>`).join("") + `</div>` : "") +
+            <div class="n">${esc(toHandle(c.item.name))}</div></button>`).join("") + `</div>` : "") +
         (pls.length ? `<div class="s-head"><h3>Playlists</h3></div><div class="s-hrow">` + pls.map(c => `
           <button class="s-pl" data-pick="p" data-id="${c.item.i}">${playlistTile(c.item)}
             <div class="meta"><div class="t">${esc(c.item.name)}</div></div></button>`).join("") + `</div>` : ""), "res");
@@ -405,6 +410,7 @@
     input.addEventListener("keydown", e => { if (e.key === "Enter") runSearch(input.value); if (e.key === "Escape") close(); });
     body.addEventListener("click", e => {
       const act = e.target.closest("[data-act]");
+      if (act?.dataset.act === "mais") return verMais?.();
       if (act?.dataset.act === "clear-all") { history = writeHistory([]); return showRecent(); }
       if (act?.dataset.act === "rm") { history.splice(+act.dataset.k, 1); history = writeHistory(history); return showRecent(); }
       const fill = e.target.closest("[data-fill]");                 // seta: completa a barra sem buscar ainda
@@ -423,17 +429,22 @@
       const q = e.target.closest("[data-q]"); if (q) return runSearch(q.dataset.q);
       const p = e.target.closest("[data-pick]"); if (p) return pick(p.dataset.pick, p.dataset.id);
     });
+    // dedo encostou num resultado de música: o áudio já começa a ser buscado antes de soltar
+    window.SounosPrefetchToque?.(body, '[data-pick="nt"]', el => resultTracks[+el.dataset.id]);
     // ---------------- dentro do app: busca de verdade (NewPipe) + gosto da pessoa ----------------
     let resultTracks = [], resultArtists = [], resultAlbums = [], sugT = 0, lastServer = [], shownMine = new Set(), searchRun = 0;
     let cacheRefreshOff = [], suggestionCacheOff = null;
-    const realCover = t => `<div class="ic" style="background:url('${Sounos.coverUrl(t)}') center/cover no-repeat, ${grad(Sounos.hashColors(t.id))}"></div>`;
+    // linhas da busca (44 px): capinha; o destaque do topo (maior) usa a capa de lista
+    const realCover = (t, mini = true) => `<div class="ic" style="background:url('${Sounos.coverUrl(t, false, false, mini)}') center/cover no-repeat, ${grad(Sounos.hashColors(t.id))}"></div>`;
     // foto de artista também passa pelo app (fica guardada; antes vinha da internet a cada busca)
     const artistKey = n => { const f = String(n || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/ø/g, "o").replace(/æ/g, "ae").replace(/œ/g, "oe").replace(/ß/g, "ss").replace(/đ/g, "d").replace(/ł/g, "l").replace(/þ/g, "th");
       const a = f.replace(/[^a-z0-9]/g, ""); if (a) return a;
       // nome sem letras latinas (아이유, 宇多田ヒカル): código das letras, senão todos viram o mesmo artista
       const h = [...f].filter(c => /[\p{L}\p{N}]/u.test(c)).map(c => c.codePointAt(0).toString(16)).join("").slice(0, 80); return h ? "u" + h : ""; };
-    const artistPic = a => a.thumb ? Sounos.coverUrl({ id: "artist:" + (artistKey(a.name) || "x"), name: a.name, thumb: a.thumb }).replace(/'/g, "%27") : "";
-    const realArtist = a => `<div class="ic round" style="background:${a.thumb ? `url('${artistPic(a)}') center/cover no-repeat,` : ""} ${grad(Sounos.hashColors(a.name))}"></div>`;
+    // foto do artista SEMPRE pelo nome (como na tela inicial): a que já está no celular, ou o app busca. Antes só pedia
+    // quando a pesquisa tinha guardado a miniatura — artista aberto pela tela inicial, Seu Mix ou link ficava sem foto.
+    const artistPic = a => Sounos.coverUrl({ id: "artist:" + (artistKey(a.name) || "x"), name: a.name, thumb: a.thumb || "" }).replace(/'/g, "%27");
+    const realArtist = a => `<div class="ic round" style="background:url('${artistPic(a)}') center/cover no-repeat, ${grad(Sounos.hashColors(a.name))}"></div>`;
     // gosto: quanto você ouve cada artista e cada música (histórico do app, mais recente pesa mais).
     // Guardado por alguns segundos: antes era relido do app a cada letra digitada.
     let tasteCache = null, tasteAt = 0;
@@ -498,7 +509,7 @@
         pastQ.map(h => `<button class="s-row sug" data-q="${esc(h.text)}">${cover("q")}<div class="tx"><div class="t">${emphasize(h.text, q)}</div></div>
           <span class="fill" data-fill="${esc(h.text)}">${ICON.fill}</span></button>`).join("") +
         mine.map((x, i) => `<button class="s-row sug" data-pick="nt" data-id="${i}">${realCover(x.t)}
-          <div class="tx"><div class="t">${emphasize(x.t.title, q)}</div><div class="a">${artistLine(x.t)}</div></div></button>`).join("") +
+          <div class="tx"><div class="t">${emphasize(x.t.title, q)}</div><div class="a">${artistHtml(x.t)}</div></div></button>`).join("") +
         server.filter(t => !pastQ.some(h => norm(h.text) === norm(t))).slice(0, 6).map(t => `<button class="s-row sug" data-q="${esc(t)}"><div class="ic">${ICON.search}</div>
           <div class="tx"><div class="t">${emphasize(t, q)}</div></div><span class="fill" data-fill="${esc(t)}">${ICON.fill}</span></button>`).join("")
         || `<button class="s-row sug" data-q="${esc(q)}">${cover("q")}<div class="tx"><div class="t"><b>${esc(q)}</b></div></div></button>`, "sug");
@@ -519,6 +530,15 @@
       const pSongs = Sounos.ask("search", { q }), pArts = Sounos.ask("searchArtists", { q }), pAlbums = Sounos.ask("searchAlbums", { q });
       let arts = null, albums = null, songsR = null, moreHas = false, moreLoading = false, morePaused = false;
       let resultSongs = [];
+      // Músicas: 5 e "Ver mais" (+10 a cada toque, busca mais no app quando precisa). Não há mais a lista sem fim
+      // embaixo de Artistas/Álbuns, que carregava sozinha ao rolar.
+      let mostrar = 5;
+      verMais = () => {
+        if (stale()) return;
+        mostrar += 10;
+        if (resultSongs.length < mostrar && moreHas) { morePaused = false; more(); }
+        draw();
+      };
       const seenSongs = new Set();
       const songKey = t => String(t?.id || t?.songKey || t?.url || `${t?.title || ""}|${t?.artist || ""}`);
       const appendSongs = (items, start = resultSongs.length) => {
@@ -546,7 +566,6 @@
       }));
       const more = () => {
         if (moreLoading || morePaused || !moreHas || stale() || view !== "res") return;
-        if (body.scrollTop + body.clientHeight < body.scrollHeight - 420) return;
         moreLoading = true;
         draw();
         Sounos.ask("searchMore", { q }).then(r => {
@@ -560,11 +579,10 @@
           appendSongs(r.items, resultSongs.length);
           moreHas = !!r.hasMore;
           draw();
-          if (moreHas) requestAnimationFrame(more);
+          if (moreHas && resultSongs.length < mostrar) requestAnimationFrame(more);     // completa o que o "Ver mais" pediu
         });
       };
       more.resume = () => { morePaused = false; more(); };
-      moreResults = more;
       // As músicas aparecem assim que chegam; artistas e álbuns entram sem bloquear uma à outra.
       pSongs.then(r => {
         songsR = r;
@@ -589,28 +607,31 @@
         }
         const topArtist = resultArtists[0] && (!resultTracks.length || textScore(q, resultArtists[0].name) >= .9) ? resultArtists[0] : null;
         const topAlbum = resultAlbums[0];
-        const best = topArtist ? { type: "na", i: 0, title: toHandle(topArtist.name), sub: "Artista", look: realArtist(topArtist).replace('class="ic round"', 'class="cv round"') }
-          : resultTracks.length ? { type: "nt", i: 0, title: esc(resultTracks[0].title), sub: "Música · " + artistLine(resultTracks[0]),
-            look: realCover(resultTracks[0]).replace('class="ic"', 'class="cv"') }
-          : { type: "nal", i: 0, title: esc(topAlbum.name), sub: "Álbum · " + toHandle(topAlbum.artist),
+        const TM = window.SounosTrackMenu;
+        const best = topArtist ? { type: "na", i: 0, title: esc(toHandle(topArtist.name)), sub: "Artista", look: realArtist(topArtist).replace('class="ic round"', 'class="cv round"'),
+            menu: TM?.btnArtista?.({ ...topArtist, foto: topArtist.thumb ? artistPic(topArtist) : "" }) || "" }
+          : resultTracks.length ? { type: "nt", i: 0, title: esc(resultTracks[0].title), sub: "Música · " + artistLine(resultTracks[0]), subHtml: "Música · " + artistHtml(resultTracks[0]),
+            look: realCover(resultTracks[0], false).replace('class="ic"', 'class="cv"'), menu: TM?.btn(resultTracks[0]) || "" }
+          : { type: "nal", i: 0, title: esc(topAlbum.name), sub: "Álbum · " + toHandle(topAlbum.artist), subHtml: "Álbum · " + Sounos.artistLink(toHandle(topAlbum.artist)),
+            menu: TM?.btnAlbum?.({ ...topAlbum, foto: topAlbum.thumb ? Sounos.coverUrl({ id: "album:" + (artistKey(topAlbum.name) || "x"), name: topAlbum.name, artist: topAlbum.artist, thumb: topAlbum.thumb }) : "" }) || "",
             look: `<div class="cv" style="background:${topAlbum.thumb ? `url('${Sounos.coverUrl({ id: "album:" + (artistKey(topAlbum.name) || "x"), name: topAlbum.name, artist: topAlbum.artist, thumb: topAlbum.thumb }).replace(/'/g, "%27")}') center/cover,` : ""} ${grad(Sounos.hashColors(topAlbum.name))}"></div>` };
         const songRows = (from, to = resultTracks.length) => resultTracks.slice(from, to).map((t, i) => `
             <button class="s-row" data-pick="nt" data-id="${from + i}">${realCover(t)}
-              <div class="tx"><div class="t">${esc(t.title)}</div><div class="a">${artistLine(t)} · ${fmtDur(t.dur)}</div></div>${window.SounosTrackMenu?.btn(t) || ""}</button>`).join("");
+              <div class="tx"><div class="t">${esc(t.title)}</div><div class="a">${artistHtml(t)} · ${fmtDur(t.dur)}</div></div>${window.SounosTrackMenu?.btn(t) || ""}</button>`).join("");
         setPanel(`
           <div class="s-head"><h3>Melhor resultado</h3></div>
           <button class="s-best" data-pick="${best.type}" data-id="${best.i}">${best.look}
-            <div><div class="t">${best.title}</div><div class="a">${best.sub}</div></div></button>` +
-          (resultTracks.length ? `<div class="s-head"><h3>Músicas</h3></div>` + songRows(0, Math.min(4, resultTracks.length)) : "") +
+            <div class="s-best-tx"><div class="t">${best.title}</div><div class="a">${best.subHtml ?? esc(best.sub)}</div></div>${best.menu}</button>` +
+          (resultTracks.length ? `<div class="s-head"><h3>Músicas</h3></div>` + songRows(0, Math.min(mostrar, resultTracks.length)) +
+            (moreLoading && resultTracks.length < mostrar ? `<div class="sk" aria-label="Carregando músicas"></div>`
+              : resultTracks.length > mostrar || moreHas ? `<button class="s-mais" data-act="mais">Ver mais</button>` : "") : "") +
           (resultArtists.length ? `<div class="s-head"><h3>Artistas</h3></div><div class="s-hrow">` + resultArtists.map((a, i) => `
-            <button class="s-art" data-pick="na" data-id="${i}"><div class="pic" style="background:${a.thumb ? `url('${artistPic(a)}') center/cover,` : ""} ${grad(Sounos.hashColors(a.name))}"></div>
-              <div class="n">${toHandle(a.name)}</div></button>`).join("") + `</div>` : "") +
+            <button class="s-art" data-pick="na" data-id="${i}"><div class="pic" style="background:url('${artistPic(a)}') center/cover, ${grad(Sounos.hashColors(a.name))}"></div>
+              <div class="n">${esc(toHandle(a.name))}</div></button>`).join("") + `</div>` : "") +
           (resultAlbums.length ? `<div class="s-head"><h3>Álbuns</h3></div><div class="s-hrow">` + resultAlbums.map((a, i) => `
             <button class="s-album" data-pick="nal" data-id="${i}"><div class="pic" style="background:${a.thumb ? `url('${Sounos.coverUrl({ id: "album:" + (artistKey(a.name) || "x"), name: a.name, artist: a.artist, thumb: a.thumb }).replace(/'/g, "%27")}') center/cover,` : ""} ${grad(Sounos.hashColors(a.name))}"></div>
-              <div class="n">${esc(a.name)}</div><div class="a">${toHandle(a.artist)}</div></button>`).join("") + `</div>` : "") +
-          songRows(Math.min(4, resultTracks.length)) +
-          (moreLoading ? `<div class="sk" aria-label="Carregando músicas"></div>` : ""), "res");
-        if (moreHas && !moreLoading && !morePaused) requestAnimationFrame(more);
+              <div class="n">${esc(a.name)}</div><div class="a">${Sounos.artistLink(toHandle(a.artist))}</div></button>`).join("") + `</div>` : "") +
+          "", "res");
       }
     }
     const fmtDur = s => s > 0 ? `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}` : "";

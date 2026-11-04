@@ -38,7 +38,9 @@ window.SounosSupport = (() => {
       const b = e.target.closest(".sup-opt"); if (!b) return;
       const o = data.options.filter(x => x && x.label && x.value)[+b.dataset.i];
       if (o.type === "copy") {
-        (navigator.clipboard?.writeText(o.value) || Promise.reject()).catch(() => {});
+        // no app a área de transferência do WebView pode recusar fora de um gesto confiável: usa a do Android
+        if (window.Sounos?.native) Sounos.call("copiarTexto", { texto: o.value, rotulo: o.label });
+        else (navigator.clipboard?.writeText(o.value) || Promise.reject()).catch(() => {});
         const go = b.querySelector(".go"); go.textContent = "Copiado"; setTimeout(() => go.textContent = "Copiar", 1600);
       } else if (/^https:\/\//.test(o.value)) window.Sounos?.native ? Sounos.call("openUrl", { url: o.value }) : window.open(o.value, "_blank");
     });

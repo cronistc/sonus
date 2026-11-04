@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Widget Completo (4×2). ViewFlipper: 0 = player, 1 = letra (ocupa o widget todo, como a letra do app); troca com animação -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android" android:id="@+id/w_raiz" android:layout_width="match_parent" android:layout_height="match_parent" android:background="@drawable/widget_fundo" android:clipToOutline="true">
+    <ImageView android:id="@+id/w_fundo" android:layout_width="match_parent" android:layout_height="match_parent" android:src="@drawable/widget_exemplo_fundo" android:scaleType="centerCrop" android:importantForAccessibility="no" />
+    <FrameLayout android:id="@+id/w_flip" android:layout_width="match_parent" android:layout_height="match_parent">
+<LinearLayout android:id="@+id/w_vplayer" android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="horizontal" android:padding="14dp">
+<ImageView android:id="@+id/w_capa" android:layout_width="wrap_content" android:layout_height="match_parent" android:adjustViewBounds="true" android:scaleType="fitCenter" android:src="@drawable/widget_exemplo_capa" android:contentDescription="Capa" />
+<LinearLayout android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:orientation="vertical" android:paddingStart="16dp">
+<LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical" android:paddingEnd="36dp">
+<ImageView android:layout_width="13dp" android:layout_height="13dp" android:src="@drawable/ic_stat_sounos" android:importantForAccessibility="no" />
+<TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="4dp" android:text="SONUS" android:textColor="#B3FFFFFF" android:textSize="10sp" android:textStyle="bold" android:letterSpacing="0.14" android:maxLines="1" />
+</LinearLayout>
+<LinearLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:orientation="vertical" android:gravity="center_vertical">
+<TextView android:id="@+id/w_titulo" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Nome da música" android:textColor="#FFFFFF" android:textStyle="bold" android:ellipsize="end" android:textSize="19sp" android:maxLines="2" />
+<TextView android:id="@+id/w_artista" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Artista" android:textColor="#CCFFFFFF" android:maxLines="1" android:ellipsize="end" android:layout_marginTop="2dp" android:textSize="14sp" />
+</LinearLayout>
+<LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
+<FrameLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"><ImageView android:id="@+id/w_voltar" android:layout_width="44dp" android:layout_height="44dp" android:layout_gravity="center" android:padding="10dp" android:src="@drawable/ic_n_prev" android:contentDescription="Voltar" /></FrameLayout>
+<ImageView android:id="@+id/w_tocar" android:layout_width="54dp" android:layout_height="54dp" android:padding="15dp" android:src="@drawable/ic_n_play" android:tint="#1D4ED8" android:background="@drawable/widget_botao" android:contentDescription="Tocar" />
+<FrameLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"><ImageView android:id="@+id/w_passar" android:layout_width="44dp" android:layout_height="44dp" android:layout_gravity="center" android:padding="10dp" android:src="@drawable/ic_n_next" android:contentDescription="Passar" /></FrameLayout>
+</LinearLayout>
+</LinearLayout>
+</LinearLayout>
+<FrameLayout android:id="@+id/w_vletra" android:visibility="gone" android:layout_width="match_parent" android:layout_height="match_parent">
+<ListView android:id="@+id/w_lista" android:paddingStart="18dp" android:paddingEnd="46dp" android:layout_width="match_parent" android:layout_height="match_parent" android:divider="@null" android:dividerHeight="0dp" android:scrollbars="none" android:listSelector="@android:color/transparent" android:requiresFadingEdge="vertical" android:fadingEdgeLength="40dp" android:paddingTop="10dp" android:paddingBottom="10dp" android:clipToPadding="false" android:overScrollMode="never" />
+</FrameLayout>
+    </FrameLayout>
+    <TextView android:id="@+id/w_letra_btn" android:layout_width="36dp" android:layout_height="36dp" android:layout_gravity="top|end" android:layout_margin="6dp" android:gravity="center" android:text="A" android:textSize="19sp" android:textStyle="bold" android:fontFamily="serif" android:textColor="#FFFFFF" android:contentDescription="Letra" />
+</FrameLayout>

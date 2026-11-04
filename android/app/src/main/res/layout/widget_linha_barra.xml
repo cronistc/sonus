@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- uma linha da letra no widget barra, desenhada como imagem (LetraService): a fonte do app e o desfoque das apagadas -->
+<ImageView xmlns:android="http://schemas.android.com/apk/res/android" android:id="@+id/w_li" android:layout_width="match_parent"
+    android:layout_height="wrap_content" android:adjustViewBounds="true" android:scaleType="fitStart" android:importantForAccessibility="no" />

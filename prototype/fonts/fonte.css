@@ -1,6 +1,7 @@
 /* Fontes do app (licença OFL, embutidas para funcionar offline; licenças em OFL-*.txt):
    Sora nos títulos, Urbanist no resto. Para testar outra, troque o arquivo aqui. */
 @font-face { font-family: "SonusFont"; src: url("Urbanist.ttf") format("truetype"); font-weight: 100 900; font-display: block; }
+@font-face { font-family: "SonusCursiva"; src: url("PlayfairDisplay-Italic.ttf") format("truetype"); font-weight: 400 900; font-style: italic; font-display: block; }   /* trechos de letra (Ingresso, Fita) */
 @font-face { font-family: "SonusTitulo"; src: url("Sora.ttf") format("truetype"); font-weight: 100 800; font-display: block; }
 /* títulos: seções da tela inicial, busca, configurações, nome na página de artista/playlist, atualização,
    "Antes de começar" e nome da música no player */

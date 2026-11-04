@@ -15,6 +15,9 @@ Aprende o uso de quem ouve, **só no celular** (nada sai do aparelho), e usa iss
   para conhecer coisa nova. Quanto mais a pessoa segue/ouve, mais pessoal.
 - **Busca de artistas**: quem a pessoa já ouve vem antes (ver `prototype/modulos/busca/MODULO.md`).
 
+- **Seu Mix** (`mix`, pedido do dono em 27/10/2026): mais ouvidas + novidades bem próximas + inéditas de artistas
+  conhecidos + 1–2 descobertas do mesmo estilo (detalhes em `docs/ARVORE.md`, fluxos).
+
 ## Arquivos
 | Arquivo | Papel |
 |---|---|

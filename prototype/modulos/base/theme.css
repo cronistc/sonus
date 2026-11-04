@@ -28,6 +28,8 @@
   --system-status-bg: #0e0e10;
   --system-nav-bg: #0e0e10;
   --tile-shadow: 0 6px 16px rgba(0,0,0,.38);
+  --icon: #f5f5f7;       /* ícones: SEMPRE sólidos (nunca rgba/opacity): claros no Escuro/Gradiente, escuros no Claro */
+  --icon-dim: #d6d6dc;   /* ícone secundário (⋮, +, ações): sólido, só um passo abaixo */
   color-scheme: dark;
 }
 html[data-theme="dark"], .phone[data-theme="dark"], .set-panel[data-theme="dark"], .upd[data-theme="dark"],
@@ -45,6 +47,8 @@ html[data-theme="gradient"], .phone[data-theme="gradient"], .set-panel[data-them
   --field: rgba(0,0,0,.35);
   --t-faint: rgba(255,255,255,.32);
   --t-mid: rgba(255,255,255,.55);
+  --icon: #f5f5f7;        /* ÍCONES: sempre SÓLIDOS (sem alfa). Claros no Escuro/Gradiente, escuros no Claro. Use estes, nunca --text-dim/--t-mid */
+  --icon-dim: #d6d6dc;    /* ícone secundário, também sólido */
   --mini-bg: color-mix(in srgb, var(--c1) 35%, #18181b);
   --phone-bg: linear-gradient(180deg, color-mix(in srgb, var(--c1) 40%, var(--bg)) 0%, var(--bg) 65%);
   --home-bg: var(--bg);
@@ -66,13 +70,15 @@ html[data-theme="light"], .phone[data-theme="light"], .set-panel[data-theme="lig
   --chip-soft: rgba(0,0,0,.04);
   --field: rgba(0,0,0,.05);
   --t-faint: rgba(17,17,20,.28);
-  --t-mid: rgba(17,17,20,.5);
+  --t-mid: rgba(17,17,20,.62);
   --mini-bg: color-mix(in srgb, var(--c1) 16%, #ffffff);
   --phone-bg: linear-gradient(180deg, color-mix(in srgb, var(--c1) 22%, var(--bg)) 0%, var(--bg) 60%);
   --home-bg: var(--bg);
   --system-status-bg: #f4f4f6;
   --system-nav-bg: #f4f4f6;
   --tile-shadow: 0 4px 12px rgba(17,17,20,.10), 0 1px 3px rgba(17,17,20,.08);
+  --icon: #111114;
+  --icon-dim: #34343c;
   color-scheme: light;
 }
 html[data-theme="gradient"], .phone[data-theme="gradient"], .set-panel[data-theme="gradient"], .upd[data-theme="gradient"] {
@@ -80,8 +86,10 @@ html[data-theme="gradient"], .phone[data-theme="gradient"], .set-panel[data-them
   --surface: rgba(255,255,255,.09);
   --surface-2: rgba(255,255,255,.13);
   --sheet: color-mix(in srgb, var(--c1) 28%, #141418);
-  --text-dim: rgba(245,245,247,.62);
-  --mini-bg: color-mix(in srgb, var(--c2) 30%, rgba(20,20,24,.85));
+  --text-dim: rgba(245,245,247,.72);
+  --icon: #f5f5f7;
+  --icon-dim: #d6d6de;
+  --mini-bg: color-mix(in srgb, var(--c2) 30%, #141418);
   --phone-bg: linear-gradient(170deg, color-mix(in srgb, var(--c1) 58%, #0b0b0d) 0%,
                                      color-mix(in srgb, var(--c2) 32%, #0b0b0d) 55%,
                                      color-mix(in srgb, var(--c3) 20%, #0b0b0d) 100%);
@@ -97,8 +105,14 @@ html[data-theme="gradient"], .phone[data-theme="gradient"], .set-panel[data-them
 @property --c3 { syntax: "<color>"; inherits: true; initial-value: #60a5fa; }
 @property --cover-size { syntax: "<length>"; inherits: true; initial-value: 300px; }
 @property --tile { syntax: "<length>"; inherits: true; initial-value: 116px; }
-:root { transition: --c1 .8s ease, --c2 .8s ease, --c3 .8s ease,
-                    --cover-size .45s cubic-bezier(.2,.85,.25,1), --tile .45s cubic-bezier(.2,.85,.25,1); }
+/* --c1..--c3 NÃO têm transição (recalculava a página inteira a cada quadro): a troca suave é a camada .cor-fade
+   (native.js, SounosCores) — o fundo antigo por cima, sumindo */
+:root { transition: --cover-size .45s cubic-bezier(.2,.85,.25,1), --tile .45s cubic-bezier(.2,.85,.25,1); }
+.phone { isolation: isolate; }
+/* De ponta a ponta: altura das barras do sistema (o app manda; native.js aplica). O fundo vai até a borda; o conteúdo
+   se afasta delas. Fora do app (navegador) valem 0. */
+:root { --sb-topo: 0px; --sb-base: 0px; }
+.cor-fade { position: absolute; inset: 0; z-index: -1; pointer-events: none; }
 
 /* Transições permanentes só nos componentes visíveis, sem animar cores herdadas da página toda */
 .set-panel { transition: transform .48s cubic-bezier(.2,.85,.25,1); }
@@ -113,6 +127,8 @@ html { font-size: calc(16px * var(--fs)); }
 .brand-letter path { fill: currentColor; stroke: none; }      /* clave de sol (desenho cheio) */
 body.sonus-opening { overflow: hidden; }
 body.sonus-opening #brandLetter { opacity: 0; }
+/* a clave da abertura chegou ao topo: o ícone de verdade já aparece por baixo dela (a saída da abertura não pisca) */
+body.sonus-opening.sonus-clave-chegou #brandLetter { opacity: 1; }
 .sonus-opening-layer { position: fixed; inset: 0; z-index: 99999; overflow: hidden; touch-action: manipulation; }
 .sonus-opening-layer canvas { display: block; width: 100%; height: 100%; }
 
@@ -125,3 +141,22 @@ body.sonus-opening #brandLetter { opacity: 0; }
 .sonus-opening-layer canvas { position: absolute; inset: 0; }
 /* negrito padrão do navegador (700) fica um passo mais fino, como o resto do app */
 b, strong { font-weight: 600; }
+
+/* aviso pequeno (link de música recebido): pílula acima do mini player */
+.sonus-aviso { position: absolute; left: 50%; bottom: calc(var(--mini-h, 0px) + 28px + var(--sb-base)); z-index: 80; width: max-content; max-width: calc(100% - 48px);
+  transform: translate(-50%, 12px); opacity: 0; pointer-events: none; padding: 10px 18px; border-radius: 20px;
+  background: rgba(20,20,24,.96); color: #fff; font-size: calc(var(--fs) * 13.5px); font-weight: 600; line-height: 1.3;
+  box-shadow: 0 8px 24px rgba(0,0,0,.35); white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; text-align: center;   /* até 2 linhas: texto longo não perde o final */
+  transition: opacity .25s ease, transform .35s cubic-bezier(.2,.85,.25,1); }
+.sonus-aviso.on { opacity: 1; transform: translate(-50%, 0); }
+[data-theme="light"] .sonus-aviso { background: rgba(255,255,255,.96); color: #111114; }
+
+/* app, não página: segurar o dedo num texto (título, letra, lista) não abre o menu "Copiar / Selecionar tudo" do Android.
+   Só os campos de texto continuam selecionáveis. */
+html, body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+input, textarea, [contenteditable]:not([contenteditable="false"]) { -webkit-user-select: text; user-select: text; }
+/* botões e campos herdam a fonte do app (por padrão o WebView usa a do sistema: "Compartilhar", "Limpar"... ficavam em Roboto) */
+button, input, textarea, select { font-family: inherit; }
+/* nome de artista que abre a página dele: mesmo desenho do texto, só um leve retorno ao toque */
+.art-nome { -webkit-tap-highlight-color: transparent; }
+.art-nome:active { opacity: .7; }

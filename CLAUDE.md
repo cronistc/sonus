@@ -1,7 +1,9 @@
 # Sonus — guia para quem for mexer no código (Claude ou outra IA)
 
 Player de música para Android. Interface em HTML/CSS/JS (`prototype/`, roda num WebView) + parte nativa em Kotlin
-(`android/`). Comece pelo **[MODULOS.md](MODULOS.md)**: diz onde fica cada parte; cada pasta de módulo tem um
+(`android/`). **Antes de tudo, leia [docs/ARVORE.md](docs/ARVORE.md)**: o mapa completo e conferido do app (arquivos,
+ponte JS ⇄ Kotlin, eventos, dados, fluxos, como testar, problemas conhecidos) — não é preciso testar no celular para
+entender o app. Depois, **[MODULOS.md](MODULOS.md)**: diz onde fica cada parte; cada pasta de módulo tem um
 `MODULO.md`. Documentação técnica: [docs/TECNICO.md](docs/TECNICO.md). Versões: [docs/VERSOES.md](docs/VERSOES.md).
 
 ## Regras do dono (Guilherme)
