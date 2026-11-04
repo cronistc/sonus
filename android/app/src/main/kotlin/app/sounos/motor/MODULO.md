@@ -10,9 +10,14 @@ Aprende o uso de quem ouve, **só no celular** (nada sai do aparelho), e usa iss
 - Gênero: Deezer (gênero do álbum), uma consulta por música; "sem gênero" tenta de novo depois de 7 dias.
 - **Afinidade com artistas** (0..1): o que o motor aprendeu + o histórico de reprodução que já existia.
 - **Gosto por gênero** (0..1): somas por gênero.
-- **Novidades**: lançamentos dos seguidos e preferidos + lançamentos do país; destes, ~70% das vagas vão para os que
-  combinam com o gosto (artista conhecido, gênero ouvido — gênero do lançamento via Deezer) e ~30% são sorteados,
-  para conhecer coisa nova. Quanto mais a pessoa segue/ouve, mais pessoal.
+- **Novidades** (regras do dono, 04/11/2026): 1º só o que é NOVO — lançamento recente (página de lançamentos do
+  YouTube Music ou deste ano na página do artista) e que a pessoa ainda NÃO ouviu (música ouvida sai; lançamento todo
+  ouvido sai; sem lista de faixas, só single de nome nunca ouvido). 2º combina com o GOSTO: artistas que ela ouve e
+  segue; artistas PARECIDOS com eles ("fãs também gostam de"; quanto mais preferidos apontam, mais perto); gêneros que
+  ela mais ouve (Deezer). Pesa contra: pular, pular no começo, sair no meio, tirar da playlist (diário), deixar de
+  seguir. Rejeitado (não entra): deixou de seguir, ou quase não ouviu (< 5 min, nenhuma até o fim) e pulou quase
+  sempre — muito tempo ouvido nunca vira rejeição. Até 2 lançamentos por artista e 4 por "família" (um preferido e
+  os parecidos dele); lançamentos do país sem ligação com o gosto só completam a lista.
 - **Busca de artistas**: quem a pessoa já ouve vem antes (ver `prototype/modulos/busca/MODULO.md`).
 
 - **Diário** (`Diario.kt`, pedido do dono em 04/11/2026: "o app guarda todo tipo de dado do usuário, mas não manda para
@@ -45,3 +50,4 @@ A definição do motor é do dono: não acrescentar regra de recomendação sem 
   afinidade e gosto pesando nas Novidades e na busca de artistas.
   Diário (tudo o que a pessoa faz, só no celular), horários/dias/sessões no perfil, comportamentos (`getPerfil`),
   escutas antigas recontadas uma vez (04/11).
+  Novidades refeitas pelas regras do dono: só inéditas e recentes, gosto com o lado negativo, parecidos, famílias (04/11).

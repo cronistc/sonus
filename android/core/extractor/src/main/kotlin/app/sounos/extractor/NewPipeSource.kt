@@ -234,6 +234,12 @@ class NewPipeSource(private val service: StreamingService = ServiceList.YouTube)
         ytmArtists.releases(channelId)
     }
 
+    /** Lançamentos + artistas parecidos de um artista, numa leitura só da página dele (Novidades). */
+    suspend fun artistNews(query: String, knownUrl: String? = null): Pair<List<Release>, List<ArtistResult>> = withContext(Dispatchers.IO) {
+        val channelId = artistChannel(query, knownUrl, {}) ?: return@withContext emptyList<Release>() to emptyList()
+        ytmArtists.releasesAndRelated(channelId)
+    }
+
     suspend fun newReleases(): List<Release> = withContext(Dispatchers.IO) { ytmArtists.newReleases() }
     suspend fun releaseTracks(browseId: String, artist: String): List<Track> = withContext(Dispatchers.IO) { ytmArtists.releaseTracks(browseId, artist) }
 

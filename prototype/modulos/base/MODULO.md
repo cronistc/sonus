@@ -23,3 +23,5 @@ Fora daqui, na raiz de `prototype/`: `home.html` e `player.html` (as duas págin
   `.phone` com `overflow-clip-margin: 48px`: sombras (capa, play, mini) passam por trás das barras (antes: linha reta).
   `html.native, body { overflow: hidden }`: com o vazamento de 48 px das sombras, uma fileira na borda alargava a página
   e o fim do deslize (ex.: álbuns da busca) levava a tela inteira para o lado.
+  Capa trocada (`refreshCoverUrls`) com ")" no endereço (nome "… (Ao Vivo)"): o padrão cortava no 1º ")" e o cartão
+  ficava só no degradê (Novidades). Agora lê url("…") inteiro, e `coverUrl` codifica parênteses (04/11).

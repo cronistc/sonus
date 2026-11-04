@@ -31,3 +31,5 @@ Base: NewPipe Extractor (GPLv3). A ideia de trocar por um motor próprio ("Sonus
   2 de cada vez; dados móveis = janela das 10 próximas. (Saiu da QueuePrefetcher.)
   Artistas parecidos (04/11): `YtMusicArtist.related(id)` lê o carrossel de páginas de artista da página do artista
   ("Os fãs também podem gostar de..."), reconhecido pelo tipo de página e não pelo título; `NewPipeSource.relatedArtists(url)`.
+  Capa do YouTube Music que não é quadrada (ex.: Skank, Estandarte, 1000×900): depois de cada tamanho tenta a mesma
+  recortada quadrada ("-p"); antes nunca passava e ficava o quadro do vídeo com faixas pretas (04/11).

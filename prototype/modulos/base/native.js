@@ -134,8 +134,10 @@ window.Sounos = (() => {
   // large: só troca o endereço da capa do MESMO tamanho que chegou. Antes a grande nova também recarregava a miniatura
   // que fica por baixo dela no player — as duas sumiam por um instante (o "pisca").
   const refreshCoverUrls = (id, revision, large) => {
-    const rewrite = css => String(css || "").replace(/url\(([^)]+)\)/g, (full, raw) => {
-      const value = raw.trim().replace(/^['"]|['"]$/g, "");
+    // url("…") com aspas pode ter ")" dentro (nome "… (Ao Vivo)"): o padrão antigo cortava no 1º ")", montava um estilo
+    // inválido que a tela ignorava, e o cartão ficava só no degradê (Novidades, 04/11)
+    const rewrite = css => String(css || "").replace(/url\(\s*(?:"([^"]*)"|'([^']*)'|([^)'"]*))\s*\)/g, (full, q2, q1, raw) => {
+      const value = (q2 ?? q1 ?? raw ?? "").trim();
       try {
         const url = new URL(value, location.href);
         if (decodeURIComponent(url.pathname.slice("/cover/".length)) !== id || !url.pathname.startsWith("/cover/")) return full;
@@ -217,7 +219,7 @@ window.Sounos = (() => {
       const albumArtist = isAlbum ? (t.albumArtist || t.artist || "") : "";
       const revision = coverRevision[t.id];
       // encodeURIComponent deixa o apóstrofo passar ("D'Angelo"): dentro de url('…') ele fecharia o endereço
-      return `/cover/${encodeURIComponent(id)}?u=${encodeURIComponent(t.thumb || "")}${name ? `&n=${encodeURIComponent(name)}` : ""}${albumArtist ? `&a=${encodeURIComponent(albumArtist)}` : ""}${pin ? "&pin=1" : ""}${large ? "&large=1" : ""}${mini ? "&mini=1" : ""}${revision ? `&v=${revision}` : ""}`.replace(/'/g, "%27");
+      return `/cover/${encodeURIComponent(id)}?u=${encodeURIComponent(t.thumb || "")}${name ? `&n=${encodeURIComponent(name)}` : ""}${albumArtist ? `&a=${encodeURIComponent(albumArtist)}` : ""}${pin ? "&pin=1" : ""}${large ? "&large=1" : ""}${mini ? "&mini=1" : ""}${revision ? `&v=${revision}` : ""}`.replace(/'/g, "%27").replace(/\(/g, "%28").replace(/\)/g, "%29");
     },
     /** cores provisórias (até a capa chegar): derivadas do id, sempre as mesmas para a mesma música */
     hashColors(id) { const h = hash(id || "x") % 360; return [`hsl(${h} 65% 42%)`, `hsl(${(h + 40) % 360} 70% 50%)`, `hsl(${(h + 80) % 360} 80% 58%)`]; },

@@ -823,7 +823,9 @@ class CoverStore(
             val resized = when {
                 host.endsWith(".googleusercontent.com") -> {
                     val base = path.replace(GOOGLE_SUFFIXES, "")
-                    sizes.map { "$origin$base=w$it-h$it-l90-rj$query" }
+                    // depois de cada tamanho, a mesma capa recortada quadrada ("-p"): algumas capas do YouTube Music não
+                    // são quadradas (Skank, Estandarte: 1000×900) e nunca passavam como capa — ficava o quadro do vídeo
+                    sizes.flatMap { listOf("$origin$base=w$it-h$it-l90-rj$query", "$origin$base=w$it-h$it-p-l90-rj$query") }
                 }
                 host.endsWith(".ggpht.com") -> {
                     val base = path.replace(GOOGLE_SUFFIXES, "")

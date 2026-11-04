@@ -35,7 +35,13 @@ class YtMusicArtist(private val client: OkHttpClient) {
      * Lançamentos da página do artista (carrosséis "Álbuns" e "Singles e EPs"), do mais novo ao mais antigo.
      * Uma requisição só: os carrosséis já trazem os mais recentes; a discografia completa não é necessária aqui.
      */
-    fun releases(artistId: String): List<Release> = artistSections(artistId).flatMap { section ->
+    fun releases(artistId: String): List<Release> = releasesOf(artistSections(artistId))
+
+    /** Lançamentos e artistas parecidos de uma vez (uma leitura da página): para as Novidades. */
+    fun releasesAndRelated(artistId: String): Pair<List<Release>, List<ArtistResult>> =
+        artistSections(artistId).let { releasesOf(it) to relatedOf(it) }
+
+    private fun releasesOf(sections: List<JsonObject>): List<Release> = sections.flatMap { section ->
         val shelf = section.getObject("musicCarouselShelfRenderer") ?: return@flatMap emptyList()
         val label = shelf.path("header", "musicCarouselShelfBasicHeaderRenderer").getObject("title")?.getArray("runs")
             ?.firstOrNull()?.let { (it as? JsonObject)?.getString("text") }.orEmpty()
@@ -53,7 +59,9 @@ class YtMusicArtist(private val client: OkHttpClient) {
      * "Os fãs também podem gostar de..." da página do artista: artistas parecidos, com foto e público.
      * Reconhecido pelos itens (páginas de artista "UC…"), não pelo título, que muda com o idioma.
      */
-    fun related(artistId: String): List<ArtistResult> = artistSections(artistId).asSequence()
+    fun related(artistId: String): List<ArtistResult> = relatedOf(artistSections(artistId))
+
+    private fun relatedOf(sections: List<JsonObject>): List<ArtistResult> = sections.asSequence()
         .mapNotNull { it.getObject("musicCarouselShelfRenderer") }
         .map { shelf ->
             shelf.getArray("contents").mapNotNull { v ->
