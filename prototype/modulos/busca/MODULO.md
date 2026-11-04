@@ -38,3 +38,7 @@ não aparecem. Ordem:
   intercalados com os parecidos do YouTube Music: "djavan" → Djavan, Djadja & Dinaz, Skank, Banda Djavú, Tribalistas…
   A busca continua simples (letra, nome da música, nome do artista); busca por assunto foi descartada pelo dono.
   Músicas repetidas (mesmo nome, artista e duração ±3 s, ex.: "Juizo Final — Seu Jorge" 2×) aparecem uma vez só.
+  Validação 04/11 (22 buscas no A54): erro de digitação também acha o artista ("djavam", "milton nasimento",
+  "chico buarqe" — o artista das primeiras músicas sobe para o 1º lugar); música com o nome exato vence artista que só
+  começa assim ("a banda"); empate de nome exato vai para quem a pessoa ouve ("oceano" → Djavan, não a banda Oceano);
+  canais com o mesmo nome aparecem uma vez ("Roberto Carlos"); nomes parecidos só para busca de uma palavra e com 4+ letras.

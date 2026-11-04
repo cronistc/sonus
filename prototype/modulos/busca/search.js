@@ -532,15 +532,36 @@
       // artistas parecidos ("Os fãs também podem gostar de...") entram no fim da fileira quando o 1º artista é o pesquisado
       // e, intercalados com eles, artistas de nome parecido (busca pelas 3 primeiras letras: "djavan" → Djadja & Dinaz, Banda Djavú)
       let parecidos = [], parecidosDe = null, nomeParecido = [];
+      // o 1º artista é o pesquisado: nome que bate, ou com erro de digitação ("djavam") quando as músicas são dele
+      const artistaPesquisado = a => {
+        const sc = textScore(q, a.name);
+        // "a banda": a música com esse nome exato vale mais que um artista que só começa assim (A Banda Mais Bonita da Cidade)
+        const exata = resultSongs[0] && norm(resultSongs[0].title) === norm(q);
+        if (sc < 1 && exata) return false;
+        // empate de nome exato ("oceano": a banda Oceano × Oceano do Djavan): vence quem a pessoa ouve mais
+        if (exata && taste().artist(resultSongs[0].artist) > taste().artist(a.name)) return false;
+        return sc >= .9 || sc >= .6 && resultSongs.slice(0, 3).some(t => artistKey(t.artist) === artistKey(a.name));
+      };
+      // erro de digitação em nome longo ("milton nasimento", "chico buarqe"): o YouTube Music põe outro artista na frente;
+      // o artista das primeiras músicas, se o nome dele bate com o pesquisado, passa para o 1º lugar
+      const artistasNaOrdem = () => {
+        const vistos = new Set();                                      // dois canais "Roberto Carlos": um só
+        const lista = ((arts && arts.items) || []).filter(x => x.name && !vistos.has(artistKey(x.name)) && vistos.add(artistKey(x.name)));
+        const dono = resultSongs.slice(0, 3).map(t => artistKey(t.artist));
+        const i = lista.findIndex(a => dono.filter(d => d === artistKey(a.name)).length >= 2 && textScore(q, a.name) >= .6);
+        return i > 0 ? [lista[i], ...lista.slice(0, i), ...lista.slice(i + 1)] : lista;
+      };
       const pedeParecidos = () => {
-        const a = ((arts && arts.items) || []).find(x => x.name);
-        if (!a || !a.url || parecidosDe === a.url || textScore(q, a.name) < .9) return;
+        const a = artistasNaOrdem()[0];
+        if (!a || !a.url || parecidosDe === a.url || !artistaPesquisado(a)) return;
         parecidosDe = a.url;
-        const k = artistKey(q.replace(/^@/, "").trim().split(/\s+/)[0]), pre = k.slice(0, 3);
-        if (k.length >= 4) Sounos.ask("searchArtists", { q: pre }).then(r => {
+        // só para nome de uma palavra ("marisa monte" já é um nome preciso: "mar" trazia MAR, Porto Rico e Beira Mar…);
+        // a palavra parecida precisa ter 4+ letras (fora "CAE", "ANA", "Leg"…)
+        const palavras = norm(q.replace(/^@/, "")).split(" ").filter(Boolean), k = artistKey(palavras[0] || ""), pre = k.slice(0, 3);
+        if (palavras.length === 1 && k.length >= 4) Sounos.ask("searchArtists", { q: pre }).then(r => {
           if (stale() || r.error) return;
           nomeParecido = (r.items || []).filter(x => x.name && x.url && artistKey(x.name) !== artistKey(a.name) &&
-            String(x.name).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().split(/[\s&,\/-]+/).some(w => w.startsWith(pre))).slice(0, 4);
+            String(x.name).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().split(/[\s&,\/-]+/).some(w => w.length >= 4 && w.startsWith(pre))).slice(0, 4);
           if (songsR) draw();
         });
         const key = Sounos.cacheKey("relatedArtists", a.url);
@@ -610,6 +631,7 @@
       pSongs.then(r => {
         songsR = r;
         appendSongs(r.items, 0);
+        if (!stale()) pedeParecidos();
         moreHas = !!r.hasMore;
         if (!stale()) draw();
       });
@@ -619,7 +641,7 @@
         const songs = songsR;
         if (songs.error && (!arts || arts.error) && (!albums || albums.error)) return arts || albums ? setPanel(`<div class="s-empty">Sem conexão agora. Tente de novo.</div>`, "res") : null;
         resultTracks = resultSongs;
-        resultArtists = ((arts && arts.items) || []).filter(a => a.name);
+        resultArtists = artistasNaOrdem();
         const jaTem = new Set(resultArtists.map(a => artistKey(a.name)));
         const extras = [];
         for (let i = 0; i < Math.max(nomeParecido.length, parecidos.length); i++) extras.push(nomeParecido[i], parecidos[i]);
@@ -632,7 +654,7 @@
           } else setPanel(`<div class="s-empty">Nada encontrado para “${esc(q)}”.</div>`, "res");
           return;
         }
-        const topArtist = resultArtists[0] && (!resultTracks.length || textScore(q, resultArtists[0].name) >= .9) ? resultArtists[0] : null;
+        const topArtist = resultArtists[0] && (!resultTracks.length || artistaPesquisado(resultArtists[0])) ? resultArtists[0] : null;
         const topAlbum = resultAlbums[0];
         const TM = window.SounosTrackMenu;
         const best = topArtist ? { type: "na", i: 0, title: esc(toHandle(topArtist.name)), sub: "Artista", look: realArtist(topArtist).replace('class="ic round"', 'class="cv round"'),
