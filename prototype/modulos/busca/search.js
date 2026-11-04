@@ -530,11 +530,19 @@
       const pSongs = Sounos.ask("search", { q }), pArts = Sounos.ask("searchArtists", { q }), pAlbums = Sounos.ask("searchAlbums", { q });
       let arts = null, albums = null, songsR = null, moreHas = false, moreLoading = false, morePaused = false;
       // artistas parecidos ("Os fãs também podem gostar de...") entram no fim da fileira quando o 1º artista é o pesquisado
-      let parecidos = [], parecidosDe = null;
+      // e, intercalados com eles, artistas de nome parecido (busca pelas 3 primeiras letras: "djavan" → Djadja & Dinaz, Banda Djavú)
+      let parecidos = [], parecidosDe = null, nomeParecido = [];
       const pedeParecidos = () => {
         const a = ((arts && arts.items) || []).find(x => x.name);
         if (!a || !a.url || parecidosDe === a.url || textScore(q, a.name) < .9) return;
         parecidosDe = a.url;
+        const k = artistKey(q.replace(/^@/, "").trim().split(/\s+/)[0]), pre = k.slice(0, 3);
+        if (k.length >= 4) Sounos.ask("searchArtists", { q: pre }).then(r => {
+          if (stale() || r.error) return;
+          nomeParecido = (r.items || []).filter(x => x.name && x.url && artistKey(x.name) !== artistKey(a.name) &&
+            String(x.name).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().split(/[\s&,\/-]+/).some(w => w.startsWith(pre))).slice(0, 4);
+          if (songsR) draw();
+        });
         const key = Sounos.cacheKey("relatedArtists", a.url);
         cacheRefreshOff.push(Sounos.on("metadataUpdated", ev => {
           if (ev.method === "relatedArtists" && ev.cacheKey === key && !stale()) { parecidos = (ev.payload && ev.payload.items) || []; if (songsR) draw(); }
@@ -558,6 +566,9 @@
         (items || []).forEach(t => {
           const key = songKey(t);
           if (!key || seenSongs.has(key)) return;
+          // a mesma gravação publicada duas vezes ("Juizo Final — Seu Jorge" 2×): mesmo nome, artista e duração (±3 s)
+          const nome = artistKey(t.title) + "|" + artistKey(t.artist);
+          if (resultSongs.concat(fresh).some(o => artistKey(o.title) + "|" + artistKey(o.artist) === nome && Math.abs((o.dur || 0) - (t.dur || 0)) <= 3)) return;
           seenSongs.add(key);
           fresh.push(t);
         });
@@ -610,7 +621,9 @@
         resultTracks = resultSongs;
         resultArtists = ((arts && arts.items) || []).filter(a => a.name);
         const jaTem = new Set(resultArtists.map(a => artistKey(a.name)));
-        resultArtists = resultArtists.concat(parecidos.filter(a => a.name && !jaTem.has(artistKey(a.name)) && jaTem.add(artistKey(a.name))));
+        const extras = [];
+        for (let i = 0; i < Math.max(nomeParecido.length, parecidos.length); i++) extras.push(nomeParecido[i], parecidos[i]);
+        resultArtists = resultArtists.concat(extras.filter(a => a && a.name && !jaTem.has(artistKey(a.name)) && jaTem.add(artistKey(a.name))));
         resultAlbums = ((albums && albums.items) || []).filter(a => a.name && a.url);
         if (!resultTracks.length && !resultArtists.length && !resultAlbums.length) {
           if (moreLoading || moreHas) {

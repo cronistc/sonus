@@ -34,3 +34,7 @@ não aparecem. Ordem:
   Artistas parecidos (04/11): quando o 1º artista é o pesquisado, a fileira de Artistas continua com até 10 artistas
   de "Os fãs também podem gostar de..." do YouTube Music (ponte `relatedArtists`, pela URL do canal); quem a pessoa já
   ouve vem antes. Chegam depois, sem atrasar a fileira.
+  Fileira de Artistas = o pesquisado, depois nomes parecidos (busca pelas 3 primeiras letras, até 4, só com público)
+  intercalados com os parecidos do YouTube Music: "djavan" → Djavan, Djadja & Dinaz, Skank, Banda Djavú, Tribalistas…
+  A busca continua simples (letra, nome da música, nome do artista); busca por assunto foi descartada pelo dono.
+  Músicas repetidas (mesmo nome, artista e duração ±3 s, ex.: "Juizo Final — Seu Jorge" 2×) aparecem uma vez só.
