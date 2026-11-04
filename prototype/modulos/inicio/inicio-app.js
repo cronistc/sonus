@@ -14,10 +14,10 @@
     $("offlineMark").hidden = !A.offline;
   }
 
-  // Novidades: o motor monta a lista (lançamentos + músicas) e ela vale NOV_MS (6 h), mesmo que o app seja fechado e
+  // Novidades: o motor monta a lista (lançamentos + músicas) e ela vale NOV_MS (24 h), mesmo que o app seja fechado e
   // aberto de novo. Passado esse tempo, uma lista nova é feita ao abrir — a menos que o que está tocando venha da
   // lista atual (aí ela é preservada). Fica guardada para a janela do topo e o Ver tudo usarem a mesma.
-  const NOV = "sonus.novidades", NOV_MS = 6 * 3600e3;
+  const NOV = "sonus.novidades", NOV_MS = 24 * 3600e3;          // um dia (pedido do dono, 04/11)
   let nov = null;
   try { nov = JSON.parse(localStorage.getItem(NOV) || "null"); } catch {}
   const tocandoDaLista = () => A.S?.context?.type === "novidades" || (!!A.cur() && !!nov?.musicas?.some(t => t.id === A.cur().id));

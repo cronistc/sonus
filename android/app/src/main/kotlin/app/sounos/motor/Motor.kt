@@ -304,45 +304,57 @@ class Motor(private val dir: File, private val io: CoroutineScope, private val h
 
     // ---------- Novidades ----------
     /**
-     * Gosto com o lado negativo (pedido do dono, 04/11/2026): o quanto a pessoa ouve (afinidade) menos o quanto ela
-     * rejeita — pulou, pulou logo no começo, saiu no meio, tirou da playlist, deixou de seguir. -1..1 por artista/gênero.
+     * Gosto de verdade, por artista e por gênero (-1..1), lido escuta a escuta no diário (pedido do dono, 04/11/2026:
+     * "ele não pode simplesmente excluir algo porque a pessoa deixou de ouvir naquele momento, tem que entender"):
+     *  - O TEMPO PESA: cada acontecimento vale menos com a idade (metade a cada 60 dias). Uma fase de pulos passa;
+     *    um gosto antigo esquecido vai perdendo força; o que ela ouve agora conta mais.
+     *  - A FAVOR: minutos ouvidos, música até o fim, pôr na playlist, seguir.
+     *  - CONTRA: pular logo no começo (forte), pular depois (fraco), tirar da playlist, deixar de seguir.
+     *  - CONTEXTO: pulos em sequência (um atrás do outro, em segundos) são a pessoa PASSEANDO pelas músicas, não
+     *    desgosto: valem 1/5. Fechar o app no meio ("saiu") e escolher outra ("trocou") não contam contra.
+     *  - NADA É EXCLUÍDO: nota baixa só faz descer na lista. O histórico de antes do motor entra como base (afinidade).
      */
     private suspend fun gostoComRejeicao(historico: JSONArray): Pair<Map<String, Double>, Map<String, Double>> {
         val afinidade = afinidadeArtistas(historico)
-        val generos = gostoGeneros()
-        val p = lock.withLock { JSONObject(carregar().toString()) }
-        // playlists e seguir, do diário (último ano), por artista
-        val tirou = HashMap<String, Int>(); val pos = HashMap<String, Int>(); val deixou = HashSet<String>()
-        runCatching { diario.ultimos(365) }.getOrDefault(emptyList()).forEach { l ->
-            val k = CoverStore.artistKey(l.optString("artista")); if (k.isBlank()) return@forEach
+        val agora = System.currentTimeMillis()
+        fun peso(at: Long) = Math.pow(0.5, (agora - at).coerceAtLeast(0) / (60 * 86_400_000.0))
+        val posA = HashMap<String, Double>(); val negA = HashMap<String, Double>()
+        val posG = HashMap<String, Double>(); val negG = HashMap<String, Double>()
+        val linhas = runCatching { diario.ultimos(730) }.getOrDefault(emptyList()).sortedBy { it.optLong("at") }
+        var anterior: JSONObject? = null
+        for (l in linhas) {
+            val w = peso(l.optLong("at"))
             when (l.optString("tipo")) {
-                "tirouDaPlaylist" -> tirou.merge(k, 1, Int::plus)
-                "adicionouNaPlaylist" -> pos.merge(k, 1, Int::plus)
-                "deixouDeSeguir" -> deixou += k
-                "seguiu" -> deixou -= k
+                "escuta" -> {
+                    val fim = l.optString("fim")
+                    val passeio = fim == "pulou" && anterior?.optString("fim") == "pulou" &&
+                        l.optLong("at") - (anterior?.optLong("at") ?: 0) < 30_000L
+                    val bom = l.optLong("ouviuMs") / 60_000.0 + if (fim == "completa") 2.0 else 0.0
+                    val ruim = (if (fim == "pulou" && l.optBoolean("pulouCedo")) 1.0 else if (fim == "pulou") 0.4 else 0.0) * (if (passeio) 0.2 else 1.0)
+                    val arts = l.optJSONArray("artistas")?.let { a -> (0 until a.length()).map { CoverStore.artistKey(a.optString(it)) } }
+                        ?: listOf(CoverStore.artistKey(l.optString("artista")))
+                    arts.filter(String::isNotBlank).forEach { k -> posA.merge(k, w * bom, Double::plus); negA.merge(k, w * ruim, Double::plus) }
+                    l.optJSONArray("generos")?.let { g -> for (i in 0 until g.length()) g.optString(i).lowercase().takeIf(String::isNotBlank)?.let { k ->
+                        posG.merge(k, w * bom, Double::plus); negG.merge(k, w * ruim, Double::plus) } }
+                    anterior = l
+                }
+                "adicionouNaPlaylist" -> CoverStore.artistKey(l.optString("artista")).takeIf(String::isNotBlank)?.let { posA.merge(it, 3 * w, Double::plus) }
+                "tirouDaPlaylist" -> CoverStore.artistKey(l.optString("artista")).takeIf(String::isNotBlank)?.let { negA.merge(it, 2 * w, Double::plus) }
+                "seguiu" -> CoverStore.artistKey(l.optString("artista")).takeIf(String::isNotBlank)?.let { posA.merge(it, 5 * w, Double::plus) }
+                "deixouDeSeguir" -> CoverStore.artistKey(l.optString("artista")).takeIf(String::isNotBlank)?.let { negA.merge(it, 5 * w, Double::plus) }
             }
         }
-        fun rejeicao(o: JSONObject?, extra: Int = 0): Double {
-            if (o == null) return if (extra > 0) 1.0 else 0.0
-            val ruins = o.optLong("puladas") + o.optLong("pulouCedo") + o.optLong("saiu") + 3 * extra
-            return (ruins.toDouble() / (o.optLong("tocou") + o.optLong("pulouCedo") + 3 * extra).coerceAtLeast(1)).coerceIn(0.0, 1.0)
+        // saldo = a favor − contra, na escala de quem a pessoa mais ouve; + a afinidade (histórico de antes do motor)
+        fun saldo(pos: Map<String, Double>, neg: Map<String, Double>, base: (String) -> Double): Map<String, Double> {
+            val topo = pos.values.maxOrNull()?.takeIf { it > 0 } ?: 1.0
+            return (pos.keys + neg.keys).associateWith { k ->
+                (0.7 * ((pos[k] ?: 0.0) - (neg[k] ?: 0.0)) / topo + 0.3 * base(k)).coerceIn(-1.0, 1.0)
+            }
         }
-        val arts = p.optJSONObject("artistas") ?: JSONObject()
-        val chaves = (afinidade.keys + arts.keys().asSequence() + tirou.keys + deixou).toSet()
-        val porArtista = chaves.associateWith { k ->
-            val o = arts.optJSONObject(k); val r = rejeicao(o, tirou[k] ?: 0)
-            // pular pesa pela metade: quem ouve muito também pula muito (passeia pelas músicas do artista)
-            val base = (afinidade[k]?.second ?: 0.0) * (1 - 0.5 * r) + 0.1 * (pos[k] ?: 0).coerceAtMost(5)
-            // rejeitado de verdade: deixou de seguir; ou quase não ouviu (menos de 5 min no total, nenhuma até o fim)
-            // e pulou/saiu/tirou quase sempre. Muito tempo ouvido nunca vira rejeição (Skank: 206 pulos, mas 29 min).
-            val poucoOuvido = (o?.optLong("ouviuMs") ?: 0) < 5 * 60_000L && (o?.optLong("completas") ?: 0) == 0L
-            if (k in deixou || poucoOuvido && r > 0.7 && (o?.optLong("tocou") ?: 0) + (tirou[k] ?: 0) >= 3) -1.0 else base.coerceIn(0.0, 1.0)
-        }
-        val gens = p.optJSONObject("generos") ?: JSONObject()
-        val porGenero = (generos.keys + gens.keys().asSequence()).toSet().associateWith { g ->
-            val o = gens.optJSONObject(g); val r = rejeicao(o)
-            if (r > 0.75 && (o?.optLong("tocou") ?: 0) >= 5 && (o?.optLong("ouviuMs") ?: 0) < 10 * 60_000L) -0.5 else (generos[g] ?: 0.0) * (1 - 0.5 * r)
-        }
+        val porArtista = saldo(posA, negA) { afinidade[it]?.second ?: 0.0 } +
+            afinidade.filterKeys { it !in posA && it !in negA }.mapValues { 0.3 * it.value.second }
+        val generos = gostoGeneros()
+        val porGenero = saldo(posG, negG) { generos[it] ?: 0.0 }
         return porArtista to porGenero
     }
 
@@ -352,7 +364,7 @@ class Motor(private val dir: File, private val io: CoroutineScope, private val h
      *     do artista) e que a pessoa ainda não ouviu — música já ouvida sai; lançamento todo ouvido sai.
      *  2º COMBINA COM O GOSTO, pelos dados: artistas que ela ouve (e segue), artistas parecidos com eles (quanto mais
      *     dos preferidos apontam para um artista, mais perto ele está), gêneros que ela mais ouve; o que ela pula, larga
-     *     no meio ou tira da playlist pesa contra, e artista/gênero rejeitado não entra.
+     *     no meio ou tira da playlist pesa contra (com o tempo e o contexto: ver gostoComRejeicao) — nada é excluído, só desce.
      *  No máximo 2 lançamentos por artista (antes um artista enchia a lista).
      * Devolve os lançamentos (cartões) e as músicas inéditas deles, embaralhadas (para tocar).
      */
@@ -372,10 +384,10 @@ class Motor(private val dir: File, private val io: CoroutineScope, private val h
         fun ouviu(t: Track) = t.id in idsOuvidos || app.sounos.extractor.MusicPicks.songKey(t) in chavesOuvidas
 
         val rede = kotlinx.coroutines.sync.Semaphore(6)
-        // A. artistas de que a pessoa gosta: seguidos + os de nota mais alta (sem os rejeitados)
+        // A. artistas de que a pessoa gosta: seguidos + os de nota mais alta
         val nomes = afinidadeArtistas(historico)
         val preferidos = gostoArt.entries.filter { it.value > 0 }.sortedByDescending { it.value }.take(10).mapNotNull { e -> nomes[e.key]?.first }
-        val daPessoa = (seguidos.filter { nota(it.first) >= 0 } + preferidos.map { it to null })
+        val daPessoa = (seguidos + preferidos.map { it to null })
             .distinctBy { CoverStore.artistKey(it.first) }.take(14)
         val paginas = daPessoa.map { (nome, url) ->
             async(Dispatchers.IO) { nome to rede.withPermit { runCatching { source.artistNews(nome, url) }.getOrNull() } }
@@ -390,8 +402,9 @@ class Motor(private val dir: File, private val io: CoroutineScope, private val h
             val peso = 0.3 + nota(nome).coerceAtLeast(0.0)
             pg?.second.orEmpty().take(10).forEachIndexed { i, a ->
                 val k = CoverStore.artistKey(a.name)
-                if (gostoArt[k]?.let { it < 0 } == true || daPessoa.any { CoverStore.artistKey(it.first) == k }) return@forEachIndexed
-                val v = peso * (1 - i * 0.05)
+                if (daPessoa.any { CoverStore.artistKey(it.first) == k }) return@forEachIndexed
+                // gosto negativo não exclui: o parecido só fica mais longe
+                val v = peso * (1 - i * 0.05) * (if ((gostoArt[k] ?: 0.0) < 0) 0.3 else 1.0)
                 proximidade[k] = a to ((proximidade[k]?.second ?: 0.0) + v)
                 if (v > (via[k]?.second ?: 0.0)) via[k] = CoverStore.artistKey(nome) to v
             }
@@ -407,7 +420,7 @@ class Motor(private val dir: File, private val io: CoroutineScope, private val h
         // C. lançamentos do país (os mais recentes que existem), com gênero do Deezer para medir o gosto
         val doPais = genericos.await().filter { it.browseId != null }.take(40)
         val generosLanc = doPais.map { r -> async(Dispatchers.IO) { r.browseId to runCatching { generosDoLancamento(r) }.getOrDefault(emptyList()) } }.awaitAll().toMap()
-        fun notaGenero(r: Release) = generosLanc[r.browseId].orEmpty().maxOfOrNull { gostoGen[it.lowercase()] ?: 0.0 } ?: 0.0
+        fun notaGenero(r: Release) = generosLanc[r.browseId].orEmpty().map { gostoGen[it.lowercase()] ?: 0.0 }.let { g -> if (g.isEmpty()) 0.0 else g.max().takeIf { it > 0 } ?: g.min() }
 
         // pontuação: gosto pelo artista vale mais; parecido e gênero depois; um pouco de sorteio para variar
         data class Cand(val r: Release, val pontos: Double)
@@ -419,7 +432,6 @@ class Motor(private val dir: File, private val io: CoroutineScope, private val h
                 val liga = 3 * nota(r.artist) + (proximidade[CoverStore.artistKey(r.artist)]?.second?.div(maxProx) ?: 0.0) * 1.5 + 1.5 * notaGenero(r)
                 Cand(r, liga + if (liga > 0.05) .5 else .1)
             })
-            .filter { nota(it.r.artist) >= 0 && notaGenero(it.r) >= 0 }
             .groupBy { it.r.browseId }.map { (_, v) -> v.maxBy { it.pontos } }
             .map { it.copy(pontos = it.pontos + Math.random() * .3) }
             .sortedByDescending { it.pontos }
@@ -447,7 +459,7 @@ class Motor(private val dir: File, private val io: CoroutineScope, private val h
         }
         val musicas = escolhidos.flatMap { it.second }.distinctBy { it.id }.shuffled()
         android.util.Log.i("Sonus", "novidades gosto=" + gostoArt.entries.sortedByDescending { it.value }.take(10).joinToString { "${it.key}:${"%.2f".format(it.value)}" } +
-            " rejeitados=" + gostoArt.filter { it.value < 0 }.keys.take(10).joinToString())
+            " abaixo=" + gostoArt.entries.filter { it.value < 0 }.sortedBy { it.value }.take(8).joinToString { "${it.key}:${"%.2f".format(it.value)}" })
         android.util.Log.i("Sonus", "novidades conhecidos=${conhecidos.size} parecidos=${dosParecidos.size} pais=${doPais.size} candidatos=${todos.size} escolhidos=${escolhidos.size} musicas=${musicas.size}")
         JSONObject()
             .put("lancamentos", JSONArray().apply {

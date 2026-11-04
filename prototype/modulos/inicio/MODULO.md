@@ -36,3 +36,4 @@ A tela inicial do Sonus, sempre numa tela só (sem rolar):
   Auditoria visual 28/10: "Ver tudo" com área de toque >= 44px; legenda dos blocos de playlist com sombra mais forte (capa clara).
   Auditoria 100% (28/10): `SonusInicio.previa({...})` desenha a tela com dados de teste sem gravar (só auditoria).
   Nome do artista toca e abre a página dele (29/10): Novidades, Escute novamente e Seu Mix com o nome do artista tocável.
+  Novidades valem 24 h (uma lista por dia), pedido do dono em 04/11.

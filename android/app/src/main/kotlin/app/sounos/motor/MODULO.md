@@ -14,10 +14,13 @@ Aprende o uso de quem ouve, **só no celular** (nada sai do aparelho), e usa iss
   YouTube Music ou deste ano na página do artista) e que a pessoa ainda NÃO ouviu (música ouvida sai; lançamento todo
   ouvido sai; sem lista de faixas, só single de nome nunca ouvido). 2º combina com o GOSTO: artistas que ela ouve e
   segue; artistas PARECIDOS com eles ("fãs também gostam de"; quanto mais preferidos apontam, mais perto); gêneros que
-  ela mais ouve (Deezer). Pesa contra: pular, pular no começo, sair no meio, tirar da playlist (diário), deixar de
-  seguir. Rejeitado (não entra): deixou de seguir, ou quase não ouviu (< 5 min, nenhuma até o fim) e pulou quase
-  sempre — muito tempo ouvido nunca vira rejeição. Até 2 lançamentos por artista e 4 por "família" (um preferido e
-  os parecidos dele); lançamentos do país sem ligação com o gosto só completam a lista.
+  ela mais ouve (Deezer). O gosto é lido escuta a escuta no diário (`gostoComRejeicao`): o TEMPO pesa (cada
+  acontecimento vale metade a cada 60 dias — fase de pulos passa, gosto antigo perde força); a favor: minutos
+  ouvidos, até o fim, pôr na playlist, seguir; contra: pular no começo (forte), pular depois (fraco), tirar da
+  playlist, deixar de seguir; pulos em sequência (segundos entre um e outro) são PASSEIO e valem 1/5; fechar o app ou
+  escolher outra não contam contra. NADA É EXCLUÍDO (pedido do dono): nota baixa só desce. Até 2 lançamentos por
+  artista e 4 por "família" (um preferido e os parecidos dele); lançamentos do país sem ligação com o gosto só
+  completam a lista. A lista vale 24 h.
 - **Busca de artistas**: quem a pessoa já ouve vem antes (ver `prototype/modulos/busca/MODULO.md`).
 
 - **Diário** (`Diario.kt`, pedido do dono em 04/11/2026: "o app guarda todo tipo de dado do usuário, mas não manda para
