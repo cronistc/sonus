@@ -529,6 +529,18 @@
       const stale = () => run !== searchRun || !isOpen || window.__playerOpen || norm(input.value.replace(/^@/, "")) !== norm(q) && norm(input.value) !== norm(toHandle(q));
       const pSongs = Sounos.ask("search", { q }), pArts = Sounos.ask("searchArtists", { q }), pAlbums = Sounos.ask("searchAlbums", { q });
       let arts = null, albums = null, songsR = null, moreHas = false, moreLoading = false, morePaused = false;
+      // artistas parecidos ("Os fãs também podem gostar de...") entram no fim da fileira quando o 1º artista é o pesquisado
+      let parecidos = [], parecidosDe = null;
+      const pedeParecidos = () => {
+        const a = ((arts && arts.items) || []).find(x => x.name);
+        if (!a || !a.url || parecidosDe === a.url || textScore(q, a.name) < .9) return;
+        parecidosDe = a.url;
+        const key = Sounos.cacheKey("relatedArtists", a.url);
+        cacheRefreshOff.push(Sounos.on("metadataUpdated", ev => {
+          if (ev.method === "relatedArtists" && ev.cacheKey === key && !stale()) { parecidos = (ev.payload && ev.payload.items) || []; if (songsR) draw(); }
+        }));
+        Sounos.ask("relatedArtists", { url: a.url }).then(r => { if (stale() || r.error) return; parecidos = r.items || []; if (songsR) draw(); });
+      };
       let resultSongs = [];
       // Músicas: 5 e "Ver mais" (+10 a cada toque, busca mais no app quando precisa). Não há mais a lista sem fim
       // embaixo de Artistas/Álbuns, que carregava sozinha ao rolar.
@@ -559,7 +571,7 @@
           resultSongs = []; seenSongs.clear(); appendSongs(songsR.items, 0);
           moreHas = !!songsR.hasMore; morePaused = false; draw();
         } else if (ev.method === "searchArtists" && ev.cacheKey === Sounos.cacheKey("searchArtists", q)) {
-          arts = ev.payload || {}; if (songsR) draw();
+          arts = ev.payload || {}; pedeParecidos(); if (songsR) draw();
         } else if (ev.method === "searchAlbums" && ev.cacheKey === Sounos.cacheKey("searchAlbums", q)) {
           albums = ev.payload || {}; if (songsR) draw();
         }
@@ -590,13 +602,15 @@
         moreHas = !!r.hasMore;
         if (!stale()) draw();
       });
-      pArts.then(r => { arts = r; if (songsR && !stale()) draw(); });
+      pArts.then(r => { arts = r; if (!stale()) pedeParecidos(); if (songsR && !stale()) draw(); });
       pAlbums.then(r => { albums = r; if (songsR && !stale()) draw(); });
       function draw() {
         const songs = songsR;
         if (songs.error && (!arts || arts.error) && (!albums || albums.error)) return arts || albums ? setPanel(`<div class="s-empty">Sem conexão agora. Tente de novo.</div>`, "res") : null;
         resultTracks = resultSongs;
         resultArtists = ((arts && arts.items) || []).filter(a => a.name);
+        const jaTem = new Set(resultArtists.map(a => artistKey(a.name)));
+        resultArtists = resultArtists.concat(parecidos.filter(a => a.name && !jaTem.has(artistKey(a.name)) && jaTem.add(artistKey(a.name))));
         resultAlbums = ((albums && albums.items) || []).filter(a => a.name && a.url);
         if (!resultTracks.length && !resultArtists.length && !resultAlbums.length) {
           if (moreLoading || moreHas) {

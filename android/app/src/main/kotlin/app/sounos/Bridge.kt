@@ -259,6 +259,19 @@ class Bridge(
                     }
                 })
             }
+            // artistas parecidos com o artista pesquisado, para completar a fileira de Artistas da busca;
+            // quem a pessoa já ouve sobe (motor de entendimento), o resto fica na ordem do YouTube Music
+            "relatedArtists" -> cachedAsync(a, "relatedArtists", a.getString("url")) {
+                val afinidade = app.motor.afinidadeArtistas(app.library.history())
+                JSONObject().put("items", JSONArray().apply {
+                    app.source.relatedArtists(a.getString("url"))
+                        .sortedByDescending { afinidade[CoverStore.artistKey(it.name)]?.second ?: 0.0 }
+                        .take(10).forEach { r ->
+                            put(JSONObject().put("name", r.name).put("url", r.url)
+                                .put("thumb", r.thumbs.maxByOrNull { it.width * it.height }?.url ?: JSONObject.NULL))
+                        }
+                })
+            }
             "searchAlbums" -> cachedAsync(a, "searchAlbums", a.getString("q")) {
                 JSONObject().put("items", JSONArray().apply {
                     app.source.searchAlbums(a.getString("q")).take(12).forEach { r ->

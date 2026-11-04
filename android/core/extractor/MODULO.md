@@ -29,3 +29,5 @@ Base: NewPipe Extractor (GPLv3). A ideia de trocar por um motor próprio ("Sonus
   Capinha (`miniFile`/`localMini`/`getMini`, 120–160 px) para linhas pequenas; serve qualquer capa guardada que baste.
   Capa grande da fila por grupos no PlayerController (`capasGrandesDaFila`): 2 próximas já, 8 seguintes, depois o resto,
   2 de cada vez; dados móveis = janela das 10 próximas. (Saiu da QueuePrefetcher.)
+  Artistas parecidos (04/11): `YtMusicArtist.related(id)` lê o carrossel de páginas de artista da página do artista
+  ("Os fãs também podem gostar de..."), reconhecido pelo tipo de página e não pelo título; `NewPipeSource.relatedArtists(url)`.

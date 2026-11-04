@@ -91,6 +91,12 @@ class NewPipeSource(private val service: StreamingService = ServiceList.YouTube)
         artists
     }
 
+    /** Artistas parecidos com o da página [channelUrl] ("Os fãs também podem gostar de..." do YouTube Music). */
+    suspend fun relatedArtists(channelUrl: String): List<ArtistResult> = withContext(Dispatchers.IO) {
+        val id = Regex("channel/(UC[A-Za-z0-9_-]+)").find(channelUrl)?.groupValues?.get(1) ?: return@withContext emptyList()
+        ytmArtists.related(id)
+    }
+
     /** Só devolve um canal cujo nome identifica exatamente o artista pedido. */
     suspend fun searchArtist(query: String, trace: (String) -> Unit = {}): ArtistResult? {
         val artists = searchArtistsAll(query, trace)

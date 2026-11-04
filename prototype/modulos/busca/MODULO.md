@@ -31,3 +31,6 @@ não aparecem. Ordem:
   tamanho da fila vem depois, aos poucos (Bridge `capasDaBusca`); nos dados móveis só as capinhas.
   Resultados: Melhor resultado (com ⋮) → Músicas (5 + "Ver mais", +10 por toque, busca mais no app quando precisa) →
   Artistas → Álbuns. A lista sem fim embaixo (carregava sozinha ao rolar) saiu.
+  Artistas parecidos (04/11): quando o 1º artista é o pesquisado, a fileira de Artistas continua com até 10 artistas
+  de "Os fãs também podem gostar de..." do YouTube Music (ponte `relatedArtists`, pela URL do canal); quem a pessoa já
+  ouve vem antes. Chegam depois, sem atrasar a fileira.

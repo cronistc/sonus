@@ -49,6 +49,31 @@ class YtMusicArtist(private val client: OkHttpClient) {
         }
     }.distinctBy { it.url ?: it.title }.sortedByDescending { it.year ?: 0 }
 
+    /**
+     * "Os fãs também podem gostar de..." da página do artista: artistas parecidos, com foto e público.
+     * Reconhecido pelos itens (páginas de artista "UC…"), não pelo título, que muda com o idioma.
+     */
+    fun related(artistId: String): List<ArtistResult> = artistSections(artistId).asSequence()
+        .mapNotNull { it.getObject("musicCarouselShelfRenderer") }
+        .map { shelf ->
+            shelf.getArray("contents").mapNotNull { v ->
+                val r = (v as? JsonObject)?.getObject("musicTwoRowItemRenderer") ?: return@mapNotNull null
+                val endpoint = r.path("navigationEndpoint", "browseEndpoint")
+                val id = endpoint.getString("browseId")?.takeIf { it.startsWith("UC") } ?: return@mapNotNull null
+                if (endpoint.path("browseEndpointContextSupportedConfigs", "browseEndpointContextMusicConfig").getString("pageType") != "MUSIC_PAGE_TYPE_ARTIST") return@mapNotNull null
+                val name = r.getObject("title")?.getArray("runs")?.mapNotNull { (it as? JsonObject)?.getString("text") }?.joinToString("")?.trim()
+                if (name.isNullOrBlank()) return@mapNotNull null
+                val info = r.getObject("subtitle")?.getArray("runs")?.mapNotNull { (it as? JsonObject)?.getString("text") }?.joinToString("").orEmpty()
+                val thumbs = r.path("thumbnailRenderer", "musicThumbnailRenderer", "thumbnail").getArray("thumbnails").mapNotNull { t ->
+                    val o = t as? JsonObject ?: return@mapNotNull null
+                    val url = o.getString("url") ?: return@mapNotNull null
+                    Thumb(CoverStore.artistImageUrl(url), o.getInt("width"), o.getInt("height"))
+                }
+                ArtistResult(TitleNormalizer.cleanArtist(name), "https://www.youtube.com/channel/$id", thumbs, publico(info))
+            }
+        }
+        .firstOrNull { it.isNotEmpty() }.orEmpty()
+
     /** Um lançamento (capa de álbum/single/EP) como aparece nas grades e carrosséis do YouTube Music. */
     private fun parseRelease(r: JsonObject, fallbackKind: String): Release? {
         val title = r.getObject("title")?.getArray("runs")?.firstOrNull()?.let { (it as? JsonObject)?.getString("text") }?.trim()
