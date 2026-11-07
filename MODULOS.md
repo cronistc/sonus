@@ -6,7 +6,7 @@ os arquivos e o histórico.
 
 **Versão só muda quando sai para o público.** Tudo o que é feito antes de um lançamento é UMA versão (a do próximo
 lançamento). Cada módulo sobe no máximo uma vez por lançamento (Y = ajustes/novidades; X = redesenho), nunca a cada
-mudança. Hoje em preparação: **Sunshine Beta 1.1** (ainda não lançada).
+mudança. Última lançada: **Sunshine Beta 1.2** (07/11/2026). Em preparação: **Sunshine Beta 1.3**.
 
 ## Telas (interface, `prototype/`)
 | Módulo | Versão | Pasta | O que é |

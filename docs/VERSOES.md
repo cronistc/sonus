@@ -30,7 +30,7 @@ contagem nova), **nada no app pode ordenar versões pelo nome**. Use o `versionC
   convertidas pela tabela `LEGACY` (0.1.2 = 5, 0.1.3 = 8);
 - `changelog.json`: a chave é o `versionName` exato com 4 números (ex.: `"0.1.1.0"`), então não colide com `"0.1.2"` antigo.
 
-Histórico de versionCode: 0.1 = 1 · 0.1.2 = 5 · 0.1.3 = 8 (publicada) · Sunshine Beta 1.0 (`0.1.1.0`) = 10.
+Histórico de versionCode: 0.1 = 1 · 0.1.2 = 5 · 0.1.3 = 8 (publicada) · Sunshine Beta 1.0 (`0.1.1.0`) = 10 · Sunshine Beta 1.1 (`0.1.1.1`) = 12 · Sunshine Beta 1.2 (`0.1.1.2`) = 47 (a 1.3 que o celular preparou em 27/10 nunca saiu: virou a 1.2).
 
 Em Configurações, a palavra "Sunshine" brilha (brilho dourado + reflexo lento) para representar a versão.
 
