@@ -14,10 +14,10 @@
     $("offlineMark").hidden = !A.offline;
   }
 
-  // Novidades: o motor monta a lista (lançamentos + músicas) e ela vale NOV_MS (6 h), mesmo que o app seja fechado e
+  // Novidades: o motor monta a lista (lançamentos + músicas) e ela vale NOV_MS (24 h), mesmo que o app seja fechado e
   // aberto de novo. Passado esse tempo, uma lista nova é feita ao abrir — a menos que o que está tocando venha da
   // lista atual (aí ela é preservada). Fica guardada para a janela do topo e o Ver tudo usarem a mesma.
-  const NOV = "sonus.novidades", NOV_MS = 6 * 3600e3;
+  const NOV = "sonus.novidades", NOV_MS = 24 * 3600e3;          // um dia (pedido do dono, 04/11)
   let nov = null;
   try { nov = JSON.parse(localStorage.getItem(NOV) || "null"); } catch {}
   const tocandoDaLista = () => A.S?.context?.type === "novidades" || (!!A.cur() && !!nov?.musicas?.some(t => t.id === A.cur().id));
@@ -32,6 +32,21 @@
     return nov;
   }).catch(() => nov);
   const novidades = () => pronta.then(n => n?.lancamentos || []);
+
+  // Seu Mix: o motor mistura as mais ouvidas, novidades bem próximas, inéditas de artistas que a pessoa já ouve e
+  // 1–2 descobertas do mesmo estilo. Um mix novo a cada 12 h (preservado enquanto toca dele).
+  const MIX = "sonus.mix", MIX_MS = 12 * 3600e3;
+  let mix = null;
+  try { mix = JSON.parse(localStorage.getItem(MIX) || "null"); } catch {}
+  const tocandoDoMix = () => A.S?.context?.type === "mix";
+  if (!(mix?.musicas?.length && (Date.now() - (mix.at || 0) < MIX_MS || tocandoDoMix()))) {
+    Sounos.ask("mix", {}).then(r => {
+      if (r?.error || !r?.musicas?.length) return;
+      mix = { musicas: r.musicas, artistas: r.artistas || [], cores: r.cores || [], at: Date.now() };
+      try { localStorage.setItem(MIX, JSON.stringify(mix)); } catch {}
+      SonusInicio.render();
+    }).catch(() => {});
+  }
 
   // Quem a pessoa ouve muito mas não segue também aparece em Seus artistas, depois dos seguidos, com o selo "Seguir":
   // pelo menos OUVIU_MIN reproduções nos últimos OUVIU_DIAS dias (cada música conta até 3), no máximo OUVIU_MAX artistas.
@@ -59,16 +74,38 @@
     window.dispatchEvent(new CustomEvent("sounos:following", { detail: list }));
   }
 
+  // Histórico (centenas de KB) e baixadas lidos do app só quando podem ter mudado: o histórico ganha a música nova
+  // quando ela termina de carregar (chave = música atual + carregando); baixadas, nos eventos library/download.
+  // Ler o histórico custa ~80 ms (centenas de KB): lê uma vez e, a cada música que começa, aplica aqui a mesma regra
+  // do app (Library.addHistory: a música sobe para o topo, conta +1, no máximo 300). Lê de novo ao voltar para o app.
+  let histCache = null, histUltimo = "", baixCache = null;
+  const historico = () => {
+    if (!histCache) { const h = Sounos.call("getHistory"); histCache = Array.isArray(h) ? h : []; histUltimo = histCache[0]?.track?.id || ""; }
+    return histCache;
+  };
+  Sounos.on("state", st => {
+    const t = st?.current;
+    if (!histCache || !t || st.loading || t.id === histUltimo) return;
+    histUltimo = t.id;
+    const i = histCache.findIndex(e => e.track?.id === t.id), antes = i >= 0 ? histCache.splice(i, 1)[0] : null;
+    histCache.unshift({ track: t, source: st.context || {}, at: Date.now(), n: (antes?.n || 0) + 1 });
+    if (histCache.length > 300) histCache.length = 300;
+  });
+  const mudouBiblioteca = () => { baixCache = null; };
+  Sounos.on("library", mudouBiblioteca);
+  Sounos.on("download", ev => { if (ev.done || ev.error) mudouBiblioteca(); });
+  Sounos.on("offline", mudouBiblioteca);
+
   SonusInicio.usar({
     dados() {
-      const hist = Sounos.call("getHistory");
+      const hist = historico();
       const lista = (Array.isArray(hist) ? hist : []).filter(e => Sounos.isSong(e.track));     // vídeos ouvidos antes não aparecem
       window.__sounosHistoryTracks = lista.map(e => e.track);
       const agora = Date.now();
       // recentes: cada música vale RECENTES_MS desde a última vez que tocou (o histórico já sobe a música tocada de novo)
       const recentes = lista.filter(e => agora - (e.at || 0) < SonusInicio.RECENTES_MS).map(e => e.track);
       // online só as baixadas (consulta rápida); offline também o que está inteiro no cache (consulta mais lenta)
-      const mine = Sounos.call(A.offline ? "getMineTracks" : "getDownloadedTracks");
+      const mine = baixCache?.offline === A.offline ? baixCache.v : (baixCache = { offline: A.offline, v: Sounos.call(A.offline ? "getMineTracks" : "getDownloadedTracks") }).v;
       const baixadas = Array.isArray(mine.downloaded) ? mine.downloaded : [];
       const cache = A.offline && Array.isArray(mine.cached) ? mine.cached : [];
       const minhas = A.offline ? [...new Map([...baixadas, ...cache].map(t => [t.id, t])).values()] : [];
@@ -79,6 +116,7 @@
         artistas: [...seguidos().map(x => ({ name: x.name, thumb: x.thumb || "", url: x.url || "" })), ...ouvidosMuito(lista, agora)],
         playlists: baixadas.length ? [...playlists, { id: "__downloads__", name: "Músicas baixadas", tracks: baixadas, downloads: true }] : playlists,
         novidades: nov,
+        mix,
       };
     },
     capa: t => bg(t),
@@ -91,7 +129,7 @@
     },
     // Escute novamente: as 10 mais ouvidas de todo o histórico (n = vezes tocada; empate: a mais recente)
     escute() {
-      const hist = Sounos.call("getHistory");
+      const hist = historico();
       return (Array.isArray(hist) ? hist : []).filter(e => Sounos.isSong(e.track))
         .map((e, k) => ({ t: e.track, n: e.n || 1, k })).sort((a, b) => b.n - a.n || a.k - b.k).slice(0, 10).map(x => x.t);
     },
@@ -107,12 +145,30 @@
     capaLancamento: r => r.thumb
       ? pic(Sounos.coverUrl({ id: "album:" + (artistKey(r.title) || "x"), name: r.title, artist: r.artist, thumb: r.thumb }), grad(Sounos.hashColors(r.title)))
       : grad(Sounos.hashColors(r.title)),
+    abrirMix(j) {
+      const nomes = j.mix.artistas || [];
+      A.pages.openMix({ name: "Seu Mix", desc: `Feito pelo Sonus para você${nomes.length ? " · " + nomes.join(", ") : ""}`,
+        tracks: [...j.lista], hero: () => SonusInicio.capaMix(j.mix), salvar: () => this.salvarMix(j.lista, false) });
+    },
+    salvarMix(lista, abrir = true) {
+      const hoje = new Date().toLocaleDateString("pt-BR", { day: "numeric", month: "short" }).replace(".", "");
+      const pl = SounosData.getPlaylists();
+      // o mesmo mix já salvo (pelo "+" do cartão ou pela página do Mix): não cria outra igual
+      const ids = lista.map(t => t.id).join(",");
+      const ja = pl.find(x => x.name === `Seu Mix · ${hoje}` && (x.tracks || []).map(t => t.id).join(",") === ids);
+      if (ja) { if (abrir) A.pages.openPlaylist(ja.id); return; }
+      const p = { id: "pl" + Date.now().toString(36), name: `Seu Mix · ${hoje}`, desc: "Feito pelo Sonus para você", tracks: [...lista], created: Date.now() };
+      pl.push(p);
+      SounosData.savePlaylists(pl);
+      SonusInicio.render();
+      if (abrir) A.pages.openPlaylist(p.id);      // a página da playlist tem o botão de baixar tudo
+    },
     abrirLancamento(r) { if (r?.url) A.pages.openAlbum(r.url, r.title, r.artist, r.thumb || ""); },
   });
 
   // seguir/deixar de seguir na página do artista muda "Seus artistas"
   addEventListener("sounos:following", () => SonusInicio.render());
   // as músicas de "recentes" vencem com o tempo: confere ao voltar para o app e de tempos em tempos
-  addEventListener("sounos:visibility", e => { if (e.detail?.active) SonusInicio.render(); });
+  addEventListener("sounos:visibility", e => { if (e.detail?.active) { histCache = null; SonusInicio.render(); } });
   setInterval(() => { if (homeCanAnimate()) SonusInicio.render(); }, 5 * 60e3);
 })();

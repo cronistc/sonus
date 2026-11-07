@@ -10,7 +10,7 @@
   const MORPH_INI = 300, MORPH_DUR = 1250, ATRASO_LETRA = 0, PAUSA = 220, SUBIDA = 950, ENCAIXE = 0, REVELA = 700;
   const MORPH_FIM = MORPH_INI + MORPH_DUR;
   const SOBE_INI = MORPH_FIM + PAUSA, SOBE_FIM = SOBE_INI + SUBIDA, T = SOBE_FIM + ENCAIXE + REVELA;
-  let telaInicial = null, telaAberta = false, T_TELA = 0, medido = false, joia, desloc = 0, letrasOnus, layer, base, bg, canvas, ctx, off, octx, ratio, cor, fundo, alvo, clavePath, textoPath, D, pares, startAt, done = false;
+  let fundos, chegou = false, pausaPintada = false, telaInicial = null, telaAberta = false, T_TELA = 0, medido = false, joia, desloc = 0, letrasOnus, layer, base, bg, canvas, ctx, off, octx, ratio, cor, fundo, alvo, clavePath, textoPath, D, pares, startAt, done = false;
   const clamp = v => Math.max(0, Math.min(1, v));
   const fase = (t, a, b) => clamp((t - a) / (b - a));
   const suave = t => t * t * (3 - 2 * t);
@@ -50,9 +50,11 @@
     layer = document.createElement("div"); layer.className = "sonus-opening-layer";
     // começa na cor lisa do splash do Android e passa para o fundo do tema sem salto
     base = document.createElement("div"); base.className = "sonus-opening-bg";
-    base.style.background = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim() || "#0e0e10";
+    // exatamente a cor do splash (MainActivity.windowColor): no Gradiente o --bg já é tingido pela música e o 1º quadro saltava
+    base.style.background = document.documentElement.dataset.theme === "light" ? "#f4f4f6" : "#0e0e10";
     bg = document.createElement("div"); bg.className = "sonus-opening-bg"; bg.style.background = fundo; bg.style.opacity = 0;
-    canvas = document.createElement("canvas"); layer.append(base, bg, canvas);
+    fundos = document.createElement("div"); fundos.className = "sonus-opening-bg"; fundos.append(base, bg);
+    canvas = document.createElement("canvas"); layer.append(fundos, canvas);
     ctx = canvas.getContext("2d");
     document.body.classList.add("sonus-opening");
     document.body.appendChild(layer);
@@ -92,11 +94,21 @@
     if (telaInicial && ms >= MORPH_FIM) return paintTela(ms, cx, cy);   // (não limpa: a clave pronta fica no canvas)
     // a palavra começa no tamanho do splash do Android (fixo); com a tela ampliada (SounosEscala) chega ao tamanho da interface na morfose
     const z = 1 + (1 / (window.SounosEscala || 1) - 1) * ajuste, zr = ratio * z;
+    // na pausa entre a transformação e a subida, a clave pronta fica no canvas (não limpa): a cópia do ícone que
+    // vai subir aparece por baixo e tem tempo de ser desenhada. Antes o canvas era limpo no mesmo quadro em que a
+    // cópia aparecia, e a clave sumia por um instante (a tela "piscava")
+    if (ms >= MORPH_FIM && ms < SOBE_INI && pausaPintada) { fundoReveal(ms); return; }
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.setTransform(zr, 0, 0, zr, cx * (ratio - zr), cy * (ratio - zr));
     ctx.fillStyle = cor;
 
+    if (ms >= MORPH_FIM && ms < SOBE_INI && !pausaPintada) {   // 1º quadro da pausa: a clave pronta, parada
+      pausaPintada = true;
+      paint(MORPH_FIM - .01);
+      medir();
+      return;
+    }
     if (ms < MORPH_INI) {                                  // 1) a palavra, parada
       ctx.save(); ctx.translate(cx, cy); ctx.fill(textoPath); ctx.restore();
     } else if (ms < MORPH_FIM) {                           // 2) o S vira a clave; "onus" desliza para dentro dela
@@ -128,27 +140,45 @@
         ctx.restore();
       });
     } else {                                               // 3) a clave sobe sozinha e para exatamente no lugar
-      const s0 = CLAVE_ALTURA / D.ch;
-      const u = fase(ms, SOBE_INI, SOBE_FIM);
-      const w = u * u * u * (u * (u * 6 - 15) + 10);          // começa macio e chega parada
-      if (!medido) {                                       // a tela inicial já terminou de se arrumar: mede agora
-        medido = true;
-        const r2 = document.getElementById("brandLetter").getBoundingClientRect(), e2 = (r2.width || 28) / 64;
-        alvo = { x: r2.left + D.ccx * e2, y: r2.top + D.ccy * e2, escala: e2 };
-        Object.assign(joia.style, { left: r2.left + "px", top: r2.top + "px", width: r2.width + "px", height: r2.height + "px" });
-      }
-      const k = (s0 + (alvo.escala - s0) * w) / alvo.escala;
-      joia.style.opacity = 1;
-      joia.style.transform = w >= 1 ? "none" : `translate(${(cx - alvo.x) * (1 - w)}px, ${(cy - alvo.y) * (1 - w)}px) scale(${k})`;
+      sobeClave(cx, cy, fase(ms, SOBE_INI, SOBE_FIM));
     }
-    // fundo: entra o do tema logo no começo. Depois que a clave chegou, a tela inicial aparece num
-    // esmaecimento radial que nasce da própria clave e se abre até as bordas
+    fundoReveal(ms);
+  }
+
+  // posição final = a clave do cabeçalho; medida uma vez, depois que a tela inicial se arrumou
+  function medir() {
+    if (medido) return;
+    medido = true;
+    const r2 = document.getElementById("brandLetter").getBoundingClientRect(), e2 = (r2.width || 28) / 64;
+    alvo = { x: r2.left + D.ccx * e2, y: r2.top + D.ccy * e2, escala: e2 };
+    Object.assign(joia.style, { left: r2.left + "px", top: r2.top + "px", width: r2.width + "px", height: r2.height + "px" });
+  }
+
+  // 3) a clave sobe DESENHADA NO CANVAS (nítida em qualquer tamanho) e continua desenhada até o fim da abertura.
+  // Quando ela chega, o ícone de verdade do cabeçalho passa a existir por BAIXO dela, no mesmo lugar (já desenhado);
+  // no fim a camada da abertura sai e só sobra o ícone. Antes havia uma troca canvas → cópia SVG no último quadro
+  // da subida, e num quadro nenhum dos dois estava desenhado: a clave piscava no topo.
+  function sobeClave(cx, cy, u) {
+    medir();
+    const w = Math.min(1, u * u * u * (u * (u * 6 - 15) + 10));   // começa macio e chega parada
+    if (w >= 1 && !chegou) { chegou = true; document.body.classList.add("sonus-clave-chegou"); }
+    const s0 = CLAVE_ALTURA / D.ch, esc = s0 + (alvo.escala - s0) * w;
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    ctx.translate(cx + (alvo.x - cx) * w, cy + (alvo.y - cy) * w);
+    ctx.scale(esc, esc);
+    ctx.translate(-D.ccx, -D.ccy);
+    ctx.fill(clavePath);
+  }
+
+  // fundo: entra o do tema logo no começo. Depois que a clave chegou, a tela inicial aparece num esmaecimento
+  // radial que nasce da própria clave. A máscara vai num ÚNICO elemento (antes eram dois, redesenhados a cada quadro)
+  function fundoReveal(ms) {
     bg.style.opacity = String(suave(fase(ms, 0, 420)));
     const r = fase(ms, SOBE_FIM, T);
     if (r > 0) {
       const raio = Math.hypot(innerWidth, innerHeight) * suave(r) * 1.1, borda = 140;
       const m = `radial-gradient(circle at ${alvo.x}px ${alvo.y}px, transparent ${Math.max(0, raio - borda)}px, #000 ${raio}px)`;
-      base.style.maskImage = bg.style.maskImage = base.style.webkitMaskImage = bg.style.webkitMaskImage = m;
+      fundos.style.maskImage = fundos.style.webkitMaskImage = m;
     }
   }
 
@@ -166,7 +196,7 @@
     if (r <= 0) return;
     const raio = Math.hypot(innerWidth, innerHeight) * suave(r) * 1.1, borda = 140;
     const m = `radial-gradient(circle at ${cx}px ${cy}px, transparent ${Math.max(0, raio - borda)}px, #000 ${raio}px)`;
-    base.style.maskImage = bg.style.maskImage = base.style.webkitMaskImage = bg.style.webkitMaskImage = m;
+    fundos.style.maskImage = fundos.style.webkitMaskImage = m;
     canvas.style.opacity = String(1 - suave(fase(r, 0, .7)));
     canvas.style.filter = `blur(${(suave(r) * 8).toFixed(1)}px)`;
   }
@@ -176,11 +206,12 @@
     if (telaInicial && !telaAberta) { telaAberta = true; try { telaInicial(); } catch {} window.__sonusTelaInicial = null; }
     done = true;
     window.__sonusAberturaFim = Date.now();             // as dicas esperam a abertura terminar
-    document.body.classList.remove("sonus-opening");
+    document.body.classList.remove("sonus-opening", "sonus-clave-chegou");
     requestAnimationFrame(() => window.SounosSyncSystemBars?.());
     const l = layer;
     l?.remove();                                           // a clave do cabeçalho já está no mesmo lugar: troca invisível
-    layer = base = bg = canvas = ctx = off = octx = joia = null;
+    layer = base = bg = fundos = canvas = ctx = off = octx = joia = null;
+    window.dispatchEvent(new Event("sonus:abertura-fim"));     // quem esperou a abertura (player embutido) começa agora
   }
 
   function frame(now) {
@@ -192,11 +223,14 @@
     else requestAnimationFrame(frame);
   }
 
+  const liberaBarras = () => { window.__sonusBarrasProntas = true; window.SounosSyncSystemBars?.(); };
+
   window.__sonusOpeningLaunch = async (cold, dy = 0) => {
     desloc = (+dy || 0) / (window.SounosEscala || 1);   // o app manda em dp; aqui é px da interface
     if (!cold || !window.Sounos?.native || done) {
       if (window.__sonusAberturaFim === undefined) window.__sonusAberturaFim = Date.now() - 1200;   // sem abertura: dicas liberadas
       if (window.SounosNative) SounosNative.call("openingReady", "{}");
+      liberaBarras();
       return;
     }
     try {
@@ -207,13 +241,15 @@
       SounosNative.call("openingReady", "{}");
       await new Promise(r => setTimeout(r, 240));     // começa depois que a palavra nativa saiu
       startAt = performance.now();
+      setTimeout(liberaBarras, 200);                   // no meio do esmaecimento do fundo do app: barras na cor dele, uma vez só
       requestAnimationFrame(frame);
     } catch (e) {
       console.warn("Abertura animada indisponível", e);
       window.__sonusAberturaFim = Date.now();
-      document.body.classList.remove("sonus-opening");
+      document.body.classList.remove("sonus-opening", "sonus-clave-chegou");
       layer?.remove();
       SounosNative.call("openingReady", "{}");
+      liberaBarras();
     }
   };
 })();

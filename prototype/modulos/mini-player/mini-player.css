@@ -1,11 +1,11 @@
 /* Módulo Mini player — aparência. Ver MODULO.md */
 /* Mini-player fixo embaixo: abre o player completo */
-.mini { position: absolute; left: 10px; right: 10px; bottom: 12px; height: 64px; border-radius: 14px;
+.mini { position: absolute; left: 10px; right: 10px; bottom: calc(12px + var(--sb-base)); height: 64px; border-radius: 14px;
         background: var(--mini-bg); display: flex; flex-direction: column;
         box-shadow: 0 10px 30px rgba(0,0,0,.5); cursor: pointer; overflow: hidden; }
 .mini .mrow { height: 64px; flex-shrink: 0; display: flex; align-items: center; gap: 12px; padding: 0 8px; }
 .mini .add-btn { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; margin-right: 2px;
-            color: var(--text-dim); transition: background .3s, color .3s; }
+            color: var(--icon); transition: background .3s, color .3s; }
 .mini .add-btn svg { width: 22px; height: 22px; fill: currentColor; }
 .mini .add-btn[hidden] { display: none; }
 .mini .cv { width: 48px; height: 48px; border-radius: 8px; flex-shrink: 0; display: grid; place-items: center;
@@ -24,9 +24,16 @@
 .mini.dragging { transition: none; }
 .mini .t { font-size: calc(var(--fs) * (14px)); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mini .a { font-size: calc(var(--fs) * (12px)); color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.native .mini:not(.has-track) { display: none; }      /* no app: sem música, sem mini-player */
+.native .mini:not(.has-track) { display: none; }
+/* com o teclado aberto na busca o mini-player some (ele cobria a lista, já curta por causa do teclado) */
+.mini { transition: opacity .2s ease; }
+.phone:has(.sbar input:focus, .pg [contenteditable]:focus, .add-ov input:focus, .add-ov textarea:focus) .mini { opacity: 0; pointer-events: none; }      /* teclado aberto (busca, nome da playlist, criar playlist): o mini-player sai da frente */
 .mini .ctrl { display: flex; align-items: center; gap: 2px; }
-.mini .sk { width: 36px; height: 44px; display: grid; place-items: center; }
+.mini .sk { width: 36px; height: 44px; display: grid; place-items: center; position: relative; }
+/* áreas de toque >= 48 sem mudar o desenho */
+.mini .sk::after { content: ""; position: absolute; inset: -2px -6px; }
+.mini .add-btn { position: relative; }
+.mini .add-btn::after { content: ""; position: absolute; inset: -7px; }
 .mini .sk svg { width: 21px; height: 21px; stroke-width: 2.5; }
 .mini .sk:active { transform: scale(.9); }
 /* mesmo botão multifunção do player, em tamanho menor */

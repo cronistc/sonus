@@ -25,6 +25,8 @@ window.SonusApp = (() => {
   // (nunca depende só do histórico do navegador: se ele não tiver a entrada, o app fechava em vez de voltar)
   window.__sonusBack = () => {
     if (window.__sonusBoasVindas) { window.__sonusBoasVindasFechar?.(); return true; }
+    // menu "⋮" da música: fecha só ele (antes o voltar fechava também a página ou o player de baixo)
+    if (window.SounosTrackMenu?.isOpen?.()) { window.SounosTrackMenu.close(); return true; }
     // telas por cima (configurações, novidades/atualização, apoio, "adicionar à playlist"): fecham pelo histórico
     const st = history.state;
     if (st && (st.settings || st.upd || st.addSheet)) { history.back(); return true; }
@@ -44,8 +46,12 @@ window.SonusApp = (() => {
     SonusInicio.render();
     if (app.offline) SounosTips?.offer("offline");
   });
-  Sounos.on("library", () => SonusInicio.render());
-  Sounos.on("download", ev => { if (ev.done || ev.error) SonusInicio.render(); });
+  // player aberto por cima: o Início (escondido) só se redesenha quando o player começar a descer (emDia)
+  let inicioPendente = false;
+  const renderInicio = () => { if (window.__playerOpen) { inicioPendente = true; return; } SonusInicio.render(); };
+  window.__inicioEmDia = () => { if (inicioPendente) { inicioPendente = false; SonusInicio.render(); } };
+  Sounos.on("library", renderInicio);
+  Sounos.on("download", ev => { if (ev.done || ev.error) renderInicio(); });
   document.querySelectorAll(".row").forEach(row => row.addEventListener("scroll", () => SounosTips?.offer("home"), { passive: true }));
   SounosTips?.offer("home");
   if (app.offline) SounosTips?.offer("offline");
@@ -59,7 +65,7 @@ window.SonusApp = (() => {
   function syncTheme() {
     try {
       const theme = JSON.parse(localStorage.getItem("sounos.settings"))?.theme;
-      if (theme) $("phone").dataset.theme = theme;
+      if (theme) $("phone").dataset.theme = document.documentElement.dataset.theme = theme;
     } catch {}
   }
   f.title = "Player";
@@ -94,12 +100,13 @@ window.SonusApp = (() => {
         else if (!pushed) { history.pushState({ player: true, d: d + 1 }, ""); pushed = true; }
       }
       isOpen = true; window.__playerOpen = true; $("phone").classList.add("player-open"); homeClockChanged();
+      window.SounosSyncSystemBars?.(false);                // barras na cor do topo do player
       win().__playerShown?.();
       slide(0, 420);
     },
     // fecha e, depois que o "voltar" do histórico terminar, faz outra coisa (ex.: abrir a página do artista)
     closeThen(fn) { if (isOpen && pushed) { afterBack = fn; shell.close(); } else { shell.close(); fn(); } },
-    lowerForPage() { if (isOpen) f.style.zIndex = "55"; },
+    lowerForPage() { window.__homeEmDia?.(); window.__inicioEmDia?.(); if (isOpen) f.style.zIndex = "55"; },
     restoreAfterPage() {
       if (!isOpen) return;
       setTimeout(() => {
@@ -111,14 +118,15 @@ window.SonusApp = (() => {
     close(fromPop) {
       const wasOpen = isOpen;
       isOpen = false;
+      window.__homeEmDia?.(); window.__inicioEmDia?.();                               // a tela inicial aparece já com a música atual
       // continua desenhado logo abaixo da tela (pronto para subir sem atraso), só que parado
-      slide(H(), 340, () => { if (!isOpen) { win().__playerHidden?.(); y = null; window.__playerOpen = false; $("phone").classList.remove("player-open"); syncTheme(); homeClockChanged(); SounosTips?.offer("home"); if (app.offline) SounosTips?.offer("offline"); if (cur()) SounosTips?.offer("mini"); } });
+      slide(H(), 340, () => { if (!isOpen) { win().__playerHidden?.(); y = null; window.__playerOpen = false; $("phone").classList.remove("player-open"); syncTheme(); homeClockChanged(); window.SounosSyncSystemBars?.(false); SonusInicio.reaparecer(); SounosTips?.offer("home"); if (app.offline) SounosTips?.offer("offline"); if (cur()) SounosTips?.offer("mini"); } });
       if (wasOpen && !fromPop && pushed) { pushed = false; history.back(); }
     },
     // arrastando o mini-player para cima: o player aparece por baixo do dedo
-    peek(dy) { anim?.cancel(); anim = null; if (loaded) { f.style.visibility = "visible"; if (!isOpen) win().__playerShown?.(); if (!window.__playerOpen) { window.__playerOpen = true; $("phone").classList.add("player-open"); homeClockChanged(); } place(Math.max(0, H() - dy * 1.1)); } },
+    peek(dy) { anim?.cancel(); anim = null; if (loaded) { f.style.visibility = "visible"; if (!isOpen) win().__playerShown?.(); if (!window.__playerOpen) { window.__playerOpen = true; $("phone").classList.add("player-open"); homeClockChanged(); window.SounosSyncSystemBars?.(false); } place(Math.max(0, H() - dy * 1.1)); } },
     // puxando o player para baixo
-    drag(dy) { anim?.cancel(); anim = null; place(dy); },
+    drag(dy) { anim?.cancel(); anim = null; window.__homeEmDia?.(); window.__inicioEmDia?.(); place(dy); },
     snap() { if (isOpen) slide(0, 300); },
   };
   openPlayer = () => shell.open();
@@ -127,13 +135,71 @@ window.SonusApp = (() => {
     const f = afterBack; afterBack = null; f?.();
   });
   f.addEventListener("load", () => { loaded = true; f.style.visibility = "visible"; const g = onLoad; onLoad = null; g?.(); });
-  // carrega depois que a tela inicial já apareceu
-  setTimeout(() => { f.src = "player.html"; document.body.appendChild(f); }, 350);
+  // carrega depois que a tela inicial já apareceu E a abertura terminou: carregar o player (página inteira) no meio
+  // da animação disputava o processador com ela e a abertura engasgava. Limite de 6 s, caso a abertura não avise.
+  {
+    let pedido = false;
+    const carrega = () => { if (pedido) return; pedido = true; f.src = "player.html"; document.body.appendChild(f); };
+    const aberturaAcabou = () => window.__sonusAberturaFim !== undefined && !document.body.classList.contains("sonus-opening");
+    addEventListener("sonus:abertura-fim", () => setTimeout(carrega, 150), { once: true });
+    const espera = setInterval(() => { if (aberturaAcabou()) { clearInterval(espera); setTimeout(carrega, 150); } }, 300);
+    setTimeout(() => { clearInterval(espera); carrega(); }, 6000);
+  }
   // o "+" ou as configurações mudaram algo no player → a tela inicial acompanha
   addEventListener("storage", e => {
     if (e.key === "sounos.settings") { if (!window.__playerOpen) syncTheme(); }
     else SonusInicio.render();
   });
 }
+  // ---------- link de música (Spotify, Deezer, Apple Music, YT Music… tocado ou compartilhado) ----------
+  // Procura a mesma música e toca (com o rádio dela em seguida), ou abre o álbum. Um aviso pequeno mostra o que acontece.
+  let avisoEl = null, avisoT = 0;
+  function aviso(texto, ms = 0) {
+    if (!avisoEl) { avisoEl = document.createElement("div"); avisoEl.className = "sonus-aviso"; avisoEl.setAttribute("role", "status"); $("phone").appendChild(avisoEl); }
+    clearTimeout(avisoT);
+    avisoEl.textContent = texto; avisoEl.classList.add("on");
+    if (ms) avisoT = setTimeout(() => avisoEl.classList.remove("on"), ms);
+  }
+  // playlist de outro app: as músicas são procuradas uma a uma; o aviso mostra o andamento
+  Sounos.on("linkProgresso", ev => {
+    if (!tratando || !ev.total) return;
+    const nome = ev.titulo ? `“${ev.titulo}”` : "a playlist";
+    aviso(ev.feitas ? `Trazendo ${nome}: ${ev.feitas} de ${ev.total} músicas` : `Trazendo ${nome} (${ev.total} músicas)…`);
+  });
+  let tratando = false;
+  async function tratarLink() {
+    if (tratando) return;
+    const texto = Sounos.call("getPendingLink").texto;
+    if (!texto) return;
+    tratando = true;
+    // aberto pelo link com o app fechado: espera a abertura terminar
+    if (window.__sonusAberturaFim === undefined || document.body.classList.contains("sonus-opening"))
+      await new Promise(r => { addEventListener("sonus:abertura-fim", r, { once: true }); setTimeout(r, 6000); });
+    aviso("Procurando o link…");
+    let r = null;
+    try { r = await Sounos.ask("abrirLink", { texto }); } catch (e) { r = { error: String(e) }; }
+    finally { tratando = false; }
+    if (!r || r.erro === "link" || r.error) aviso("Esse link não é de música", 3200);
+    else if (r.erro) aviso(r.titulo || r.artista ? `Não achei “${r.titulo || r.artista}” no Sonus` : "Não achei o que esse link mostra no Sonus", 3600);
+    else if (r.tipo === "album") { aviso(`Abrindo ${r.titulo || "o álbum"}`, 1800); pages.openAlbum(r.url, r.titulo || "", r.artista || "", r.thumb || ""); }
+    else if (r.tipo === "artista") { aviso(`Abrindo ${r.nome}`, 1800); pages.openArtist(r.nome, { url: r.url || "" }); }
+    else if (r.tipo === "playlist") {
+      // playlist de outro app: as músicas achadas, como uma playlist que a pessoa pode salvar ("+")
+      const nome = r.titulo || "Playlist", faltam = (r.total || 0) - r.tracks.length;
+      const origem = r.servico === "Sonus" ? "Recebida pelo Sonus" : `Do ${r.servico || "link"}`;
+      aviso(faltam > 0 ? `${r.tracks.length} de ${r.total} músicas encontradas` : `Abrindo ${nome}`, 2600);
+      pages.openMix({ name: nome, desc: `${origem}${r.artista ? " · " + r.artista : ""}`, tracks: r.tracks,
+        salvar: () => { const pl = SounosData.getPlaylists(); pl.push({ id: "pl" + Date.now().toString(36), name: nome, desc: origem, tracks: [...r.tracks], created: Date.now() }); SounosData.savePlaylists(pl); SonusInicio.render(); } });
+    }
+    else {
+      aviso(r.servico === "Sonus" ? `Tocando ${r.track.title}` : `Tocando do ${r.servico || "link"}: ${r.track.title}`, 2600);
+      Sounos.call("playSingle", { track: r.track, context: { type: "radio" } });
+      window.__playerShell?.open?.();
+    }
+    tratarLink();                                   // chegou outro link enquanto procurava
+  }
+  window.__sonusLinkChegou = tratarLink;
+  app.aviso = aviso;                                  // ferramentas de auditoria: SonusApp.aviso("texto", 3000) mostra o toast sem gravar nada
+  setTimeout(tratarLink, 0);
   return app;
 })();

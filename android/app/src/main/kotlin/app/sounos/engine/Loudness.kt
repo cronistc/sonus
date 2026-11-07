@@ -3,47 +3,47 @@ package app.sounos.engine
 import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
+import app.sounos.extractor.MedidorLufs
 import java.io.File
 import java.nio.ByteOrder
 import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.math.tanh
-import kotlin.math.log10
 import kotlin.math.pow
 
 /**
- * Volume equilibrado (de verdade): mede o volume médio da própria música e aplica um ganho para
- * todas ficarem perto do mesmo nível ([TARGET_DB], em dBFS RMS).
- *  - Se o ganho da música já é conhecido (medido antes, quando ela ficou inteira em disco na fila,
- *    ou numa vez anterior), ele é aplicado desde o primeiro segundo.
- *  - Se não, mede enquanto toca e vai ajustando devagar (no máximo 4 dB por segundo), para não "pular".
- *  - Trechos de silêncio não contam na média. O ganho fica entre −9 dB e +18 dB, e um limitador de pico
- *    (ataque rápido, soltura lenta) mais um corte suave evitam distorção quando a música é aumentada.
+ * Volume equilibrado (de verdade): mede o volume PERCEBIDO da música em LUFS ([MedidorLufs], o padrão do Spotify e do
+ * YouTube) e aplica um ganho para todas ficarem perto de −14 LUFS.
+ *  - Se o ganho da música já é conhecido (medido antes com o arquivo inteiro, ou numa vez anterior), ele é aplicado
+ *    desde o primeiro segundo.
+ *  - Se não, começa no [palpite] (o ganho típico das músicas da pessoa) e, depois de 3 s medidos, vai ajustando
+ *    devagar (no máximo 4 dB por segundo), para não "pular". Antes começava em 0 dB: master alto entrava alto e ia
+ *    baixando nos primeiros segundos.
+ *  - O ganho fica entre −12 dB e +12 dB, e um limitador de pico (ataque rápido, soltura lenta) mais um corte suave
+ *    evitam distorção quando a música é aumentada.
  */
 class Loudness {
-    private var sum = 0.0
-    private var blocks = 0L
+    private var medidor: MedidorLufs? = null
     private var known = false
     var gainDb = 0f
         private set
     private var env = 1.0   // redução de ganho do limitador (1 = sem redução)
 
-    fun reset(knownGainDb: Float?) {
-        sum = 0.0; blocks = 0
+    fun reset(knownGainDb: Float?, palpite: Float = 0f) {
+        medidor = null
         known = knownGainDb != null
-        gainDb = knownGainDb ?: 0f
+        gainDb = knownGainDb ?: palpite
         env = 1.0
     }
 
     /** Mede e aplica o ganho no próprio buffer (PCM 16 bits intercalado). */
     fun process(pcm: ShortArray, n: Int, sampleRate: Int, channels: Int, enabled: Boolean) {
         if (n <= 0) return
-        var acc = 0.0
-        for (i in 0 until n) { val v = pcm[i] / 32768.0; acc += v * v }
-        val ms = acc / n
-        if (10 * log10(ms + 1e-12) > GATE_DB) { sum += ms; blocks++ }
-        if (!known && blocks > 0) {
-            val desired = desiredGain(10 * log10(sum / blocks)).toFloat()
+        // mede antes de aplicar o ganho (o que conta é o volume da própria música)
+        val m = medidor?.takeIf { it.sampleRate == sampleRate && it.channels == channels } ?: MedidorLufs(sampleRate, channels).also { medidor = it }
+        m.add(pcm, n)
+        if (!known && m.segundos >= 3.0) m.integrada()?.let { lufs ->
+            val desired = MedidorLufs.ganhoPara(lufs).toFloat()
             val step = MAX_RATE_DB_PER_S * n / (sampleRate.toFloat() * channels)
             gainDb += (desired - gainDb).coerceIn(-step, step)
         }
@@ -70,60 +70,70 @@ class Loudness {
         env = e
     }
 
-    /** Ganho medido nesta reprodução (para guardar e usar da próxima vez), se já tiver dados suficientes. */
-    fun measuredGainDb(): Float? = if (blocks > 400) desiredGain(10 * log10(sum / blocks)).toFloat() else null
+    /** Ganho medido nesta reprodução (para guardar e usar da próxima vez), com pelo menos [minSeg] segundos de som. */
+    fun measuredGainDb(minSeg: Double = 20.0): Float? = medidor?.takeIf { it.segundos >= minSeg }?.integrada()?.let { MedidorLufs.ganhoPara(it).toFloat() }
+    /** Segundos de música já medidos nesta reprodução. */
+    fun segundosMedidos(): Double = medidor?.segundos ?: 0.0
 
     companion object {
-        const val TARGET_DB = -14.0
-        private const val GATE_DB = -50.0
         private const val MAX_RATE_DB_PER_S = 4f
         private const val CEIL = 30_500.0
         private const val KNEE = 29_500.0
         private const val SPAN = 32_767.0 - KNEE
         private const val ATTACK_S = 0.0005
         private const val RELEASE_S = 0.15
-        fun desiredGain(levelDb: Double) = (TARGET_DB - levelDb).coerceIn(-9.0, 18.0)
-
         /**
-         * Mede o volume de um arquivo inteiro sem tocar (roda em segundo plano, com a música da fila
-         * já baixada). Devolve o ganho a aplicar, ou null se não conseguir decodificar.
+         * Mede o volume (LUFS) de um arquivo inteiro sem tocar — em segundo plano, com prioridade baixa (não disputa com
+         * o som e a tela). Devolve o ganho a aplicar, ou null se não conseguir decodificar.
          */
-        fun analyzeFile(file: File): Float? = runCatching {
+        fun analyzeFile(file: File): Float? {
+            val tid = android.os.Process.myTid()
+            val antes = runCatching { android.os.Process.getThreadPriority(tid) }.getOrDefault(0)
+            runCatching { android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND) }
+            try { return medirArquivo(file) } finally { runCatching { android.os.Process.setThreadPriority(antes) } }
+        }
+
+        private fun medirArquivo(file: File): Float? = runCatching {
             val ex = MediaExtractor(); ex.setDataSource(file.path)
             val idx = (0 until ex.trackCount).first { ex.getTrackFormat(it).getString(MediaFormat.KEY_MIME)!!.startsWith("audio/") }
             ex.selectTrack(idx)
             val fmt = ex.getTrackFormat(idx)
             val codec = MediaCodec.createDecoderByType(fmt.getString(MediaFormat.KEY_MIME)!!)
             codec.configure(fmt, null, null, 0); codec.start()
+            var sr = fmt.getInteger(MediaFormat.KEY_SAMPLE_RATE); var ch = fmt.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+            var medidor = MedidorLufs(sr, ch)
             val info = MediaCodec.BufferInfo()
             var inEos = false; var outEos = false
-            var sum = 0.0; var blocks = 0L
             var pcm = ShortArray(0)
-            while (!outEos) {
-                if (!inEos) {
-                    val i = codec.dequeueInputBuffer(5_000)
-                    if (i >= 0) {
-                        val n = ex.readSampleData(codec.getInputBuffer(i)!!, 0)
-                        if (n < 0) { codec.queueInputBuffer(i, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM); inEos = true }
-                        else { codec.queueInputBuffer(i, 0, n, ex.sampleTime, 0); ex.advance() }
+            try {
+                while (!outEos) {
+                    if (!inEos) {
+                        val i = codec.dequeueInputBuffer(5_000)
+                        if (i >= 0) {
+                            val n = ex.readSampleData(codec.getInputBuffer(i)!!, 0)
+                            if (n < 0) { codec.queueInputBuffer(i, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM); inEos = true }
+                            else { codec.queueInputBuffer(i, 0, n, ex.sampleTime, 0); ex.advance() }
+                        }
+                    }
+                    val o = codec.dequeueOutputBuffer(info, 5_000)
+                    if (o == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+                        // formato de verdade da saída (pode diferir do contêiner)
+                        val f = codec.outputFormat
+                        val nsr = f.getInteger(MediaFormat.KEY_SAMPLE_RATE); val nch = f.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+                        if (nsr != sr || nch != ch) { sr = nsr; ch = nch; medidor = MedidorLufs(sr, ch) }
+                    } else if (o >= 0) {
+                        if (info.size > 0) {
+                            val sb = codec.getOutputBuffer(o)!!.apply { position(info.offset); limit(info.offset + info.size) }
+                                .order(ByteOrder.nativeOrder()).asShortBuffer()
+                            val n = sb.remaining(); if (pcm.size < n) pcm = ShortArray(n); sb.get(pcm, 0, n)
+                            medidor.add(pcm, n)
+                        }
+                        codec.releaseOutputBuffer(o, false)
+                        if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) outEos = true
                     }
                 }
-                val o = codec.dequeueOutputBuffer(info, 5_000)
-                if (o >= 0) {
-                    if (info.size > 0) {
-                        val sb = codec.getOutputBuffer(o)!!.apply { position(info.offset); limit(info.offset + info.size) }
-                            .order(ByteOrder.nativeOrder()).asShortBuffer()
-                        val n = sb.remaining(); if (pcm.size < n) pcm = ShortArray(n); sb.get(pcm, 0, n)
-                        var acc = 0.0; for (k in 0 until n) { val v = pcm[k] / 32768.0; acc += v * v }
-                        val ms = acc / n
-                        if (10 * log10(ms + 1e-12) > GATE_DB) { sum += ms; blocks++ }
-                    }
-                    codec.releaseOutputBuffer(o, false)
-                    if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) outEos = true
-                }
-            }
-            codec.stop(); codec.release(); ex.release()
-            if (blocks < 50) null else desiredGain(10 * log10(sum / blocks)).toFloat()
+            } finally { runCatching { codec.stop() }; runCatching { codec.release() }; runCatching { ex.release() } }
+            medidor.takeIf { it.segundos >= 5.0 }?.integrada()?.let { MedidorLufs.ganhoPara(it).toFloat() }
         }.getOrNull()
     }
 }

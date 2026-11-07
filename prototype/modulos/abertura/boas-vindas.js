@@ -10,6 +10,7 @@
     catch { return null; }
   };
   const salvarEstado = () => {
+    if (previa) return;
     const valor = JSON.stringify({ versao: VERSAO, concluida: true });
     try { localStorage.setItem(CHAVE, valor); } catch {}
     window.__sounosSave?.(CHAVE, valor);
@@ -18,12 +19,15 @@
     instalar: !!Sounos.call("getUpdate").canInstall,
     notificacoes: !!Sounos.call("getNotificationPermission").granted,
     bateria: !!Sounos.call("getBatteryOptimization").enabled,
+    links: !!Sounos.call("getLinksStatus").ligado,
+    widget: !!Sounos.call("temWidget")?.tem,
   });
   // Quem ainda não passou por esta tela vê (instalação nova ou vindo da 0.1.2). Quem já passou, nunca mais,
   // mesmo atualizando — a não ser que a tela mude (aí sobe VERSAO).
   const estadoSalvo = lerEstado();
-  if (estadoSalvo?.versao === VERSAO && estadoSalvo.concluida) return;
-  window.__sonusBoasVindas = true;          // dicas e novidades já esperam desde agora
+  const jaViu = estadoSalvo?.versao === VERSAO && estadoSalvo.concluida;
+  let previa = false;                       // auditoria visual: mostra a tela sem gravar nada e sem pedir permissões (ver abaixo)
+  if (!jaViu) window.__sonusBoasVindas = true;          // dicas e novidades já esperam desde agora
   window.__sonusBoasVindasFechar = () => { if (tela?.isConnected) fechar(); };   // botão voltar = Começar
 
   let tela, fechando = false;
@@ -34,12 +38,15 @@
       notificacoes: "Notificações",
       bateria: "Tocar sem interrupções",
       instalar: "Atualizar sozinho",
+      links: "Abrir links de música",
+      widget: "Widget na tela inicial",
     };
     for (const [id, concedida] of Object.entries(estados)) {
       const linha = tela.querySelector(`[data-permissao="${id}"]`);
       const botao = linha?.querySelector(".pill");    // como em Configurações: "Permitir" abre a janela do Android
       if (!linha || !botao) continue;
-      botao.textContent = concedida ? "Ativo" : "Permitir";
+      botao.classList.toggle("ok", concedida);        // CSS: "Ativo" fica diferente de "Permitir" (decisão da designer)
+      botao.textContent = id === "widget" ? (concedida ? "Adicionado" : "Adicionar") : concedida ? "Ativo" : "Permitir";
       linha.setAttribute("aria-label", `${nomes[id]}: ${concedida ? "ativa" : "permitir"}`);
       linha.disabled = concedida || (linha.dataset.ocupado === "true");
     }
@@ -84,6 +91,14 @@
               <div class="tx"><div class="t">Atualizar sozinho</div><div class="d">Permite instalar atualizações do Sonus.</div></div>
               <span class="pill" aria-hidden="true"></span>
             </button>
+            <button class="set-row bv-row" type="button" data-permissao="links">
+              <div class="tx"><div class="t">Abrir links de música</div><div class="d">Links do Spotify, Deezer, YT Music e outros tocam no Sonus. Marque todos os endereços na tela que abrir.</div></div>
+              <span class="pill" aria-hidden="true"></span>
+            </button>
+            <button class="set-row bv-row" type="button" data-permissao="widget">
+              <div class="tx"><div class="t">Widget na tela inicial</div><div class="d">Opcional. A música tocando e os controles na tela do celular; toque no A para ver a letra. Outros desenhos em Configurações.</div></div>
+              <span class="pill" aria-hidden="true"></span>
+            </button>
           </div>
         </section>
       </main>
@@ -104,8 +119,10 @@
           instalar: () => Sounos.call("allowInstalls"),
           notificacoes: () => Sounos.call("requestNotificationPermission"),
           bateria: () => Sounos.call("requestBatteryOptimization"),
+          links: () => Sounos.call("openLinkSettings"),
+          widget: () => Sounos.call("adicionarWidget", { tipo: "completo" }),
         }[botao.dataset.permissao];
-        acao?.();
+        if (!previa) acao?.();
         return;
       }
       if (e.target.closest(".bv-comecar")) fechar();
@@ -124,6 +141,10 @@
     }
   });
 
+  // DevTools: __sonusBoasVindasPrevia() mostra "Antes de começar" mesmo para quem já passou por ela; não grava nada
+  // (nem chave nem espelho) e os botões de permissão não pedem nada ao Android. Começar/voltar fecha.
+  window.__sonusBoasVindasPrevia = () => { if (tela?.isConnected) return; previa = true; fechando = false; tela = null; window.__sonusBoasVindas = true; mostrar(); };
+  if (jaViu) return;
   window.__sonusTelaInicial = () => { clearInterval(esperaAbertura); mostrar(true); };
   const esperaAbertura = setInterval(() => {
     if (window.__sonusAberturaFim === undefined || document.body.classList.contains("sonus-opening")) return;

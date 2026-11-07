@@ -3,12 +3,12 @@
 // Nada de vigiar a tela o tempo todo (a versão anterior travava o app): só esses momentos.
 (() => {
   const SEL = [".info h1", ".info p", ".mini .t", ".mini .a", ".blk .t", ".blk .a", ".ar .n", ".qi .qt", ".qi .qa",
-    ".pg .tr .t", ".pg .tr .a", ".pg .ph .name", ".s-row .t", ".s-row .a", ".s-best .t", ".s-best .a", ".s-art .n",
+    ".pg .tr .t", ".pg .tr .a", ".pg .ph .name", ".pg .art-linha .name", ".s-row .t", ".s-row .a", ".s-best .t", ".s-best .a", ".s-art .n",
     ".s-album .n", ".s-album .a"].join(",");
   const running = new WeakMap();
 
   function play(el) {
-    if (running.get(el)) return;
+    if (running.get(el) || el === document.activeElement) return;      // nome da playlist sendo editado: não mexe
     const r = el.getBoundingClientRect();
     if (!r.width || r.right < 0 || r.left > innerWidth || r.bottom < 0 || r.top > innerHeight) return;   // fora da tela
     const d = el.scrollWidth - el.clientWidth;
@@ -34,7 +34,10 @@
       el.animate([{ opacity: .35 }, { opacity: 1 }], { duration: 320, easing: "ease-out" });
     };
   }
-  const scan = root => (root && root.querySelectorAll ? root : document).querySelectorAll(SEL).forEach(play);
+  // player escondido (no app ele fica carregado por baixo da tela inicial): não mede nada — medir os textos forçava
+  // o cálculo da página inteira a cada troca de música
+  const escondido = () => !!window.Sounos?.native && typeof playerVisible !== "undefined" && !playerVisible;
+  const scan = root => { if (!escondido()) (root && root.querySelectorAll ? root : document).querySelectorAll(SEL).forEach(play); };
 
   let t = 0;
   const later = (root, ms) => { clearTimeout(t); t = setTimeout(() => scan(root), ms); };

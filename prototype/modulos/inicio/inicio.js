@@ -60,6 +60,8 @@ const SonusInicio = (() => {
         artistas: [...followed.map(name => ({ name })), ...["Grupo Modelo", "Artista Teste"].filter(n => !followed.includes(n)).map(name => ({ name, sugerido: true }))],
         playlists: playlists.map((p, i) => ({ ...p, i })),
         novidades: { lancamentos: exemploNovidades, musicas: [2, 8, 11, 14, 17].map(t => tracks[t]) },
+        mix: { musicas: [4, 9, 0, 13, 6, 2, 11].map(t => tracks[t]), artistas: ["Duo Fictício", "Trio Protótipo", "Banda Exemplo"],
+               cores: ["#7c3aed", "#db2777", "#f59e0b"] },
       };
     },
     capa: t => t?.c ? grad(t.c) : "var(--surface)",
@@ -84,6 +86,14 @@ const SonusInicio = (() => {
   function janelas() {
     if (d.offline) return [{ id: "minhas", rotulo: "Minhas músicas", lista: d.minhas, sub: "Toque para ouvir todas", vazio: "Nenhuma música disponível offline" }];
     const L = [{ id: "recentes", rotulo: "Ouvidos recentemente", lista: d.recentes, sub: "Toque para ouvir tudo de novo", vazio: "Busque uma música para começar" }];
+    // Seu Mix: capa própria (gradiente nas cores das músicas + fotos dos artistas principais); toca na ordem do mix
+    const mx = d.mix;
+    if (mx?.musicas?.length) {
+      const nomes = (mx.artistas || []).slice(0, 3);
+      L.push({ id: "mix", rotulo: "Seu Mix", lista: mx.musicas, mix: { cores: mx.cores || [], artistas: nomes },
+        sub: nomes.length ? `${nomes.slice(0, 2).join(", ")}${nomes.length > 2 || mx.musicas.length > 2 ? " e mais" : ""}` : "Feito para você",
+        subHtml: nomes.length ? `${nomes.slice(0, 2).map(n => Sounos.artistLink(n)).join(", ")}${nomes.length > 2 || mx.musicas.length > 2 ? " e mais" : ""}` : "" });   // nomes abrem o artista
+    }
     // Novidades: a mesma lista do Ver tudo de artistas; o mosaico usa as capas dos lançamentos; toca em ordem aleatória
     const nov = d.novidades;
     if (nov?.musicas?.length) L.push({ id: "novidades", rotulo: "Novidades", lista: nov.musicas, sub: "Lançamentos para você",
@@ -91,7 +101,33 @@ const SonusInicio = (() => {
     return L;
   }
   let jan = [], atual = 0, chaveJan = "", passaT = 0;
+  // cor da capa do Mix: mantém o tom (matiz) das músicas, mas sempre viva — saturação ≥ 55 %, luz entre 32 e 52 %
+  // (capas escuras/bege davam um gradiente acinzentado)
+  function vivo(hex) {
+    const m = /^#?([0-9a-f]{6})$/i.exec(hex || ""); if (!m) return hex;
+    const [r, g, b] = [0, 2, 4].map(i => parseInt(m[1].slice(i, i + 2), 16) / 255);
+    const max = Math.max(r, g, b), min = Math.min(r, g, b), l = (max + min) / 2, d = max - min;
+    let h = 0;
+    if (d) h = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+    const sat = d ? d / (1 - Math.abs(2 * l - 1)) : 0;
+    return `hsl(${Math.round(h * 60 + 360) % 360} ${Math.round(Math.max(.55, sat) * 100)}% ${Math.round(Math.min(.52, Math.max(.32, l)) * 100)}%)`;
+  }
+  // capa do Seu Mix: gradiente das cores das músicas e as fotos dos artistas principais, sobrepostas
+  const fundoMix = mix => { const c = [...(mix.cores || []), "#7c3aed", "#ec4899", "#f59e0b"].slice(0, 3).map(vivo);
+    return `linear-gradient(135deg,${c[0]} 0%,${c[1]} 55%,${c[2]} 100%)`; };
+  const fotosMix = mix => (mix.artistas || []).map((name, i) => `<i style="background:${fonte.foto({ name })};--i:${i}"></i>`).join("");
+  // a mesma capa, grande, para a página do Mix
+  const capaMix = mix => `<div class="mix-capa" style="background:${fundoMix(mix)}"><div class="mix-fotos">${fotosMix(mix)}</div></div>`;
+  function htmlMix(j, k) {
+    const fotos = fotosMix(j.mix);
+    return `<button class="jan jan-mix tap" data-jan="${k}" style="background:${fundoMix(j.mix)}">
+      <div class="mix-fotos">${fotos}</div>
+      <div class="jx"><div class="lbl">Feito para você</div><div class="big">${j.rotulo}</div><div class="sub">${j.subHtml || esc(j.sub)}</div></div>
+      <span class="jsalva" data-salvar-mix role="button" aria-label="Salvar nas suas playlists">${I.mais}</span>
+      <span class="jpp">${I.play}</span></button>`;
+  }
   function htmlJanela(j, k) {
+    if (j.mix) return htmlMix(j, k);
     const n = j.lista.length, id = k === 0 ? ' id="recentTitle"' : "";
     if (!n) return `<button class="jan vazia tap" data-jan="${k}"><div class="jx"><div class="lbl"${id}>${j.rotulo}</div><div class="big">${j.vazio}</div></div></button>`;
     // as últimas 6 músicas, paradas (sem piscar); com menos de 6 a grade se ajusta
@@ -104,7 +140,8 @@ const SonusInicio = (() => {
   }
   function renderJanelas() {
     jan = janelas();
-    const chave = jan.map(j => j.id + ":" + j.lista.slice(0, 6).map(t => t.id || t.title).join(",") + ":" + j.lista.length + ":" + (j.capas || []).join(",").length).join("|");
+    const chave = jan.map(j => j.id + ":" + j.lista.slice(0, 6).map(t => t.id || t.title).join(",") + ":" + j.lista.length + ":" + (j.capas || []).join(",").length
+      + (j.mix ? ":" + j.mix.cores.join(",") + j.mix.artistas.join(",") : "")).join("|");
     if (chave === chaveJan) return;                 // nada mudou: não redesenha (o mosaico não pisca)
     chaveJan = chave;
     $("dynTrack").innerHTML = jan.map(htmlJanela).join("");
@@ -148,9 +185,22 @@ const SonusInicio = (() => {
   $("dyn").addEventListener("click", e => {
     if (ar.foi) return;
     const j = jan[+e.target.closest("[data-jan]")?.dataset.jan]; if (!j) return;
+    if (e.target.closest("[data-salvar-mix]")) return salvarMix(e.target.closest("[data-salvar-mix]"), j);
+    // Seu Mix: só o play toca; tocar no resto do cartão abre o Mix como playlist
+    if (j.mix && !e.target.closest(".jpp")) return fonte.abrirMix?.(j);
     if (!j.lista.length) return fonte.buscar();
     fonte.tocar(j.aleatoria ? [...j.lista].sort(() => Math.random() - .5) : j.lista, j.id);
   });
+
+  // "+" do Seu Mix: vira uma playlist da pessoa (fica salva como as outras; de lá dá para baixar). Confirma com o ✓.
+  async function salvarMix(bt, j) {
+    if (bt.dataset.ok) return;
+    bt.dataset.ok = "1";
+    bt.innerHTML = I.seguindo;
+    anima(bt, [{ transform: "scale(.8)" }, { transform: "scale(1.15)", offset: .6 }, { transform: "scale(1)" }], { duration: 380 });
+    await new Promise(r => setTimeout(r, 450));
+    fonte.salvarMix?.(j.lista);
+  }
 
   // ---------- seções ----------
   function renderArtistas() {
@@ -205,8 +255,15 @@ const SonusInicio = (() => {
     render();
   }
 
+  // Coberta pelo player (ou app no fundo) a tela inicial não se redesenha: cada troca de música redesenhava tudo
+  // (e lia o histórico inteiro) por baixo do player — engasgos a cada próxima/anterior. Fica marcada e se desenha
+  // uma vez quando volta a aparecer (reaparecer()).
+  let pendente = false, sobre = null;
   function render() {
+    if (window.__playerOpen || document.hidden) { pendente = true; return; }
+    pendente = false;
     d = fonte.dados();
+    if (sobre) d = { ...d, ...sobre };           // previa de auditoria (SonusInicio.previa)
     renderJanelas();
     renderArtistas();
     renderPlaylistsInicio();
@@ -307,7 +364,7 @@ const SonusInicio = (() => {
       ? Array.from({ length: 3 }, () => '<div class="rel sk"><div class="rc"></div><div class="rt"></div><div class="ra"></div></div>').join("")
       : !lista.length ? '<div class="vt-vazio">Nenhuma novidade agora. Tente de novo mais tarde.</div>'
       : lista.map((r, k) => `<button class="rel tap" data-rel="${k}"><div class="rc" style="background:${fonte.capaLancamento(r)}"><span class="kind">${etiqueta(r)}</span></div>
-          <div class="rt">${esc(r.title)}</div><div class="ra">${esc(r.artist)}${r.year ? " · " + r.year : ""}</div></button>`).join("");
+          <div class="rt">${esc(r.title)}</div><div class="ra">${Sounos.artistLink(r.artist)}${r.year ? " · " + r.year : ""}</div></button>`).join("");
     return `<section class="vt-bloco" data-bloco="novidades"><div class="sec-head"><h2>Novidades</h2></div><div class="row vt-row">${corpo}</div></section>`;
   }
   // Escute novamente: as músicas mais ouvidas (no máximo 10), sem prazo — ao contrário de "Ouvidos recentemente"
@@ -316,7 +373,7 @@ const SonusInicio = (() => {
     if (!escute.length) return "";
     return `<section class="vt-bloco"><div class="sec-head"><h2>Escute novamente</h2></div><div class="row vt-row">${escute.map((t, k) =>
       `<button class="rel tap" data-ou="${k}"><div class="rc" style="background:${fonte.capa(t)}"></div>
-        <div class="rt">${esc(t.title)}</div><div class="ra">${esc(t.artist)}</div></button>`).join("")}</div></section>`;
+        <div class="rt">${esc(t.title)}</div><div class="ra">${Sounos.artistHtml(t)}</div></button>`).join("")}</div></section>`;
   }
   async function carregarNovidades() {
     const lista = await fonte.novidades().catch(() => []);
@@ -332,7 +389,12 @@ const SonusInicio = (() => {
 
   return {
     usar(f) { fonte = f; render(); },
+    // Auditoria visual (DevTools), sem gravar nada: SonusInicio.previa({ artistas: [], playlists: [], recentes: [], mix: null,
+    // novidades: null, offline: true, minhas: [] }) desenha a tela inicial com esses dados no lugar; previa(null) volta ao normal.
+    previa(o) { sobre = o || null; render(); return sobre ? "previa ligada" : "normal"; },
     render,
+    reaparecer() { if (pendente) render(); },
+    capaMix,
     get modo() { return modo; },
     reajustar() { if (modo === "playlists") ajustarGrade(); else if (modo === "artistas") ajustarVt(); },
     fecharVerTudo,

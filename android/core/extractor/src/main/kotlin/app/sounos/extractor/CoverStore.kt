@@ -2,6 +2,7 @@ package app.sounos.extractor
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -22,7 +23,12 @@ class CoverStore(
     private val client: OkHttpClient,
     private val browseMaxBytes: Long = 300L * 1024 * 1024,
     private val budget: DiskCacheBudget = DiskCacheBudget(listOf(browseDir), browseMaxBytes),
+    /** descobre a capa da versão em música de um clipe (null nos testes: sem rede) */
+    private val capaDaMusica: CapaDaMusica? = null,
 ) {
+    /** um arquivo de capa foi trocado por outra imagem (o app esquece as cores calculadas dele) */
+    @Volatile var aoTrocarCapa: (File) -> Unit = {}
+
     init { pinnedDir.mkdirs(); browseDir.mkdirs() }
 
     data class ArtistPhoto(
@@ -43,6 +49,46 @@ class CoverStore(
     private var aliasesLoaded = false
     private val artistLookupMisses = java.util.concurrent.ConcurrentHashMap<String, Long>()
 
+    // ---------- capa oficial conferida, por faixa (files/covers/capas-conferidas.properties) ----------
+    // id → "m" (é música: a capa que veio é a do álbum) · "c <url>" (clipe: capa da versão em música) ·
+    //      "v" (clipe sem versão em música achada) · "ok.<id>" = URL já instalada nos arquivos da faixa
+    private val conferidasFile = File(pinnedDir, "capas-conferidas.properties")
+    private val conferidas = Properties()
+    private var conferidasLoaded = false
+    private val conferindo = kotlinx.coroutines.sync.Semaphore(3)           // poucas consultas ao YouTube Music ao mesmo tempo
+    private val semResposta = java.util.concurrent.ConcurrentHashMap<String, Long>()   // falhou (sem rede): tenta de novo depois
+    private val tentou = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()     // baixar de novo uma vez por abertura
+
+    private fun <T> comConferidas(block: () -> T): T = synchronized(conferidas) {
+        if (!conferidasLoaded) { conferidasLoaded = true; if (conferidasFile.isFile) runCatching { conferidasFile.inputStream().use(conferidas::load) } }
+        block()
+    }
+    private fun entradaConferida(id: String): String? = comConferidas { conferidas.getProperty(id) }
+    /** URL da capa oficial (versão em música) já descoberta para esta faixa, se houver. */
+    fun capaConferida(id: String): String? = entradaConferida(id)?.takeIf { it.startsWith("c ") }?.substring(2)
+    /** A faixa ainda não teve a capa conferida (ou a capa oficial ainda não foi instalada nos arquivos dela). */
+    fun precisaConferir(id: String): Boolean = capaDaMusica != null && id.startsWith("yt:") && comConferidas {
+        val e = conferidas.getProperty(id)
+        e == null || e == "v" || (e.startsWith("c ") && conferidas.getProperty("ok.$id") != e.substring(2))
+    }
+    private fun anotar(id: String, valor: String) = comConferidas { conferidas.setProperty(id, valor); savePropertiesLocked(conferidas, conferidasFile) }
+    private fun instalada(id: String, url: String) = comConferidas { conferidas.setProperty("ok.$id", url); savePropertiesLocked(conferidas, conferidasFile) }
+
+    /** Confere (uma vez por faixa) se é música ou clipe e qual a capa da versão em música. */
+    private suspend fun conferir(track: Track, trace: (String) -> Unit): String? {
+        // "v" = clipe sem versão em música pela regra antiga (só a mesma duração): confere de novo UMA vez com a regra
+        // nova (aceita outra duração e a 1ª música de pot-pourri); se ainda não achar, fica "v2" e não volta mais
+        entradaConferida(track.id)?.let { if (it != "v") return it }
+        val resolver = capaDaMusica ?: return null
+        if ((semResposta[track.id] ?: 0) > System.currentTimeMillis()) return null
+        val r = conferindo.withPermit { runCatching { resolver.resolver(track) }.getOrNull() }
+        if (r == null) { semResposta[track.id] = System.currentTimeMillis() + 10 * 60_000L; return null }
+        val valor = when { r.musica -> "m"; r.capa != null -> "c ${r.capa}"; else -> "v2" }
+        anotar(track.id, valor)
+        trace("id=${track.id} etapa=conferida resultado=${valor.take(60)}")
+        return valor
+    }
+
     fun artistNeedsRecheck(name: String): Boolean = needsArtistRecheck(artistKey(name))
     private fun needsArtistRecheck(key: String): Boolean = synchronized(artistIndexLock) {
         loadArtistIndexLocked()
@@ -54,12 +100,41 @@ class CoverStore(
     fun browseFile(trackId: String) = File(browseDir, name(trackId))
     fun largeBrowseFile(trackId: String) = File(browseDir, name(trackId) + ".large")
 
+    // ---------- capinha (linhas da busca: 44 px na tela ≈ 125 px no A54) ----------
+    // Baixa ~10 KB em vez dos ~60 KB da capa de lista (400 px): com internet fraca a busca inteira aparecia em ~5 s.
+    fun miniFile(trackId: String) = File(browseDir, name(trackId) + ".mini")
+
+    /** Capinha local: a primeira que basta (a menor serve; nunca decodifica a de 1000 px para uma linha de 44 px). */
+    fun localMini(trackId: String, hint: String? = null): File? {
+        val mini = miniFile(trackId).takeIf { it.isFile && it.length() > 0 }
+        val outra = listOf(browseFile(trackId), pinnedFile(trackId), largeBrowseFile(trackId))
+            .firstOrNull { it.isFile && it.length() > 0 && resolution(it) >= MINI_MIN_PIXELS }
+        return (outra ?: mini)?.also(::touch)
+    }
+
+    /** Baixa só a capinha (capa oficial já conhecida, senão a quadrada que veio; quadro de vídeo por último). */
+    suspend fun getMini(track: Track): File? = withContext(Dispatchers.IO) {
+        if (!validId(track.id)) return@withContext null
+        localMini(track.id, track.thumbs.maxByOrNull { it.width * it.height }?.url)?.let { return@withContext it }
+        lockFor(track.id + "|mini").withLock {
+            localMini(track.id)?.let { return@withLock it }
+            val target = miniFile(track.id)
+            val urls = (listOfNotNull(capaConferida(track.id)) + track.thumbs.sortedByDescending { kotlin.math.abs(it.width - it.height) <= 2 }.map { it.url })
+                .flatMap { imageCandidates(it, MINI_MIN_PIXELS) }.distinct()
+            val (videos, quadradas) = urls.partition { runCatching { java.net.URI(it).host.orEmpty() }.getOrDefault("").endsWith("ytimg.com") }
+            for (u in quadradas) if (download(u, target, MINI_MIN_PIXELS)) return@withLock target
+            val video = track.videoId?.let { "https://i.ytimg.com/vi/$it/hqdefault.jpg" }
+            for (u in videos + listOfNotNull(video)) if (download(u, target, MINI_MIN_PIXELS, largo = true)) return@withLock target
+            null
+        }
+    }
+
     /** Capa local. Prefere arquivos que atendem ao tamanho pedido; nunca escolhe um alias menor se há um bom. */
     fun local(trackId: String, hint: String? = null, large: Boolean = false): File? {
         val pinned = pinnedFile(trackId)
         val browse = browseFile(trackId)
         val largeBrowse = largeBrowseFile(trackId)
-        val aliases = listOfNotNull(aliasFor(hint, large), aliasFor(hint, !large))
+        val aliases = if (capaConferida(trackId) != null) emptyList() else listOfNotNull(aliasFor(hint, large), aliasFor(hint, !large))
         val ordered = if (large) listOf(largeBrowse, pinned) + aliases + listOf(browse)
             else listOf(browse, pinned) + aliases + listOf(largeBrowse)
         val files = ordered.distinct().filter { it.isFile && it.length() > 0 }
@@ -69,8 +144,13 @@ class CoverStore(
             ?: sized.maxByOrNull { it.second }?.first)?.also(::touch)
     }
 
-    /** Menor lado em pixels; serve para comparar qualidade sem abrir a imagem toda. */
-    fun resolution(file: File): Int = imageSize(file)?.let { minOf(it.first, it.second) } ?: 0
+    /**
+     * Qualidade de uma capa: o menor lado em pixels, lido do cabeçalho. Imagem que NÃO é quadrada (quadro de vídeo
+     * 16:9) vale só 1/4: antes um 1280×720 contava como 720 e passava como capa de player para sempre — o centro
+     * recortado mostrava o texto do clipe cortado. Assim qualquer capa quadrada boa vence e o quadro de vídeo fica
+     * só como último recurso.
+     */
+    fun resolution(file: File): Int = imageSize(file)?.let { (w, h) -> qualidade(w, h) } ?: 0
 
     fun meetsMinimum(file: File, large: Boolean): Boolean = resolution(file) >= minPixels(large)
 
@@ -332,7 +412,8 @@ class CoverStore(
             }
             val stagedResolution = if (ok) resolution(staged) else 0
             val oldResolution = oldPhoto?.let(::resolution) ?: 0
-            if (ok && oldPhoto != null && stagedResolution < oldResolution) ok = false
+            // foto marcada para conferir é suspeita: a nova (validada) entra mesmo com menos pixels; senão a marca nunca saía
+            if (ok && oldPhoto != null && stagedResolution < oldResolution && !recheck) ok = false
             val preserved = if (ok && recheck && oldPhoto != null) {
                 val backup = File(pinnedDir, target.name + ".unverified")
                 backup.isFile || runCatching { oldPhoto.copyTo(backup, overwrite = false) }.isSuccess
@@ -412,7 +493,9 @@ class CoverStore(
             if (normalized != old) { artistUrls.setProperty(key, normalized); changed = true }
             // Migra somente os registros sabidamente suspeitos; guarda a foto velha até a nova
             // passar pelo mesmo download validado que as demais capas.
-            if (repeatedSize || key == "tribalistas") {
+            // Tribalistas: conferida UMA vez (a cópia ".unverified" da foto velha marca que já foi). Antes era a cada
+            // abertura do app, e a marca só saía com download bem-sucedido.
+            if (repeatedSize || (key == "tribalistas" && !File(pinnedDir, browseFile("artist:$key").name + ".unverified").isFile)) {
                 val marker = "_recheck.$key"
                 if (artistUrls.getProperty(marker) != "true") { artistUrls.setProperty(marker, "true"); changed = true }
             }
@@ -427,7 +510,12 @@ class CoverStore(
      * Devolve a capa, baixando se preciso.
      * pin fixa em disco; large pede qualidade de player e fica independente da fixação.
      */
-    suspend fun get(track: Track, pin: Boolean, large: Boolean = false, trace: (String) -> Unit = {}): File? = withContext(Dispatchers.IO) {
+    /**
+     * conferirAntes = false: não espera a consulta "clipe ou música?" ao YouTube Music (~0,5–1 s cada, 3 por vez) —
+     * usa o que já foi conferido ou a capa que veio com a faixa. Para listas (busca, fila): cada capinha esperava a
+     * vez dessa consulta e a lista ficava sem capa por segundos. Quem chama confere depois e troca se for clipe.
+     */
+    suspend fun get(track: Track, pin: Boolean, large: Boolean = false, conferirAntes: Boolean = true, trace: (String) -> Unit = {}): File? = withContext(Dispatchers.IO) {
         if (!validId(track.id)) return@withContext null
         val totalStarted = System.nanoTime()
         val lockStarted = System.nanoTime()
@@ -436,9 +524,32 @@ class CoverStore(
             val diskStarted = System.nanoTime()
             val hint = track.thumbs.maxByOrNull { it.width * it.height }?.url
             val target = if (large && !pin) largeBrowseFile(track.id) else if (pin) pinnedFile(track.id) else browseFile(track.id)
+            val entrada = if (!track.id.startsWith("yt:")) null else if (conferirAntes) conferir(track, trace) else entradaConferida(track.id)
+            val oficial = entrada?.takeIf { it.startsWith("c ") }?.substring(2)
+            val trocar = oficial != null && comConferidas { conferidas.getProperty("ok.${track.id}") } != oficial
             val cached = local(track.id, hint, large)
-            trace("id=${track.id} etapa=disco_ms=${elapsedMs(diskStarted)} imagem=${cached != null} pixels=${cached?.let(::resolution) ?: 0} alvo=${minPixels(large)}")
+            trace("id=${track.id} etapa=disco_ms=${elapsedMs(diskStarted)} imagem=${cached != null} pixels=${cached?.let(::resolution) ?: 0} alvo=${minPixels(large)} trocar=$trocar")
+            // capa que veio é de outra imagem (clipe): baixa a da versão em música e troca todos os arquivos da faixa
+            if (trocar) {
+                val staged = File(browseDir, name(track.id) + ".oficial")
+                staged.delete()
+                val ok = imageCandidates(oficial!!, minPixels(large)).any { download(it, staged, minPixels(large)) }
+                if (ok) {
+                    val trocados = listOf(pinnedFile(track.id), browseFile(track.id), largeBrowseFile(track.id)).filter { it.isFile && it.length() > 0 }
+                    trocados.filter { it != target }.forEach { f -> if (f.parentFile == pinnedDir) staged.copyTo(f, overwrite = true) else f.delete() }
+                    if (!staged.renameTo(target)) { staged.copyTo(target, overwrite = true); staged.delete() }
+                    rememberAlias(oficial, target, large)
+                    instalada(track.id, oficial)
+                    (trocados + target).distinct().forEach { runCatching { aoTrocarCapa(it) } }
+                    trace("id=${track.id} etapa=capa_oficial ok=true pixels=${resolution(target)}")
+                    return@withLock target
+                }
+                staged.delete()
+                trace("id=${track.id} etapa=capa_oficial ok=false")
+            }
             if (cached != null) {
+                // capa fraca (pequena ou quadro de vídeo) que já tentamos melhorar nesta abertura: não insiste a cada pedido
+                if (!meetsMinimum(cached, large) && !tentou.add("${track.id}|$large")) return@withLock cached
                 if (meetsMinimum(cached, large)) {
                     if (pin && cached != target && resolution(cached) > resolution(target)) {
                         val promoted = copyBetter(cached, target)
@@ -449,14 +560,14 @@ class CoverStore(
                 }
             }
             // Listas pedem ao menos 226 px; player/álbum tentam 544 px ou mais antes de usar o cache menor.
-            fun install(url: String): Boolean {
+            fun install(url: String, largo: Boolean = false): Boolean {
                 val downloadStarted = System.nanoTime()
-                if (!download(url, target, minPixels(large))) {
+                if (!download(url, target, minPixels(large), largo)) {
                     trace("id=${track.id} etapa=download_ms=${elapsedMs(downloadStarted)} bytes=0 ok=false")
                     return false
                 }
                 rememberAlias(url, target, large)
-                hint?.let { rememberAlias(it, target, large) }
+                if (oficial == null) hint?.let { rememberAlias(it, target, large) }
                 if (!pin) {
                     val trimStarted = System.nanoTime()
                     // Falha ao podar o cache não pode invalidar a capa já baixada.
@@ -467,7 +578,12 @@ class CoverStore(
                 trace("id=${track.id} etapa=download_ms=${elapsedMs(downloadStarted)} bytes=${target.length()} pixels=${resolution(target)} ok=true")
                 return true
             }
-            for (url in candidates(track, browse = !large)) if (install(url)) return@withLock target
+            // 1º capas quadradas (a oficial, se houver, e as que vieram com a faixa); 2º quadro do vídeo, só se não
+            // houver nada melhor — aceito com o menor lado de verdade (senão uma faixa sem capa quadrada ficaria sem nada)
+            val todas = (listOfNotNull(oficial).flatMap { imageCandidates(it, minPixels(large)) } + candidates(track, browse = !large)).distinct()
+            val (videos, quadradas) = todas.partition { runCatching { java.net.URI(it).host.orEmpty() }.getOrDefault("").endsWith("ytimg.com") }
+            for (url in quadradas) if (install(url)) { oficial?.let { instalada(track.id, it) }; return@withLock target }
+            if (cached == null || resolution(cached) == 0) for (url in videos) if (install(url, largo = true)) return@withLock target
             if (track.id.startsWith("album:") && track.title.isNotBlank()) {
                 val alternatives = runCatching { DeezerAlbum(client).covers(track.title, track.artist) }.getOrDefault(emptyList())
                     .flatMap { imageCandidates(it, minPixels(large)) }
@@ -549,7 +665,7 @@ class CoverStore(
         return freed
     }
 
-    private fun download(url: String, target: File, minDimension: Int): Boolean {
+    private fun download(url: String, target: File, minDimension: Int, largo: Boolean = false): Boolean {
         if (!allowedUrl(url)) return false
         val tmp = File(target.parentFile, target.name + "." + Thread.currentThread().id + ".tmp")
         return runCatching {
@@ -570,7 +686,8 @@ class CoverStore(
             }
             if (!fetched) return@runCatching false
             val candidatePixels = resolution(tmp)
-            if (candidatePixels < minDimension) return@runCatching false
+            val ladoMenor = if (largo) imageSize(tmp)?.let { minOf(it.first, it.second) } ?: 0 else candidatePixels
+            if (ladoMenor < minDimension) return@runCatching false
             val existingPixels = if (target.isFile) resolution(target) else 0
             if (candidatePixels < existingPixels || candidatePixels == existingPixels && tmp.length() < target.length()) return@runCatching false
             tmp.renameTo(target) || run { tmp.delete(); false }
@@ -580,8 +697,16 @@ class CoverStore(
     companion object {
         private const val MAX_BYTES = 6L * 1024 * 1024
         private const val LIST_MIN_PIXELS = 226
+        private const val MINI_MIN_PIXELS = 120
         private const val LARGE_MIN_PIXELS = 544
         private const val ARTIST_MIN_PIXELS = 226
+
+        /** Menor lado; se a imagem não for quadrada (diferença > 3 %), vale 1/4 — ver [resolution]. */
+        fun qualidade(w: Int, h: Int): Int {
+            val menor = minOf(w, h); val maior = maxOf(w, h)
+            if (menor <= 0) return 0
+            return if (maior - menor <= maior * 0.03) menor else menor / 4
+        }
         /** Só ids de música/artista do app (sem "../" nem caminhos). */
         fun validId(id: String) = id.length in 3..96 && Regex("""[A-Za-z0-9:_\-.]+""").matches(id) && ".." !in id
         /** Só baixa capa dos servidores de imagem do YouTube/Google (e do Deezer, para foto de artista), por HTTPS. */
@@ -615,6 +740,17 @@ class CoverStore(
                 .joinToString("") { Integer.toHexString(it) }.take(80)
             return if (hex.isEmpty()) "" else "u$hex"
         }
+
+        /**
+         * Para COMPARAR nomes de artista (não para guardar foto): "Henrique e Juliano", "Henrique & Juliano" e
+         * "Henrique and Juliano" são o mesmo artista. Sem isto o canal "Henrique & Juliano" não era achado ao abrir
+         * "Henrique e Juliano" e a página ficava vazia (vale para toda dupla/banda com "e", "&", "and", "y", "+").
+         */
+        fun mesmoNome(a: String, b: String): Boolean {
+            val ka = artistKey(a); val kb = artistKey(b)
+            return ka == kb || (ka.isNotEmpty() && semConectivos(a) == semConectivos(b))
+        }
+        fun semConectivos(nome: String): String = artistKey(nome.replace(Regex("""(?i)\s+(?:e|&|and|y|\+)\s+|\s*[&+]\s*"""), " "))
 
         /** Foto genérica (boneco cinza) que o YouTube Music usa para artista sem foto: não é foto. */
         private val PLACEHOLDER_PHOTOS = listOf("25G_BXEqKPiyGZRRRGdIHaGUsVpAxwB7K0IIMkRpURNnPZ_So48IK5xLKCoF6gZ6tGRt2zRW4D61kBQ")
@@ -680,12 +816,16 @@ class CoverStore(
             val origin = "https://$host" + if (uri.port > 0) ":${uri.port}" else ""
             val path = uri.rawPath.orEmpty()
             val query = uri.rawQuery?.let { "?$it" }.orEmpty()
-            val sizes = if (minDimension >= LARGE_MIN_PIXELS) listOf(1200, 800, 640, LARGE_MIN_PIXELS)
+            // grande: 1000 px — o tamanho que a capa do player ocupa na tela do A54 (351 × 2,81); 1200 só pesava mais (~30%)
+            val sizes = if (minDimension >= LARGE_MIN_PIXELS) listOf(1000, 800, 640, LARGE_MIN_PIXELS)
+                else if (minDimension <= MINI_MIN_PIXELS) listOf(160, 144, MINI_MIN_PIXELS)
                 else listOf(400, 300, 256, LIST_MIN_PIXELS)
             val resized = when {
                 host.endsWith(".googleusercontent.com") -> {
                     val base = path.replace(GOOGLE_SUFFIXES, "")
-                    sizes.map { "$origin$base=w$it-h$it-l90-rj$query" }
+                    // depois de cada tamanho, a mesma capa recortada quadrada ("-p"): algumas capas do YouTube Music não
+                    // são quadradas (Skank, Estandarte: 1000×900) e nunca passavam como capa — ficava o quadro do vídeo
+                    sizes.flatMap { listOf("$origin$base=w$it-h$it-l90-rj$query", "$origin$base=w$it-h$it-p-l90-rj$query") }
                 }
                 host.endsWith(".ggpht.com") -> {
                     val base = path.replace(GOOGLE_SUFFIXES, "")
@@ -706,7 +846,7 @@ class CoverStore(
 
         /**
          * Ordem de tentativa, da melhor para a pior:
-         *  1. capa quadrada do YouTube Music (lh3.googleusercontent) pedida em 1200×1200
+         *  1. capa quadrada do YouTube Music (lh3.googleusercontent) pedida em 1000×1000
          *  2. as capas informadas, da maior para a menor
          *  3. URLs montadas pelo ID do vídeo (nunca expiram): maxresdefault → hqdefault
          */

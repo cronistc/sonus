@@ -65,6 +65,7 @@ class PlaybackService : Service() {
 
         val n = Notification.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_stat_sounos)
+            .setColor(0xFF2F6BFF.toInt())                       // azul da marca (destaque da notificação)
             .setContentTitle(t.title).setContentText(artistLine)
             .setLargeIcon(cover)
             .setContentIntent(session.controller.sessionActivity)
@@ -102,6 +103,9 @@ class PlaybackService : Service() {
         const val ACTION_NEXT = "app.sounos.NEXT"
         const val ACTION_PREV = "app.sounos.PREV"
         private var started = false
+
+        /** Notificação e widgets juntos: os dois acompanham o mesmo estado. */
+        fun atualizarTudo(ctx: Context) { update(ctx); app.sounos.widget.Widgets.atualizar(ctx) }
 
         /** Chamado a cada mudança de estado: liga o serviço quando começa a tocar e atualiza a notificação. */
         fun update(ctx: Context) {

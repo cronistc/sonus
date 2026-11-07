@@ -18,25 +18,38 @@
   const toApp = () => window.Sounos?.native && Sounos.call("setSettings", s);
   const emit = () => { toApp(); dispatchEvent(new CustomEvent("sounos:settings", { detail: { ...s } })); };
   let activePhone = null;
-  const colorHex = raw => {
-    const srgb = /^color\(srgb\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)/i.exec(raw);
-    const rgb = srgb ? srgb.slice(1).map(v => Number(v) * 255) :
-      (/rgba?\(/i.test(raw) ? raw.match(/[\d.]+/g)?.slice(0, 3).map(Number) : null);
-    return rgb?.length === 3 ? "#" + rgb.map(v => Math.round(Math.max(0, Math.min(255, v))).toString(16).padStart(2, "0")).join("") : "#0e0e10";
-  };
-  function syncSystemBars() {
+  // Barras do sistema (status e navegação) na cor do que está na tela. As contas são as mesmas de theme.css
+  // (--system-status-bg / --system-nav-bg e o --phone-bg do player), feitas aqui com as cores FINAIS da música:
+  // ler o CSS dava a cor do meio da transição de .8 s de --c1..--c3 — a barra ficava com a cor da música anterior,
+  // e com o app no fundo (transições paradas) ficava errada até a próxima troca.
+  //   tela inicial: Gradiente = c1 58 % / c3 20 % sobre #0b0b0d · Escuro #0e0e10 · Claro #f4f4f6
+  //   player aberto (fundo --phone-bg): Gradiente igual · Escuro c1 40 % sobre #0e0e10 · Claro c1 22 % sobre #f4f4f6
+  let lastBars = "";
+  const hex = c => { const m = /^#?([0-9a-f]{6})$/i.exec(String(c || "").trim()); return m ? [0, 2, 4].map(i => parseInt(m[1].slice(i, i + 2), 16)) : null; };
+  const mix = (c, pct, base) => { const a = hex(c) || hex("#2f6bff"), b = hex(base);
+    return "#" + a.map((v, i) => Math.round(v * pct + b[i] * (1 - pct)).toString(16).padStart(2, "0")).join(""); };
+  const corFinal = k => document.documentElement.style.getPropertyValue(`--c${k}`).trim() || ["", "#2f6bff", "#1d4ed8", "#60a5fa"][k];
+  function barColors() {
+    const c1 = corFinal(1), c3 = corFinal(3), player = !!window.__playerOpen;
+    if (s.theme === "gradient") return [mix(c1, .58, "#0b0b0d"), mix(c3, .20, "#0b0b0d")];
+    if (s.theme === "light") return [player ? mix(c1, .22, "#f4f4f6") : "#f4f4f6", "#f4f4f6"];
+    return [player ? mix(c1, .40, "#0e0e10") : "#0e0e10", "#0e0e10"];
+  }
+  // force: o app também pinta as barras sozinho (abertura, troca de tema), então a chamada pedida sempre envia
+  function syncSystemBars(force = true) {
     if (!activePhone || !window.Sounos?.native) return;
-    const probe = document.createElement("i");
-    probe.style.cssText = "position:absolute;width:1px;height:1px;visibility:hidden;pointer-events:none";
-    activePhone.appendChild(probe);
-    probe.style.backgroundColor = "var(--system-status-bg, #0e0e10)";
-    const statusColor = colorHex(getComputedStyle(probe).backgroundColor);
-    probe.style.backgroundColor = "var(--system-nav-bg, #0e0e10)";
-    const navigationColor = colorHex(getComputedStyle(probe).backgroundColor);
-    probe.remove();
+    if (!window.__sonusBarrasProntas) return;          // abertura: as barras ficam na cor do splash até o fundo do app aparecer
+    const [statusColor, navigationColor] = barColors();
+    const key = [s.theme, statusColor, navigationColor].join("|");
+    if (!force && key === lastBars) return;
+    lastBars = key;
     Sounos.call("setSystemBars", { theme: s.theme, statusColor, navigationColor });
   }
+  // voltou para o app: as cores podem ter mudado no fundo (troca de música pela notificação)
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) syncSystemBars(); });
   window.SounosSyncSystemBars = syncSystemBars;
+  // segurança: se a abertura não liberar as barras (falhou/não rodou), libera sozinho
+  setTimeout(() => { if (!window.__sonusBarrasProntas) { window.__sonusBarrasProntas = true; syncSystemBars(); } }, 8000);
   toApp();
 
   // aplica o tema já no carregamento (antes de pintar)
@@ -57,7 +70,7 @@
     const ov = document.createElement("div");
     ov.className = "set-ov";
     activePhone = phone;
-    phone.dataset.theme = s.theme;
+    phone.dataset.theme = document.documentElement.dataset.theme = s.theme;
     syncSystemBars();
     phone.appendChild(ov);
     let isOpen = false, pushed = false;
@@ -68,7 +81,7 @@
       clearTimeout(themeTimer);
       themeTimer = setTimeout(() => {
         if (isOpen) return;
-        phone.dataset.theme = s.theme;
+        phone.dataset.theme = document.documentElement.dataset.theme = s.theme;
         phone.querySelectorAll(".upd").forEach(u => delete u.dataset.theme);   // volta a herdar do celular
         pendingTheme = false;
       }, 520);
@@ -119,15 +132,23 @@
                 <div class="d" data-cache>Trechos e capas de músicas que você só viu na busca. As das suas músicas ficam.</div></div>
                 <button class="pill" data-act="clear-cache">Limpar</button></div>
               <div class="set-row"><div class="tx"><div class="t">Baixar só no Wi-Fi</div>
-                <div class="d">As músicas baixadas ficam só dentro do app.</div></div>${sw("wifiOnlyDownloads")}</div>
+                <div class="d">Com dados móveis, as músicas esperam o Wi-Fi para baixar.</div></div>${sw("wifiOnlyDownloads")}</div>
             </div></section>
 
             <section class="set-sec" style="--i:3"><h3>Conteúdo</h3><div class="set-card">
               <button class="set-row" data-cycle="country"><div class="tx"><div class="t">País do conteúdo</div></div><div class="val">${name(COUNTRIES, s.country)}</div></button>
               <button class="set-row" data-cycle="language"><div class="tx"><div class="t">Idioma</div></div><div class="val">${name(LANGS, s.language)}</div></button>
+              ${window.Sounos?.native && !Sounos.call("getLinksStatus").ligado ? `
+              <button class="set-row" data-act="links-allow"><div class="tx"><div class="t">Abrir links de música</div>
+                <div class="d" data-links-desc></div></div><span class="pill" data-links-state></span></button>` : ""}
             </div></section>
 
-            ${window.Sounos?.native ? `
+<section class="set-sec" style="--i:3"><h3>Widgets</h3><div class="set-card">
+              ${[["barra", "Barra", "Capa, nome e controles"], ["capa", "Capa", "A capa da música com o botão de tocar"], ["completo", "Completo", "Capa grande e controles grandes"]].map(([k, n, d]) => `
+              <button class="set-row" data-widget="${k}"><div class="tx"><div class="t">${n}</div><div class="d">${d}. Toque no A para ver a letra.</div></div><span class="pill">Adicionar</span></button>`).join("")}
+            </div></section>
+
+                        ${window.Sounos?.native ? `
             <section class="set-sec" style="--i:4"><h3>Atualizações</h3><div class="set-card">
               <button class="set-row" data-act="upd-open"><div class="tx"><div class="t">Sonus <span data-upd="cur"></span></div>
                 <div class="d" data-upd="desc"></div></div><span class="pill" data-upd="pill"></span></button>
@@ -150,6 +171,12 @@
       refresh();
     }
 
+    // widgets que já estão na tela inicial do Android: a pílula diz "Na tela" (tocar ainda adiciona mais um)
+    function refreshWidgets() {
+      if (!window.Sounos?.native) return;
+      const w = Sounos.call("temWidget") || {};
+      ov.querySelectorAll("[data-widget]").forEach(r => { const n = +w[r.dataset.widget] || 0, p = r.querySelector(".pill"); if (p) p.textContent = n ? "Na tela" : "Adicionar"; });
+    }
     // atualiza só os textos/indicadores (sem refazer a tela)
     function refresh() {
       const desc = { auto: "Ajusta sozinha: alta no Wi-Fi, mais leve nos dados móveis.", high: "Sempre a melhor (Opus ~160 kbps).", saver: "Gasta menos internet (~70 kbps)." };
@@ -158,9 +185,21 @@
       renderStorage();
       renderUpd(); showSup?.();
       ov.querySelectorAll(".seg").forEach(placeKnob);
-      refreshBattery();
+      refreshBattery(); refreshLinks(); refreshWidgets();
     }
 
+    // "Abrir links de música" só existe enquanto não está ligado (Android 12+: endereços marcados em Abrir por padrão)
+    function refreshLinks() {
+      const row = ov.querySelector('[data-act="links-allow"]');
+      if (!row || !window.Sounos?.native) return;
+      const st = Sounos.call("getLinksStatus");
+      if (st.ligado) return row.remove();
+      const parcial = st.ativos > 0 && st.total > st.ativos;
+      row.querySelector("[data-links-desc]").textContent = parcial
+        ? `${st.ativos} de ${st.total} endereços marcados. Marque todos para os links de música abrirem no Sonus.`
+        : "Links do Spotify, Deezer, YT Music e outros tocam no Sonus. Marque todos os endereços na tela que abrir.";
+      row.querySelector("[data-links-state]").textContent = parcial ? "Completar" : "Ativar";
+    }
     // "Tocar sem interrupções" só existe enquanto não foi permitido; permitiu, some na hora
     function refreshBattery() {
       const row = ov.querySelector('[data-act="battery-allow"]');
@@ -219,6 +258,14 @@
       q('[data-upd="allow-row"]').forEach(r => r.hidden = !!upd.canInstall);
     }
     ov.addEventListener("click", e => {
+      if (e.target.closest('[data-act="links-allow"]')) return Sounos.call("openLinkSettings");
+      // widgets: o Android pergunta e põe na tela inicial; sem suporte (alguns launchers), explica o caminho manual
+      const wg = e.target.closest("[data-widget]");
+      if (wg) {
+        const r = window.Sounos?.native ? Sounos.call("adicionarWidget", { tipo: wg.dataset.widget }) : null;
+        if (!r?.ok) { const d = wg.querySelector(".d"); if (d) d.textContent = "Segure um espaço vazio da tela inicial › Widgets › Sonus."; }
+        return;
+      }
       if (e.target.closest('[data-act="battery-allow"]')) {
         if (!Sounos.call("getBatteryOptimization").enabled) Sounos.call("requestBatteryOptimization");
         return;
@@ -230,8 +277,8 @@
       updUi.open();
     });
     // voltou da tela do Android de "permitir": confere de novo
-    document.addEventListener("visibilitychange", () => { if (!document.hidden && window.Sounos?.native) { upd = Sounos.call("getUpdate"); renderUpd(); updUi.render(); refreshBattery(); } });
-    window.addEventListener("sounos:resume", refreshBattery);
+    document.addEventListener("visibilitychange", () => { if (!document.hidden && window.Sounos?.native) { upd = Sounos.call("getUpdate"); renderUpd(); updUi.render(); refreshBattery(); refreshLinks(); refreshWidgets(); } });
+    window.addEventListener("sounos:resume", () => { refreshBattery(); refreshLinks(); });
     // Armazenamento (no protótipo os tamanhos são estimados; no app vêm dos arquivos reais)
     // Barra = o celular inteiro: sistema e outros apps (tudo fora do Sonus), músicas baixadas, cache e o que está livre.
     // No protótipo os tamanhos são de exemplo; no app vêm dos arquivos reais.
@@ -276,7 +323,7 @@
       if (th) {
         ov.querySelectorAll(".theme").forEach(b => b.classList.toggle("on", b === th));
         ov.querySelector(".set-panel").dataset.theme = th.dataset.v;
-        phone.dataset.theme = th.dataset.v;          // já troca por trás do painel: ao fechar, nada pisca
+        phone.dataset.theme = document.documentElement.dataset.theme = th.dataset.v;          // já troca por trás do painel: ao fechar, nada pisca
         // a tela de atualização abre por cima das configurações: segue o tema escolhido na hora
         ov.parentElement.querySelectorAll(".upd").forEach(u => u.dataset.theme = th.dataset.v);
         pendingTheme = true;

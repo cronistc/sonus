@@ -26,7 +26,7 @@ body {
   position: relative; overflow: clip;
   background: var(--phone-bg);
   display: flex; flex-direction: column;
-  padding: 10px 24px 10px;
+  padding: calc(10px + var(--sb-topo)) 24px calc(10px + var(--sb-base));   /* de ponta a ponta: longe das barras */
 }
 @media (min-width: 500px) { html:not(.native) .phone { border-radius: 36px; border: 8px solid #222; } }
 /* no app a moldura nunca aparece: celular com "tamanho da tela" pequeno passa de 500px e parecia computador */
@@ -69,6 +69,7 @@ svg { width: 24px; height: 24px; fill: currentColor; }
   transition: background .6s;
   user-select: none;
 }
+.cover-hi { position: absolute; inset: 0; border-radius: inherit; background: center/cover no-repeat; pointer-events: none; }
 .times { display: flex; justify-content: space-between; font-size: calc(var(--fs) * (12px)); color: var(--text-dim);
          margin-top: 10px; font-variant-numeric: tabular-nums; transition: color .24s ease; }
 
@@ -84,14 +85,15 @@ svg { width: 24px; height: 24px; fill: currentColor; }
 .info p { font-size: calc(var(--fs) * (15px)); color: var(--text-dim); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: color .24s ease; }
 .actions { display: flex; align-items: center; gap: 6px; }
 .act[hidden] { display: none; }               /* "A" só aparece com letra sincronizada */
-.act { width: 40px; height: 40px; border-radius: 12px; color: var(--text-dim); transition: background .3s, color .3s; }
+.act { width: 40px; height: 40px; border-radius: 12px; color: var(--icon); transition: background .3s, color .3s; position: relative; }
+.act::after { content: ""; position: absolute; inset: -3px; }   /* toque 46px sem mudar o desenho */
 .act:active { transform: scale(.92); }
 .act.on { color: var(--text); background: var(--chip); }
 .act .letter { font-size: 21px; font-weight: 700; line-height: 1; font-family: Georgia, "Times New Roman", serif; }
 .act svg { width: 26px; height: 26px; }
 /* botão de baixar */
 .dl-ic { fill: none; stroke-linecap: round; stroke-linejoin: round; }
-.dl-track { stroke: currentColor; stroke-width: 2; opacity: .9; transition: opacity .3s; }
+.dl-track { stroke: currentColor; stroke-width: 2; opacity: 1; transition: opacity .3s; }
 .dl-prog { stroke: var(--text); stroke-width: 2.4; stroke-dasharray: 0 100; transform: rotate(-90deg); transform-origin: 12px 12px;
            opacity: 0; transition: stroke-dasharray .25s linear, opacity .2s; }
 .dl-fill { fill: var(--text); transform: scale(0); transform-origin: 12px 12px; transition: transform .38s cubic-bezier(.3,1.4,.5,1); }
@@ -130,6 +132,9 @@ svg { width: 24px; height: 24px; fill: currentColor; }
             background: linear-gradient(transparent, rgba(0,0,0,.65)); }
 .qi .qt { font-size: calc(var(--fs) * (calc(10px + var(--tile) * .02))); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .qi .qa { font-size: calc(var(--fs) * (calc(9px + var(--tile) * .015))); color: rgba(255,255,255,.72); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* blocos fora da tela não têm o conteúdo calculado: a fila tem ~145 blocos × 9 elementos, e a cada troca de música
+   (cores novas no <html>) o navegador recalculava todos — ~60 ms por troca */
+.qi { content-visibility: auto; contain-intrinsic-size: var(--tile) var(--tile); }
 .qi.played { opacity: .45; }
 .qi.now { outline-color: var(--text); }
 .qi.lift { z-index: 5; opacity: 1; transform: scale(1.08); box-shadow: 0 12px 28px rgba(0,0,0,.6); }
@@ -148,7 +153,7 @@ svg { width: 24px; height: 24px; fill: currentColor; }
 
 /* Controles */
 .controls { position: relative; display: flex; align-items: center; justify-content: space-between; height: 96px; margin: 22px 0 18px; }  /* fila→play (6+22) = play→fim da tela (18+10) */
-.controls .skip { width: 64px; overflow: hidden; transition: width .7s, opacity .5s; }
+.controls .skip { width: 64px; height: 48px; overflow: hidden; transition: width .7s, opacity .5s, transform .42s cubic-bezier(.34,1.56,.64,1); }
 .controls .skip svg { width: 32px; height: 32px; }
 /* mesmo estilo de traço para todos os ícones do player (padrão lucide) */
 .lu { fill: none; stroke: currentColor; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
@@ -159,12 +164,16 @@ svg { width: 24px; height: 24px; fill: currentColor; }
   background: var(--text); color: var(--bg);
   position: relative; overflow: hidden; touch-action: none; user-select: none;
   box-shadow: 0 16px 40px rgba(0,0,0,.45);
-  transition: width .7s, height .7s, border-radius .7s, transform .1s;
+  /* soltar volta com um leve quique; apertar responde na hora (classes .press/.hold, postas no toque) */
+  transition: width .7s, height .7s, border-radius .7s, transform .42s cubic-bezier(.34,1.56,.64,1);
 }
-.play:active:not(.scrub), .skip:active { transform: scale(.92); }
+.play.press:not(.scrub) { transform: scale(.93); transition-duration: .7s, .7s, .7s, .12s; transition-timing-function: ease, ease, ease, ease-out; }
+.controls .skip:active { transform: scale(.92); transition: width .7s, opacity .5s, transform .12s ease-out; }
+.play.hold:not(.scrub) { transform: scale(.88); transition-duration: .7s, .7s, .7s, .22s; }   /* segurou: repetir vai trocar ao soltar */
 #play { touch-action: none; }
 .play.scrub { width: 100%; height: 80px; border-radius: 24px; }
-.play .icon { display: flex; align-items: center; justify-content: center; gap: 2px; }
+.play .icon { display: flex; align-items: center; justify-content: center; gap: 2px; transition: color .25s ease; }
+.play .icon.mode.off { color: #8e8e93; }                       /* modo desligado: cinza */
 .play .icon svg { width: 44px; height: 44px; }
 .play .icon .lu { width: 40px; height: 40px; }
 .play .icon.combo .lu { width: 28px; height: 28px; stroke-width: 3; }
@@ -203,47 +212,37 @@ svg { width: 24px; height: 24px; fill: currentColor; }
 .phone:not(.lyr-mode) .share-btn, .share-btn.hidden { opacity: 0; transform: scale(.9); pointer-events: none; }
 .phone.lyr-mode .share-btn:not(.hidden) { transition-delay: var(--fade); }
 
-.lyr.selecting .line { opacity: .36; transition: opacity .18s, background .18s; }
-.lyr.selecting .line.sel { opacity: 1; background: var(--chip); }
-.lyr.selecting .line.note { opacity: .25; pointer-events: none; }
-.selbar { position: absolute; left: -8px; right: -8px; bottom: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between;
-          padding: 22px 8px 6px; background: linear-gradient(transparent, var(--bg) 45%);
-          opacity: 0; transform: translateY(10px); pointer-events: none; transition: opacity .25s, transform .25s; }
+/* Escolher o trecho (desenho aprovado em 27/10/2026): a letra continua no lugar (abaixo da capinha). Cada linha ganha
+   um círculo à esquerda (o espaço é reservado no modo de escolha: o texto não pula); escolhida = fundo claro, texto
+   forte e o círculo vira um "visto". Embaixo, barra flutuante: ✕ · quantas · Compartilhar. */
+.lyr.selecting .line { opacity: .5; position: relative; padding-left: 40px; transition: opacity .18s, background .18s; }
+.lyr.selecting .line::before { content: ""; position: absolute; left: 9px; top: .34em; width: 20px; height: 20px; border-radius: 50%;
+                               box-shadow: inset 0 0 0 2.4px currentColor; opacity: 1; }
+.lyr.selecting .line.sel { opacity: 1; font-weight: 700; background: rgba(255,255,255,.16); }
+.lyr.selecting .line.sel::before { opacity: 1; box-shadow: none;
+  background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='m6.5 12.5 3.6 3.6L17.5 8.5' fill='none' stroke='%23111' stroke-width='2.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/16px no-repeat; }
+.phone[data-theme="light"] .lyr.selecting .line.sel { background: rgba(0,0,0,.08); }
+.phone[data-theme="light"] .lyr.selecting .line.sel::before { background: #111 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='m6.5 12.5 3.6 3.6L17.5 8.5' fill='none' stroke='%23fff' stroke-width='2.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/16px no-repeat; }   /* no Claro: bolinha escura com visto branco */
+.lyr.selecting .line.note { opacity: .32; pointer-events: none; }
+.lyr.selecting .line.note::before { display: none; }
+.selbar { position: absolute; left: 0; right: 0; bottom: 6px; z-index: 2; display: flex; align-items: center; gap: 8px;
+          padding: 6px 6px 6px 6px; border-radius: 30px; background: rgba(18,18,22,.92); backdrop-filter: blur(16px);   /* sólida: sobre a letra clara .42 virava cinza com texto de 3:1 */
+          box-shadow: 0 12px 30px rgba(0,0,0,.3), inset 0 0 0 1px rgba(255,255,255,.12); color: #fff;
+          opacity: 0; transform: translateY(14px); pointer-events: none; transition: opacity .25s, transform .25s; }
 .lyr.selecting .selbar { opacity: 1; transform: none; pointer-events: auto; }
-.selbar .link { font-size: calc(var(--fs) * (14px)); font-weight: 500; color: var(--text-dim); padding: 8px 4px; }
-.selbar .count { font-size: calc(var(--fs) * (13px)); color: var(--text-dim); font-variant-numeric: tabular-nums; transition: color .2s; }
-.selbar .count.full { color: var(--text); font-weight: 600; }
-.selbar .go { height: 38px; padding: 0 18px; border-radius: 19px; background: var(--text); color: var(--bg);
-              font-size: calc(var(--fs) * (14px)); font-weight: 600; transition: opacity .2s; }
-.selbar .go:disabled { opacity: .35; cursor: default; }
+.selbar .x { flex-shrink: 0; width: 44px; height: 44px; border-radius: 22px; display: grid; place-items: center; color: #fff; }
+.selbar .x svg { width: 20px; height: 20px; }
+.selbar .count { flex: 1; min-width: 0; font-size: calc(var(--fs) * (14px)); font-weight: 600; color: rgba(255,255,255,.88);
+                 white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+.selbar .go { flex-shrink: 0; height: 46px; padding: 0 20px 0 16px; border-radius: 23px; background: #fff; color: #111;
+              display: flex; align-items: center; gap: 8px; font-size: calc(var(--fs) * (15px)); font-weight: 700; transition: opacity .2s; }
+.selbar .go svg { width: 19px; height: 19px; }
+.selbar .go:disabled { opacity: .4; cursor: default; }
 @keyframes nudge { 0%,100% { transform: none } 25% { transform: translateX(-4px) } 75% { transform: translateX(4px) } }
 .count.nudge { animation: nudge .25s; }
 
-/* Folha com a imagem gerada */
-.sheet { position: absolute; inset: 0; z-index: 20; background: rgba(0,0,0,.78); backdrop-filter: blur(6px);
-         display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; padding: 24px;
-         opacity: 0; pointer-events: none; transition: opacity .25s; }
-.sheet.open { opacity: 1; pointer-events: auto; }
-/* fechadas = fora do desenho (senão o WebView continua pintando camadas de tela cheia invisíveis) */
-.sheet:not(.open) { visibility: hidden; transition: opacity .25s, visibility 0s .25s; }
+/* letra fora da tela = fora do desenho */
 .phone:not(.lyr-mode) .lyr { visibility: hidden; transition: opacity var(--fade) ease, transform var(--fade) ease, visibility 0s var(--fade); }
-.sheet img { width: min(100%, 300px); border-radius: 14px; box-shadow: 0 20px 50px rgba(0,0,0,.6);
-             transform: scale(.94); transition: transform .3s cubic-bezier(.2,.9,.3,1); }
-.sheet.open img { transform: none; }
-.sheet .row { display: flex; gap: 10px; }
-.sheet .row button { height: 42px; padding: 0 18px; border-radius: 21px; font-size: calc(var(--fs) * (14px)); font-weight: 600;
-                     background: rgba(255,255,255,.14); color: var(--text); }
-.sheet .row button.primary { background: var(--text); color: var(--bg); }
-.styles { display: flex; gap: 8px; }
-.styles button { height: 36px; padding: 0 14px 0 6px; border-radius: 18px; display: flex; align-items: center; gap: 8px;
-                 font-size: calc(var(--fs) * (13px)); font-weight: 500; color: var(--text-dim); background: rgba(255,255,255,.08);
-                 outline: 2px solid transparent; transition: outline-color .2s, color .2s; }
-.styles button.on { color: var(--text); outline-color: rgba(255,255,255,.85); }
-.styles .sw { width: 24px; height: 24px; border-radius: 50%; }
-.styles .sw.grad { background: linear-gradient(135deg, var(--c1), var(--c2) 60%, var(--c3)); }
-.styles .sw.dark { background: #3a3a3f; border: 1px solid rgba(255,255,255,.25); }
-.styles .sw.light { background: #f4f4f5; }
-.sheet .close { position: absolute; top: 14px; right: 14px; width: 40px; height: 40px; }
 
 /* Letra (substitui nome, artista, fila e botões) */
 .lyr { position: absolute; left: 0; right: 0; top: 64px; bottom: 0;
@@ -263,7 +262,7 @@ svg { width: 24px; height: 24px; fill: currentColor; }
 .lyr .lines::-webkit-scrollbar { display: none; }
 .lyr .line { font-size: calc(var(--fs) * (25px)); font-weight: 500; line-height: 1.38; margin-bottom: 16px; cursor: pointer;
              padding: 2px 8px; margin-left: -8px; border-radius: 8px;
-             color: var(--text); opacity: .36; transition: opacity .22s ease; }
+             color: var(--text); opacity: .52; transition: opacity .22s ease; }
 .lyr .line.now { opacity: 1; }
 .lyr.plain .line { opacity: 1; cursor: default; }     /* letra sem tempo: mostra inteira */
 /* A linha atual acende inteira; as demais mudam só a opacidade. */

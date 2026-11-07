@@ -55,7 +55,10 @@ class SounosApp : Application() {
         audio = AudioCache(File(cacheDir, "audio"), Sounos.http, maxTotalBytes = 6L * 1024 * 1024 * 1024) // cache de música: até 6 GB, sem prazo (encolhe se faltar espaço)
         cacheBudget = DiskCacheBudget(listOf(File(cacheDir, "covers"), File(cacheDir, "metadata")))
         metadata = DiskMetadataCache(File(cacheDir, "metadata"), cacheBudget)
-        covers = CoverStore(File(filesDir, "covers"), File(cacheDir, "covers"), Sounos.http, budget = cacheBudget) // capas fixadas ficam fora do LRU
+        covers = CoverStore(File(filesDir, "covers"), File(cacheDir, "covers"), Sounos.http, budget = cacheBudget,
+            capaDaMusica = app.sounos.extractor.CapaDaMusica(Sounos.http)) // capas fixadas ficam fora do LRU
+        covers.aoTrocarCapa = { app.sounos.data.CoverColors.forget(it) }     // capa trocada: cores do fundo recalculadas
+        io.launch { library.limparGanhosAntigos() }       // volume equilibrado passou a ser medido em LUFS (27/10/2026)
         io.launch {
             downloadCheck.join()
             val migration = reconcilePinnedCovers()
@@ -64,6 +67,7 @@ class SounosApp : Application() {
         }
         lyrics = Lyrics(File(filesDir, "lyrics"), Sounos.http)
         motor = app.sounos.motor.Motor(File(filesDir, "motor"), io, Sounos.http)     // motor de entendimento: aprende o uso, no celular
+        motor.importarAntigas()                                    // uma vez: escutas de antes contam nos horários/comportamentos
         player = PlayerController(this)
         // a sessão restaurada não emite estado: cria a MediaSession já pausada, para o play do fone/carro funcionar ao abrir
         runCatching { app.sounos.player.MediaSessionHolder.sync(this) }

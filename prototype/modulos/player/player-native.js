@@ -11,8 +11,9 @@
   let optimisticId = null;
   const baseSwapIn = swapIn;
   swapIn = function (el, from, ms) {
+    // (sem el.getAnimations(): ela força o recálculo do estilo da página inteira — ~60 ms a cada troca de música — e
+    // no app nada anima estes três; o letreiro anima um span de dentro)
     if (["cover", "title", "artist"].includes(el.id)) {
-      el.getAnimations?.().forEach(animation => animation.cancel());
       el.style.opacity = ""; el.style.transform = "";
       return;
     }
@@ -80,9 +81,9 @@
     if (cur) {
       cur.previewCover = cur.cover;
       cur.cover = Sounos.coverUrl(st.current || st.queue[nowT], false, true);
-      cur.c = st.colors;
+      if (Array.isArray(st.colors) && st.colors.length >= 3) cur.c = st.colors;      // sem cores do app: fica o degradê do id (coverBg lê t.c[0..2])
       if (st.durationMs > 0) cur.dur = st.durationMs / 1000;
-      st.colors.forEach((c, k) => root.setProperty(`--c${k + 1}`, c));
+      SounosCores.aplicar(st.colors);
     }
     pos = (st.positionMs || 0) / 1000;
 
@@ -110,23 +111,53 @@
     _loadCurrent();
     const t = track();
     $("cover").textContent = "";
-    $("cover").style.background = coverBg(t);
+    $("cover").querySelector(".cover-hi")?.remove();
+    aplicaCapa(t);
     syncLyrBtn();
   };
-  // "A" só existe quando a música tem letra sincronizada; sem ela, a tela da letra fecha sozinha
+  // Capa nova só entra carregada e decodificada: pôr o endereço direto mostrava o gradiente de baixo enquanto a imagem
+  // chegava (a capa "piscava" a cada troca) e a decodificação da imagem grande caía no quadro da pintura (travava).
+  // A capa anterior fica até a nova estar pronta (no máximo 0,7 s; depois entra assim mesmo).
+  const capasProntas = new Set(); let capaPedido = 0;
+  function aplicaCapa(t) {
+    const el = $("cover"), url = t.cover, n = ++capaPedido;
+    const poe = () => { if (n === capaPedido) el.style.background = coverBg(t); };
+    if (!url || capasProntas.has(url) || !el.style.background) return poe();
+    const img = new Image(); img.src = url;
+    const limite = setTimeout(poe, 700);
+    img.decode().then(() => { capasProntas.add(url); if (capasProntas.size > 60) capasProntas.delete(capasProntas.values().next().value); }, () => {})
+      .finally(() => { clearTimeout(limite); poe(); });
+  }
+  // Capa grande chegou depois da miniatura: entra POR CIMA dela num fade curto e só então passa a ser o fundo da capa
+  // (a miniatura não é trocada — nada some no meio, nada pisca)
+  $("cover").__capaSuave = novo => {
+    const c = $("cover"), url = /url\(([^)]+)\)/.exec(novo)?.[1];
+    if (!url || reduceMotion) { c.style.backgroundImage = novo; return; }
+    c.querySelector(".cover-hi")?.remove();
+    const hi = document.createElement("div");
+    hi.className = "cover-hi"; hi.style.backgroundImage = `url(${url})`;
+    c.appendChild(hi);
+    const a = hi.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 250, easing: "ease-out" });
+    a.onfinish = () => { if (hi.isConnected) { c.style.backgroundImage = novo; hi.remove(); } };
+  };
+  // dedo no bloco da fila: áudio e capa grande dessa música já começam a vir
+  window.SounosPrefetchToque?.(queue, ".qi[data-t]", el => tracks[+el.dataset.t]?.raw);
+  // "A" só existe quando a música tem letra sincronizada; sem ela, a tela da letra fecha sozinha.
+  // Ainda procurando (lrc undefined ≠ null "sem letra"): o "A" some (antes ficava o da música anterior, aparecendo em
+  // música sem letra), mas a tela da letra aberta continua esperando
   function syncLyrBtn() {
     const t = track();
-    if (t && t.lrc === undefined) return;          // letra ainda carregando (undefined ≠ null "sem letra"): mantém o "A" e o modo como estão
-    const has = !!(t && t.lrc && !t.plain);
-    $("lyricsBtn").hidden = !has;
-    if (!has && lyricsMode) $("lyricsBtn").click();
+    const known = !!t && t.lrc !== undefined;
+    const has = known && !!t.lrc && !t.plain;
+    $("lyricsBtn").hidden = !has && !(lyricsMode && !known);
+    if (known && !has && lyricsMode) $("lyricsBtn").click();
   }
   buildQueue = function () {
     queue.innerHTML = shownList().map((ti, i) => {
       const t = tracks[ti]; if (!t) return "";
       return `<div class="qi" data-t="${ti}" style="--i:${i};background:${coverBg(t)}">
         <span class="eq"><i></i><i></i><i></i></span>
-        <div class="meta"><div class="qt">${esc(t.title)}</div><div class="qa">${Sounos.handle(t.artist)}</div></div></div>`;
+        <div class="meta"><div class="qt">${esc(t.title)}</div><div class="qa">${t.raw ? Sounos.artistHtml(t.raw) : Sounos.artistLink(Sounos.handle(t.artist))}</div></div></div>`;
     }).join("");
     markQueue();
   };
@@ -238,14 +269,7 @@
     renderDl();
   });
 
-  // ---------- @artista → página do artista (na tela inicial, por baixo do player) ----------
-  $("artist").style.cursor = "pointer";
-  $("artist").addEventListener("click", () => {
-    const t = track(), P = window.parent !== window && window.parent.SounosPages;
-    if (!t || !P) return;
-    window.parent.__sonusArtistIntentAt = performance.now();
-    P.openArtist(t.raw.artist, { __intentAt: window.parent.__sonusArtistIntentAt });
-  });
+  // nome do artista → página dele: tratador comum (Sounos.artistHtml / base/native.js); o player desce antes (closeThen)
 
   // ---------- "+" com a música de verdade ----------
   $("addBtn").onclick = () => track() && add.open(track().raw);
@@ -269,7 +293,7 @@
   function syncTheme() {
     try {
       const theme = JSON.parse(localStorage.getItem("sounos.settings"))?.theme;
-      if (theme) $("phone").dataset.theme = theme;
+      if (theme) $("phone").dataset.theme = document.documentElement.dataset.theme = theme;
     } catch {}
   }
   window.__playerShown = () => { syncTheme(); fitCover(); setPlayerVisible(true); if (S) centerQueue(false); offerPlayerTips(); };
@@ -278,7 +302,7 @@
   // tema trocado na tela inicial
   addEventListener("storage", e => {
     if (e.key === "sounos.settings" && !$("phone").classList.contains("player-hidden")) {
-      try { $("phone").dataset.theme = JSON.parse(e.newValue).theme; } catch {}
+      try { $("phone").dataset.theme = document.documentElement.dataset.theme = JSON.parse(e.newValue).theme; } catch {}
     }
   });
 

@@ -27,8 +27,13 @@ A tela inicial do Sonus, sempre numa tela só (sem rolar):
 | `inicio.js` | desenho, bloco dinâmico, Ver tudo, encaixe na altura (`fitHome`), dados de exemplo do navegador |
 | `inicio-app.js` | fonte de dados reais no app (histórico, seguidos, playlists, novidades) e o que cada toque faz |
 | `../../home.html` | a página: cabeçalho, seções e a ordem dos scripts (ligação com o app: `../base/home-native.js`) |
-| nativo | `Bridge.kt` (`artistReleases`), `NewPipeSource.artistReleases`, `YtMusicArtist.releases`, `Library.addHistory` (contagem `n`) |
+| nativo | `Bridge.kt` (`novidades`, `mix`), `Motor.kt` (`novidades`, `mix`), `Library.addHistory` (contagem `n`) |
 
 ## Histórico
 - **1.0** — Sunshine Beta 1.1 (em preparação, ainda não lançada) — módulo criado. Bloco dinâmico com Ouvidos recentemente (6 h),
   Seus artistas com seguidos e ouvidos muito (selo Seguir animado), Ver tudo animado (artistas: Novidades + Escute novamente; playlists: grade). Lista de Novidades vale 6 h (mesmo reabrindo o app).
+  Seu Mix no bloco dinâmico (capa própria: gradiente das capas + fotos dos artistas; "+" salva como playlist).
+  Auditoria visual 28/10: "Ver tudo" com área de toque >= 44px; legenda dos blocos de playlist com sombra mais forte (capa clara).
+  Auditoria 100% (28/10): `SonusInicio.previa({...})` desenha a tela com dados de teste sem gravar (só auditoria).
+  Nome do artista toca e abre a página dele (29/10): Novidades, Escute novamente e Seu Mix com o nome do artista tocável.
+  Novidades valem 24 h (uma lista por dia), pedido do dono em 04/11.

@@ -143,7 +143,7 @@ class OfflineTests {
         val t = Track("yt:dQw4w9WgXcQ", "https://www.youtube.com/watch?v=dQw4w9WgXcQ", "x", "y", null, 1,
             listOf(Thumb("https://lh3.googleusercontent.com/abc=w60-h60-l90-rj", 60, 60), Thumb("https://i.ytimg.com/vi/dQw4w9WgXcQ/mqdefault.jpg", 320, 180)))
         val c = CoverStore.candidates(t)
-        assertEquals("https://lh3.googleusercontent.com/abc=w1200-h1200-l90-rj", c.first())
+        assertEquals("https://lh3.googleusercontent.com/abc=w1000-h1000-l90-rj", c.first())
         assertTrue(c.last().endsWith("/hqdefault.jpg"))
         assertEquals("yt:dQw4w9WgXcQ", Track.idFor(t.url))
     }

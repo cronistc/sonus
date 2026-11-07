@@ -14,3 +14,4 @@ A animação de abertura (a palavra "Sonus" vira a clave e sobe ao topo) e a tel
 
 ## Histórico
 - **1.0** — Sunshine Beta 1.1 (em preparação, ainda não lançada) — organizado em módulo; abertura casada com a escala da tela.
+  Auditoria 100% (28/10): `__sonusBoasVindasPrevia()` mostra "Antes de começar" sem gravar nem pedir permissão (só auditoria).

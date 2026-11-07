@@ -10,6 +10,7 @@ import android.media.session.MediaSession
 import android.media.session.PlaybackState
 import app.sounos.MainActivity
 import app.sounos.SounosApp
+import kotlinx.coroutines.launch
 
 /**
  * MediaSession única do processo. Existe assim que há uma faixa atual (mesmo pausada e sem serviço),
@@ -36,14 +37,31 @@ object MediaSessionHolder {
     // capa: decodificada uma vez por música e reduzida (antes: imagem inteira, várias vezes por troca)
     private var coverId: String? = null
     private var coverBmp: Bitmap? = null
+    // Capa da notificação / tela de bloqueio. Ler e decodificar o JPEG (até 1200 px) era feito na linha principal a cada
+    // música nova — travava a tela do app bem na troca. Agora em segundo plano: enquanto não fica pronta, vai sem capa e,
+    // pronta, a sessão e a notificação são atualizadas (PlaybackService.update).
+    @Volatile private var decodificando: String? = null
+    private val principal = android.os.Handler(android.os.Looper.getMainLooper())
     fun coverFor(id: String): Bitmap? {
         if (id == coverId && coverBmp != null) return coverBmp
-        val f = SounosApp.instance.covers.local(id) ?: return null
-        val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }; BitmapFactory.decodeFile(f.path, o)
-        var sample = 1; while (maxOf(o.outWidth, o.outHeight) / (sample * 2) >= 512) sample *= 2
-        coverBmp = BitmapFactory.decodeFile(f.path, BitmapFactory.Options().apply { inSampleSize = sample })
-        coverId = id.takeIf { coverBmp != null }
-        return coverBmp
+        if (decodificando == id) return null
+        decodificando = id
+        val app = SounosApp.instance
+        app.io.launch {
+            val bmp = runCatching {
+                app.covers.local(id)?.let { f ->
+                    val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }; BitmapFactory.decodeFile(f.path, o)
+                    var sample = 1; while (maxOf(o.outWidth, o.outHeight) / (sample * 2) >= 512) sample *= 2
+                    BitmapFactory.decodeFile(f.path, BitmapFactory.Options().apply { inSampleSize = sample })
+                }
+            }.getOrNull()
+            principal.post {
+                if (decodificando != id) return@post
+                decodificando = null
+                if (bmp != null) { coverBmp = bmp; coverId = id; PlaybackService.atualizarTudo(app) }
+            }
+        }
+        return null
     }
 
     // evita refazer os metadados (e a capa) a cada mudança de estado

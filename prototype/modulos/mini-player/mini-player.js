@@ -45,7 +45,8 @@ const EASE = "cubic-bezier(.2,.85,.25,1)";
 const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
 function swapIn(el, from, ms = 320) {
   if (reduceMotion || !el.animate) return;
-  el.animate([from, { opacity: 1, transform: "none" }], { duration: ms, easing: EASE });
+  el._swap?.cancel();
+  return el._swap = el.animate([from, { opacity: 1, transform: "none" }], { duration: ms, easing: EASE });
 }
 let miniFirst = true;
 function loadMini() {
@@ -53,7 +54,7 @@ function loadMini() {
   t.c.forEach((c, k) => root.setProperty(`--c${k + 1}`, c));
   $("miniIni").textContent = t.title[0];
   $("miniT").textContent = t.title;
-  $("miniA").textContent = toHandle(t.artist);
+  $("miniA").innerHTML = Sounos.artistLink(toHandle(t.artist));   // o nome abre a página do artista
   if (!miniFirst) {
     swapIn($("miniCv"), { opacity: .3, transform: "scale(.85)" });
     swapIn($("miniT"), { opacity: 0, transform: "translateX(12px)" });
@@ -63,6 +64,9 @@ function loadMini() {
   lastBarPixel = -1;
   drawMiniProgress();
 }
+// modo DESLIGADO no ícone que aparece por um instante: o mesmo ícone em cinza, igual ao do player (o dono preferiu o
+// cinza ao ícone riscado de 28/10)
+const desligadoCinza = (svg, desligado) => desligado ? `<span style="display:flex;color:#8e8e93">${svg}</span>` : svg;
 const LU = {
   play:    '<svg class="lu solid" viewBox="0 0 24 24" style="margin-left:2px"><polygon points="6 3 20 12 6 21 6 3"/></svg>',
   pause:   '<svg class="lu solid" viewBox="0 0 24 24"><rect x="14" y="4" width="4" height="16" rx="1"/><rect x="6" y="4" width="4" height="16" rx="1"/></svg>',
@@ -74,11 +78,11 @@ const LU = {
 let miniFlashTimer = 0;
 function renderMiniIcon(showPlaying = playing, loading = false) {
   const rep = repeat === "one" ? LU.repeat1 : LU.repeat, el = $("miniIcon");
-  // sempre play/pausa; ao trocar um modo, o ícone dele aparece por um instante (apagado = desligou)
+  // sempre play/pausa; ao trocar um modo, o ícone dele aparece por um instante (cinza = desligou)
   const modes = shuffle + "|" + repeat;
   if (renderMiniIcon.modes != null && modes !== renderMiniIcon.modes) {
     const sh = String(shuffle) !== renderMiniIcon.modes.split("|")[0];
-    renderMiniIcon.flash = { html: `<span style="display:flex;opacity:${(sh ? !shuffle : repeat === "off") ? .35 : 1}">${sh ? LU.shuffle : rep}</span>`, until: performance.now() + 850 };
+    renderMiniIcon.flash = { html: `<span style="display:flex">${desligadoCinza(sh ? LU.shuffle : rep, sh ? !shuffle : repeat === "off")}</span>`, until: performance.now() + 850 };
   }
   renderMiniIcon.modes = modes;
   const fl = renderMiniIcon.flash;
@@ -152,8 +156,10 @@ function resetMiniBar() {
   miniBar.style.transition = "none";
   miniBar.style.transform = "scaleX(0)";
   lastBarPixel = -1;
-  void miniBar.offsetWidth;                 // fixa o 0 antes de religar a transição
-  miniBar.style.transition = "";
+  // religa a transição dois quadros depois (o 0 já foi desenhado). Antes lia offsetWidth: forçava o layout da
+  // tela inicial inteira no meio da troca de música
+  cancelAnimationFrame(resetMiniBar.raf);
+  resetMiniBar.raf = requestAnimationFrame(() => resetMiniBar.raf = requestAnimationFrame(() => { miniBar.style.transition = ""; }));
 }
 function drawMiniProgress() {
   const d = curDur(), f = durKnown() && Number.isFinite(pos) ? Math.min(1, Math.max(0, pos / d)) : 0;

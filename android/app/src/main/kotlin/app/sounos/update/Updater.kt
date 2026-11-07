@@ -28,7 +28,9 @@ import java.security.MessageDigest
 /**
  * Atualização do app inteiro, sem tela de instalação.
  *
- *  - Procura versão nova ao abrir o app e a cada 6 h (arquivo update.json, poucos bytes).
+ *  - Procura versão nova ao abrir/voltar para o app (se a última busca tem mais de 30 min) e de hora em hora com
+ *    o app aberto (arquivo update.json, poucos bytes). Antes era só ao voltar e só depois de 6 h: quem tinha aberto
+ *    o app pouco antes do lançamento, ou deixava o app aberto tocando, ficava horas sem o aviso da clave.
  *  - Achou: baixa o APK em segundo plano, confere tamanho + SHA-256 e se está assinado com a
  *    MESMA chave do Sonus instalado (senão descarta).
  *  - Instala sozinho (PackageInstaller, sem pedir confirmação — Android 12+, o Sonus é o
@@ -91,11 +93,20 @@ class Updater(private val app: SounosApp) {
     }
 
     // ---------------- procurar ----------------
-    /** Ao abrir / voltar para o app: só procura se a última busca tiver mais de 6 h. */
+    /** Ao abrir / voltar para o app: procura se a última busca tiver mais de 30 min; com o app aberto, de hora em hora. */
     fun maybeCheck() {
         noteInstalledVersion()
-        if (System.currentTimeMillis() - prefs.getLong("lastCheck", 0) > SIX_HOURS) check(auto = true)
+        if (System.currentTimeMillis() - prefs.getLong("lastCheck", 0) > INTERVALO) check(auto = true)
         else autoContinue()
+        main.removeCallbacks(periodico)
+        main.postDelayed(periodico, PERIODO)
+    }
+    private val periodico: Runnable = object : Runnable {
+        override fun run() {
+            if (!foreground) return                       // no fundo não procura (volta a procurar ao abrir)
+            check(auto = true)
+            main.postDelayed(this, PERIODO)
+        }
     }
 
     fun check(auto: Boolean = false) {
@@ -245,7 +256,8 @@ class Updater(private val app: SounosApp) {
     companion object {
         /** Ramo "updates" do repositório: só update.json + o APK da versão publicada. */
         const val DEFAULT_URL = "https://raw.githubusercontent.com/cronistc/sonus/updates/update.json"
-        private const val SIX_HOURS = 6 * 3_600_000L
+        private const val INTERVALO = 30 * 60_000L
+        private const val PERIODO = 60 * 60_000L
     }
 }
 

@@ -10,6 +10,7 @@
 
 <link rel="stylesheet" href="fonts/fonte.css">
 <link rel="stylesheet" href="modulos/player/player.css">
+<link rel="stylesheet" href="modulos/compartilhar/cartao.css">
 <script>
 // promessa resolvida quando a transição de abertura terminar (ou na hora, se não houver transição)
 window.__afterReveal = new Promise(res => addEventListener("pagereveal", e => {
@@ -122,32 +123,19 @@ window.__afterReveal = new Promise(res => addEventListener("pagereveal", e => {
       <div class="lines" id="lines"></div>
       <!-- seleção de trechos para compartilhar (até 10 linhas) -->
       <div class="selbar">
-        <button class="link" id="selCancel">Cancelar</button>
-        <span class="count" id="selCount">0/10</span>
-        <button class="go" id="selGo" disabled>Gerar imagem</button>
+        <button class="x" id="selCancel" aria-label="Cancelar"><svg class="lu" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+        <span class="count" id="selCount" role="status">Escolha as linhas</span>
+        <button class="go" id="selGo" disabled><svg class="lu" viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 13.5 6.8 4M15.4 6.5l-6.8 4"/></svg>Compartilhar</button>
       </div>
     </div>
   </div>
 
-  <!-- Imagem da letra compartilhada -->
-  <div class="sheet" id="sheet">
-    <button class="close" id="sheetClose" aria-label="Fechar"><svg class="lu" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
-    <img id="cardImg" alt="Imagem da letra">
-    <div class="styles" id="cardStyles">
-      <button data-style="grad" class="on"><span class="sw grad"></span>Gradiente</button>
-      <button data-style="dark"><span class="sw dark"></span>Escuro</button>
-      <button data-style="light"><span class="sw light"></span>Claro</button>
-    </div>
-    <div class="row">
-      <button id="saveCard">Salvar imagem</button>
-      <button id="sendCard" class="primary">Compartilhar</button>
-    </div>
-  </div>
 </div>
 
 <script src="modulos/player/player.js"></script>
 <script src="modulos/player/player-voltar.js"></script>
 <script src="modulos/player/player-native.js"></script>
+<script src="modulos/compartilhar/cartao.js"></script>
 <script src="modulos/base/marquee.js" defer></script>
 </body>
 </html>

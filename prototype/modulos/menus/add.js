@@ -130,7 +130,7 @@
       track = trackIndex; lists = D.getPlaylists(); changed = false;
       const t = trackAt(track);
       ov.querySelector(".add-head").innerHTML = t ? `<div class="cv" style="background:${look(t)}"></div>
-        <div><div class="k">Adicionar à playlist</div><div class="t">${esc(t.title || "Música")}</div><div class="a">${esc(Sounos.artistLine(t))}</div></div>` : "";
+        <div><div class="k">Adicionar à playlist</div><div class="t">${esc(t.title || "Música")}</div><div class="a">${Sounos.artistHtml(t)}</div></div>` : "";
       nw.classList.remove("editing"); renderLists();
       listMode.hidden = false; createMode.hidden = true;
       ov.querySelector(".done").hidden = false; confirm.hidden = true;
@@ -195,17 +195,18 @@
       const q = songSearch.value.trim(), seq = ++searchSeq;
       if (!q) { searchRows.dataset.items = ""; searchRows.innerHTML = ""; searchTitle.hidden = true; return; }
       queryTimer = setTimeout(async () => {
-        let found = [];
+        let found = [], erro = false;
         if (Sounos.native) {
           const result = await Sounos.ask("search", { q });
           found = result.items || [];
+          erro = !!result.error && !found.length;
         } else {
           const normalized = q.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
           found = D.tracks.filter(t => `${t.title} ${t.artist}`.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().includes(normalized));
         }
         if (seq !== searchSeq || !isOpen || songSearch.value.trim() !== q) return;
         searchRows.dataset.items = JSON.stringify(found);
-        searchRows.innerHTML = found.length ? found.map(songRow).join("") : `<div class="add-empty">Nenhuma música encontrada.</div>`;
+        searchRows.innerHTML = found.length ? found.map(songRow).join("") : `<div class="add-empty">${erro ? "Não deu para buscar agora. Confira a internet." : "Nenhuma música encontrada."}</div>`;
         searchTitle.hidden = false;
       }, 250);
     });

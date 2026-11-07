@@ -19,8 +19,12 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import app.sounos.extractor.CoverStore
+import app.sounos.player.PlaybackService
 import app.sounos.extractor.Thumb
 import app.sounos.extractor.Track
 import kotlinx.coroutines.launch
@@ -39,6 +43,7 @@ class MainActivity : Activity() {
     private lateinit var bridge: Bridge
     private var fileCallback: android.webkit.ValueCallback<Array<android.net.Uri>>? = null
     private var coldOpening = false
+    private var ultimaJanela = ""                  // última aparência aplicada às barras/janela (applyWindowTheme)
     private var openingDy = 0f                   // deslocamento vertical da palavra (alinha com o splash do sistema)
 
     @Deprecated("Deprecated in Java")
@@ -53,9 +58,15 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         if (BuildConfig.DEBUG) WebView.setWebContentsDebuggingEnabled(true)
         // onCreate só ocorre numa criação nova; voltar do segundo plano usa onResume e não repete a abertura.
-        coldOpening = true
+        // A abertura animada é para o app fechado ou muito tempo sem abrir: com o processo vivo e saída recente
+        // (ex.: voltou pelo widget depois de sair com o "voltar"), entra direto.
+        coldOpening = ultimaSaida == 0L || System.currentTimeMillis() - ultimaSaida > 30 * 60_000L
         val theme = SounosApp.instance.library.settings().optString("theme", "gradient")
         val windowColor = windowColor(theme)
+        // De ponta a ponta (pedido do dono, 27/10/2026): o app desenha atrás da barra de status e da barra de navegação,
+        // que ficam transparentes — o fundo do Sonus (gradiente, capa, foto) vai até a borda. O conteúdo fica longe das
+        // barras pelas medidas que a interface recebe (--sb-topo / --sb-base, ver aplicarMedidas).
+        WindowCompat.setDecorFitsSystemWindows(window, false)
         applyWindowTheme(theme, opening = true)
         web = WebView(this).apply {
             setBackgroundColor(windowColor)
@@ -114,8 +125,19 @@ class MainActivity : Activity() {
                 }, FrameLayout.LayoutParams((288 * resources.displayMetrics.density).toInt(), (288 * resources.displayMetrics.density).toInt(), Gravity.CENTER))
             }
         }
+        // medidas das barras e do teclado: o teclado encolhe a área do app (como o adjustResize fazia); as barras viram
+        // espaço reservado dentro da interface
+        ViewCompat.setOnApplyWindowInsetsListener(shell) { v, ins ->
+            val barras = ins.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
+            val teclado = ins.isVisible(WindowInsetsCompat.Type.ime())
+            v.setPadding(0, 0, 0, if (teclado) ins.getInsets(WindowInsetsCompat.Type.ime()).bottom else 0)
+            aplicarMedidas(barras.top, if (teclado) 0 else barras.bottom)
+            WindowInsetsCompat.CONSUMED
+        }
         setContentView(shell)
         if (coldOpening || savedInstanceState == null) web.loadUrl("https://$HOST/home.html") else web.restoreState(savedInstanceState)
+        // aberto por um link de música (a página pega quando estiver pronta); recriada ou reaberta pelos recentes: o link já foi tratado
+        if (savedInstanceState == null) { receberLink(intent); abrirDoWidget(intent, if (coldOpening) 3200 else 1400) }
 
     }
 
@@ -145,13 +167,20 @@ class MainActivity : Activity() {
         val defaultStatus = if (theme == "gradient" && !opening) Color.rgb(32, 67, 152) else color
         val status = statusColor?.let { runCatching { Color.parseColor(it) }.getOrNull() } ?: defaultStatus
         val navigation = navigationColor?.let { runCatching { Color.parseColor(it) }.getOrNull() } ?: color
+        // nada mudou: não mexe na janela de novo. De ponta a ponta as barras são transparentes, então a cor pedida pela
+        // tela (que muda a cada música) não muda nada — reaplicar cor/flags/fundo fazia o Android reorganizar a janela
+        // inteira (relayoutWindow) a cada troca de música, travando quadros. Só o tema e a abertura contam.
+        val chave = "$theme|$opening|${::web.isInitialized}"
+        if (chave == ultimaJanela) return
+        ultimaJanela = chave
         window.addFlags(android.view.WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
         window.clearFlags(
             android.view.WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS or
                 android.view.WindowManager.LayoutParams.FLAG_TRANSLUCENT_NAVIGATION,
         )
-        window.statusBarColor = status
-        window.navigationBarColor = navigation
+        // transparentes: o fundo do app aparece atrás delas (status/navigation continuam valendo para o fundo da janela no splash)
+        window.statusBarColor = Color.TRANSPARENT
+        window.navigationBarColor = Color.TRANSPARENT
         window.setBackgroundDrawable(windowBackground(theme, opening, status, navigation))
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             window.isNavigationBarContrastEnforced = false
@@ -189,12 +218,14 @@ class MainActivity : Activity() {
     }
 
     override fun onPause() {
+        ultimaSaida = System.currentTimeMillis()
         bridge.setPageActive(false)
         web.evaluateJavascript("window.__sounosPageActive?.(false)", null)
         web.onPause()
         super.onPause()
         SounosApp.instance.player.saveSession()
         SounosApp.instance.updater.foreground = false
+        SounosApp.instance.motor.fechouApp()                       // diário: quanto tempo o app ficou aberto na tela
     }
     override fun onResume() {
         super.onResume()
@@ -203,6 +234,7 @@ class MainActivity : Activity() {
         web.evaluateJavascript("window.__sounosPageActive?.(true)", null)
         web.evaluateJavascript("window.dispatchEvent(new Event('sounos:resume'))", null)
         SounosApp.instance.updater.run { foreground = true; maybeCheck() }
+        SounosApp.instance.motor.abriuApp()
     }
 
     override fun onDestroy() {
@@ -254,6 +286,7 @@ class MainActivity : Activity() {
             val url = request.url
             if (url.host != HOST) return null
             val path = url.path.orEmpty().trimStart('/').ifEmpty { "home.html" }
+            if (path.startsWith("cover/") && url.getQueryParameter("mini") == "1") return coverMini(path.removePrefix("cover/"), url.getQueryParameter("u"))
             if (path.startsWith("cover/")) return cover(
                 path.removePrefix("cover/"), url.getQueryParameter("u"),
                 url.getQueryParameter("pin") == "1", url.getQueryParameter("large") == "1", url.getQueryParameter("n"), url.getQueryParameter("a"),
@@ -263,6 +296,17 @@ class MainActivity : Activity() {
             } catch (e: IOException) { notFound() }
         }
         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest) = request.url.host != HOST
+    }
+
+    /** Capinha (linhas da busca): qualquer capa guardada que baste; senão baixa só a pequena e avisa a tela. */
+    private fun coverMini(id: String, hint: String?): WebResourceResponse {
+        if (!CoverStore.validId(id) || id.startsWith("artist:")) return notFound()
+        val app = SounosApp.instance
+        app.covers.localMini(id, hint)?.let { return imageResponse(it) }
+        val videoId = id.removePrefix("yt:").takeIf { id.startsWith("yt:") }
+        val track = Track(id, videoId?.let { "https://www.youtube.com/watch?v=$it" } ?: "", "", "", null, 0, listOfNotNull(hint?.let { Thumb(it, 0, 0) }))
+        umaBusca("$id|mini") { if (runCatching { app.covers.getMini(track) }.getOrNull() != null) notifyCoverReady(id, false) }
+        return notFound()
     }
 
     /** A resposta da rota nunca espera rede: usa disco ou agenda o preenchimento em segundo plano. */
@@ -278,28 +322,36 @@ class MainActivity : Activity() {
         val album = id.startsWith("album:")
         val track = Track(id, videoId?.let { "https://www.youtube.com/watch?v=$it" } ?: "", if (album) name.orEmpty() else "", if (album) albumArtist.orEmpty() else "", null, 0,
             listOfNotNull(hint?.let { Thumb(it, 0, 0) }))
+        // capinha de lista: aparece já com a imagem que veio; "clipe ou música?" é conferido DEPOIS (conferirDepois)
+        val esperar = large || pin
         if (file == null) {
-            app.io.launch {
+            umaBusca("$id|$pin|$large") {
                 val fetchStarted = System.nanoTime()
                 val result = runCatching {
-                    app.covers.get(track, pin, large) { android.util.Log.i("Sonus", "cover $it") }
+                    app.covers.get(track, pin, large, conferirAntes = esperar) { android.util.Log.i("Sonus", "cover $it") }
                 }.onFailure { android.util.Log.w("Sonus", "cover falhou id=$id", it) }.getOrNull()
                 android.util.Log.i("Sonus", "cover rota etapa=preload_ms=${(System.nanoTime() - fetchStarted) / 1_000_000} id=$id cache=${result != null}")
                 if (result != null) notifyCoverReady(id, large)
+                if (!esperar) conferirDepois(track, pin, large)
             }
             android.util.Log.i("Sonus", "cover rota etapa=total_ms=${(System.nanoTime() - started) / 1_000_000} origem=ausente_agendada")
             return notFound()
         }
         val beforeResolution = app.covers.resolution(file)
-        if (pin || large || !app.covers.meetsMinimum(file, large)) app.io.launch {
+        // precisaConferir: clipe cuja capa oficial (versão em música) ainda não foi conferida/instalada
+        val conferia = app.covers.precisaConferir(id)
+        if (pin || large || !app.covers.meetsMinimum(file, large) || conferia) umaBusca("$id|$pin|$large") {
             val beforeLength = file.length()
             val beforeModified = file.lastModified()
             val fillStarted = System.nanoTime()
             val result = runCatching {
-                app.covers.get(track, pin, large) { android.util.Log.i("Sonus", "cover $it") }
+                app.covers.get(track, pin, large, conferirAntes = true) { android.util.Log.i("Sonus", "cover $it") }
             }.onFailure { android.util.Log.w("Sonus", "cover atualizacao falhou id=$id", it) }.getOrNull()
             android.util.Log.i("Sonus", "cover rota etapa=upgrade_ms=${(System.nanoTime() - fillStarted) / 1_000_000} id=$id cache=${result != null}")
-            val improved = result != null && app.covers.resolution(result) > beforeResolution
+            // melhorou de resolução OU virou outra imagem (capa oficial no lugar da que veio com o clipe)
+            // (não compara a data: ler a capa do cache já atualiza a data do arquivo — daria aviso sem fim)
+            val improved = result != null && (app.covers.resolution(result) > beforeResolution ||
+                (result == file && result.length() != beforeLength) || (conferia && !app.covers.precisaConferir(id)))
             if (improved) android.util.Log.i("Sonus", "cover rota qualidade id=$id antes=$beforeResolution depois=${app.covers.resolution(result!!)} bytes_antes=$beforeLength bytes_depois=${result.length()} alterado=${result.lastModified() != beforeModified}")
             if (improved) notifyCoverReady(id, large)
         }
@@ -324,7 +376,7 @@ class MainActivity : Activity() {
         val recheck = local != null && app.covers.artistNeedsRecheck(key)
         val needsUpgrade = local != null && beforeResolution < 226
         if (local == null || recheck || needsUpgrade) {
-            app.io.launch {
+            umaBusca(id) {
                 val fetchStarted = System.nanoTime()
                 val photo = runCatching {
                 app.covers.getArtistPhoto(
@@ -349,7 +401,29 @@ class MainActivity : Activity() {
         return imageResponse(local)
     }
 
+    /**
+     * Uma busca de capa/foto por vez para cada imagem. A tela pede de novo a mesma imagem enquanto ela não existe
+     * (resposta 404 não fica no cache do WebView): sem isto cada pedido abria outra busca, todas na fila do mesmo
+     * cadeado — minutos de buscas repetidas e CPU alta com o app parado (visto com a foto de Tribalistas).
+     */
+    private fun umaBusca(chave: String, trabalho: suspend () -> Unit) {
+        if (!emBusca.add(chave)) return
+        SounosApp.instance.io.launch { try { trabalho() } finally { emBusca.remove(chave) } }
+    }
+
+    /** Confere "clipe ou música?" em segundo plano; se a capa oficial for outra, troca e avisa a tela. */
+    private suspend fun conferirDepois(track: Track, pin: Boolean, large: Boolean) {
+        val app = SounosApp.instance
+        if (!app.covers.precisaConferir(track.id)) return
+        val antes = app.covers.local(track.id, track.thumbs.firstOrNull()?.url, large)?.let { it.length() to it.lastModified() }
+        val depois = runCatching { app.covers.get(track, pin, large, conferirAntes = true) }.getOrNull()
+        if (depois != null && (depois.length() to depois.lastModified()) != antes) notifyCoverReady(track.id, large)
+    }
+
     private fun notifyCoverReady(id: String, large: Boolean = false) {
+        // a capa da música atual chegou: notificação, tela de bloqueio e widgets também a recebem (sem esperar outra ação)
+        val sonus = SounosApp.instance
+        if (id == sonus.player.currentTrack?.id) runOnUiThread { PlaybackService.atualizarTudo(sonus) }
         if (!::web.isInitialized || isFinishing) return
         web.post { web.evaluateJavascript("window.__sounos&&window.__sounos.emit('coverReady',{id:${JSONObject.quote(id)},large:$large})", null) }
     }
@@ -380,9 +454,54 @@ class MainActivity : Activity() {
         else -> "application/octet-stream"
     }
 
-    private companion object {
-        const val HOST = "appassets.androidplatform.net"
-        const val PICK_IMAGE = 7
-        const val REQUEST_NOTIFICATIONS = 42
+    /** Altura (px do aparelho) da barra de status e da de navegação; a interface converte para px dela. */
+    private fun aplicarMedidas(topo: Int, base: Int) {
+        if (topo == barraTopo && base == barraBase) return
+        barraTopo = topo; barraBase = base
+        if (::web.isInitialized) web.post { web.evaluateJavascript("window.__sonusMedidas&&window.__sonusMedidas($topo,$base)", null) }
+    }
+
+    // ---------- link de música (tocado ou compartilhado de outro app) ----------
+    // Guarda o link; a interface o pega (getPendingLink) quando a página está pronta ou na hora, se já estiver aberta.
+    private fun receberLink(i: Intent?) {
+        if (i == null || i.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0) return
+        val texto = when (i?.action) {
+            Intent.ACTION_VIEW -> i.dataString
+            Intent.ACTION_SEND -> i.getStringExtra(Intent.EXTRA_TEXT)
+            else -> null
+        }?.takeIf { it.contains("http") } ?: return
+        linkPendente = texto
+        if (::web.isInitialized) web.post { web.evaluateJavascript("window.__sonusLinkChegou&&window.__sonusLinkChegou()", null) }
+    }
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        receberLink(intent)
+        abrirDoWidget(intent, 0)
+    }
+
+    // toque no widget: o player na hora (e a letra, se o modo letra do widget está ligado). Recém-criada, espera a página.
+    private fun abrirDoWidget(i: Intent?, espera: Long) {
+        val modo = i?.getStringExtra("sonus.widget") ?: return
+        i.removeExtra("sonus.widget")
+        val js = "(function(){var s=window.__playerShell;if(!s)return;s.open&&s.open();" +
+            (if (modo == "letra") "setTimeout(function(){try{var w=document.querySelector('iframe').contentWindow,d=w.document;" +
+                "if(!d.getElementById('phone').classList.contains('lyr-mode'))d.getElementById('lyricsBtn').click()}catch(e){}},450);" else "") + "})()"
+        web.postDelayed({ if (!isFinishing) web.evaluateJavascript(js, null) }, espera)
+    }
+
+    companion object {
+        /** quando o app saiu da tela pela última vez (neste processo): decide se a abertura animada roda */
+        @Volatile var ultimaSaida = 0L
+        /** link de música recebido e ainda não tratado pela interface */
+        @Volatile var linkPendente: String? = null
+        /** barras do sistema em px do aparelho (de ponta a ponta); a interface lê com getMedidas */
+        @Volatile var barraTopo = 0
+        @Volatile var barraBase = 0
+        /** imagens com busca em andamento (ver umaBusca) */
+        private val emBusca: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+        private const val HOST = "appassets.androidplatform.net"
+        private const val PICK_IMAGE = 7
+        private const val REQUEST_NOTIFICATIONS = 42
     }
 }

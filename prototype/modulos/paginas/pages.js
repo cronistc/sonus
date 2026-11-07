@@ -62,10 +62,12 @@ window.SounosPages = (() => {
   const I = {
     play: '<svg viewBox="0 0 24 24"><polygon points="6 3 20 12 6 21 6 3"/></svg>',
     pause: '<svg viewBox="0 0 24 24"><rect x="5" y="4" width="5" height="16" rx="1"/><rect x="14" y="4" width="5" height="16" rx="1"/></svg>',
+    compartilhar: '<svg viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 13.5 6.8 4M15.4 6.5l-6.8 4"/></svg>',
     shuffle: '<svg viewBox="0 0 24 24"><path d="M2 18h1.4c1.3 0 2.5-.6 3.3-1.7l6.1-8.6c.7-1.1 2-1.7 3.3-1.7H22"/><path d="m18 2 4 4-4 4"/><path d="M2 6h1.9c1.5 0 2.9.9 3.6 2.2"/><path d="M22 18h-5.9c-1.3 0-2.6-.7-3.3-1.8l-.5-.8"/><path d="m18 14 4 4-4 4"/></svg>',
     dl: '<svg class="dl-icon" viewBox="0 0 24 24"><circle class="dl-disc" cx="12" cy="12" r="9.5"/><path class="dl-mark" d="M12 7.5L12 15.7M8.5 12.2L12 15.7M15.5 12.2L12 15.7"/></svg>',
     done: '<svg class="dl-icon" viewBox="0 0 24 24"><circle class="dl-disc" cx="12" cy="12" r="10.6"/><path class="dl-mark" d="m7.8 12.2 2.8 2.8 5.9-6.1"/></svg>',
     baixada: '<svg class="dl-icon" viewBox="0 0 24 24"><circle class="dl-disc" cx="12" cy="12" r="10.6"/><path class="dl-mark" d="m7.8 12.2 2.8 2.8 5.9-6.1"/></svg>',   // círculo preenchido: música já está no aparelho
+    add: '<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>',
     img: '<svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/></svg>',
     edit: '<svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>',
     grip: '<svg viewBox="0 0 24 24"><path d="M5 9h14M5 15h14"/></svg>',
@@ -107,6 +109,14 @@ window.SounosPages = (() => {
     requestAnimationFrame(() => el.classList.add("open"));
     swipeToClose(page);
     return page;
+  }
+  // a mesma página já aberta mais atrás (artista → álbum → o mesmo artista): volta até ela em vez de empilhar outra
+  function voltarPara(chave) {
+    const i = stack.findIndex(p => p.chave === chave && !p.closing);
+    if (i < 0) return false;
+    const acima = stack.slice(i + 1);
+    if (acima.length) { [...acima].reverse().forEach(p => close(p, true)); history.go(-acima.length); }
+    return true;
   }
   function close(page, fromPop) {
     if (!page || page.closing) return;
@@ -190,31 +200,92 @@ window.SounosPages = (() => {
     return latestState;
   };
   const nowId = () => playerState()?.current?.id ?? null;
+  // Ícone do play das páginas: pausa (esta página tocando) · aleatório (modo aleatório ligado: o play toca embaralhado)
+  // · play (em ordem). Só troca quando muda (os eventos de estado chegam várias vezes por música).
+  function pintaPlay(page, pause = false) {
+    const button = page.el.querySelector('[data-a="play"]'); if (!button) return;
+    const modo = pause ? "pause" : page.aleatorio ? "aleatorio" : "play";
+    if (button.dataset.icone === modo) return;
+    button.dataset.icone = modo;
+    button.innerHTML = modo === "pause" ? I.pause : modo === "aleatorio" ? `<span class="aleat">${I.shuffle}</span>` : I.play;
+    button.setAttribute("aria-label", modo === "pause" ? "Pausar" : modo === "aleatorio" ? "Tocar em ordem aleatória" : "Tocar");
+  }
   function syncPagePlayback(page, type, name) {
     const state = playerState(), context = state.context || {};
     const matches = !!state.current && context.type === type && key(context.name) === key(name);
     const playing = !!state.playing || (!!state.loading && !!state.playWhenReady);
-    const button = page.el.querySelector('[data-a="play"]');
-    if (button) {
-      const pause = matches && playing;
-      button.innerHTML = pause ? I.pause : I.play;
-      button.setAttribute("aria-label", pause ? "Pausar" : "Tocar");
-    }
+    pintaPlay(page, matches && playing);
     return { matches, playing };
   }
-  function togglePagePlayback(page, type, name, list, context, shuffle) {
+  // Modo do play DA PÁGINA (não o aleatório geral do player; decisão do dono, 27/10/2026): toda página abre no play.
+  // Álbum e playlist lembram o aleatório escolhido, só para aquela página, por MODO_MS desde o último uso; o artista
+  // sempre abre no play. Play da página: no aleatório, a lista inteira embaralhada; senão, em ordem.
+  const MODO_KEY = "sonus.modoPagina", MODO_MS = 30 * 60e3;
+  const lerModos = () => { try { return JSON.parse(localStorage.getItem(MODO_KEY) || "{}"); } catch { return {}; } };
+  function modoGuardado(chave) {
+    if (!chave) return false;
+    const m = lerModos()[chave];
+    return !!m && Date.now() - (m.t || 0) < MODO_MS;
+  }
+  function guardaModo(chave, on) {
+    if (!chave) return;
+    const todos = lerModos(), agora = Date.now();
+    for (const k in todos) if (agora - (todos[k].t || 0) >= MODO_MS) delete todos[k];      // vencidos saem
+    if (on) todos[chave] = { t: agora }; else delete todos[chave];
+    try { localStorage.setItem(MODO_KEY, JSON.stringify(todos)); } catch {}
+  }
+  const modoDoPlay = page => { if (page.aleatorio) guardaModo(page.chaveModo, true); return !!page.aleatorio; };   // usar renova o prazo
+  // tocar uma música da lista: em ordem, ou (aleatório) ela primeiro e o resto embaralhado
+  const modoDaLinha = page => modoDoPlay(page) ? "aleatorio" : false;
+  function togglePagePlayback(page, type, name, list, context, shuffle = modoDoPlay(page)) {
     const state = syncPagePlayback(page, type, name);
     if (state.matches) return Sounos.call(state.playing ? "pause" : "play");
     return playFrom(list, 0, context, shuffle);
   }
-  const rowHtml = (t, i, extra = "", pin = false, artist = true) => `<div class="tr" data-i="${i}" data-id="${esc(t.id)}">
+  // Aleatório dentro do play (decisão do dono, 27/10/2026: sem botão separado nas páginas). Arrastar o play para cima
+  // ou para baixo liga/desliga o aleatório do player, e o botão FICA no modo: com o ícone do aleatório, tocar começa a
+  // lista embaralhada; arrastando de novo volta ao play e toca em ordem. Tocar continua tocando/pausando.
+  function gestoAleatorio(page, chave = null) {
+    page.chaveModo = chave;
+    page.aleatorio = modoGuardado(chave);
+    const b = page.el.querySelector('[data-a="play"]'); if (!b) return;
+    b.style.touchAction = "none";                     // o gesto vertical não rola a página
+    b.setAttribute("aria-description", "Arraste para baixo para ligar ou desligar o aleatório");
+    pintaPlay(page);
+    const g = { y: 0, x: 0, on: false, feito: false };
+    b.addEventListener("pointerdown", e => { Object.assign(g, { x: e.clientX, y: e.clientY, on: true, feito: false }); try { b.setPointerCapture(e.pointerId); } catch {} });
+    b.addEventListener("pointermove", e => {
+      if (!g.on || g.feito) return;
+      const dx = e.clientX - g.x, dy = e.clientY - g.y;
+      if (Math.abs(dy) <= 32 || Math.abs(dy) < Math.abs(dx)) return;
+      g.feito = true;
+      page.aleatorio = !page.aleatorio;
+      guardaModo(page.chaveModo, page.aleatorio);
+      // esta página está tocando: o player acompanha na hora (embaralha ou volta à ordem o que vem depois)
+      if (b.dataset.icone === "pause") { Sounos.call("setShuffle", { on: page.aleatorio }); if (latestState) latestState.shuffle = page.aleatorio; }
+      else pintaPlay(page);
+      b.animate([{ transform: "scale(.85)" }, { transform: "scale(1)" }], { duration: 260, easing: "ease-out" });
+    });
+    const fim = () => { g.on = false; };
+    b.addEventListener("pointerup", fim); b.addEventListener("pointercancel", fim);
+    // foi gesto, não toque: não toca/pausa
+    b.addEventListener("click", e => { if (g.feito) { g.feito = false; e.stopPropagation(); e.preventDefault(); } }, true);
+  }
+  // músicas desenhadas nas páginas (para começar a buscar o áudio quando o dedo encosta na linha)
+  const faixasDasLinhas = new Map();
+  window.SounosPrefetchToque?.(document.body, ".tr[data-id]", el => faixasDasLinhas.get(el.dataset.id));
+  const rowHtml = (t, i, extra = "", pin = false, artist = true) => (faixasDasLinhas.size > 2000 && faixasDasLinhas.clear(), faixasDasLinhas.set(t.id, t), `<div class="tr" data-i="${i}" data-id="${esc(t.id)}">
       <div class="cv" style="background-image:${cover(t, pin)}"></div>
-      <div class="tx"><div class="t">${esc(t.title)}</div><div class="a">${handle(artistLine(t))}</div></div>${extra}${window.SounosTrackMenu?.btn(t, { artist }) || ""}</div>`;
+      <div class="tx"><div class="t">${esc(t.title)}</div><div class="a">${Sounos.artistHtml(t)}</div></div>${extra}${window.SounosTrackMenu?.btn(t, { artist }) || ""}</div>`);
 
   // ---------- playlist ----------
+  // o.downloads: "Músicas baixadas" · o.virtual: lista que não é da pessoa (Seu Mix): { name, desc, tracks, hero(), salvar() }
   function openPlaylist(id, o = {}) {
-    const downloads = !!o.downloads;
+    const downloads = !!o.downloads, virtual = o.virtual || null, fixa = downloads || !!virtual;   // fixa: não edita nome/capa/músicas
+    if (!virtual && voltarPara("playlist:" + id)) return stack.find(p => p.chave === "playlist:" + id);
     const page = mount("playlist");
+    if (!virtual) page.chave = "playlist:" + id;
+    Sounos.call("registrar", { tipo: "abriuPlaylist", dados: { playlist: String(id) } });
     const el = page.el;
     const downloadTracks = () => {
       try {
@@ -222,42 +293,51 @@ window.SounosPages = (() => {
         return Array.isArray(mine.downloaded) ? mine.downloaded : [];
       } catch { return []; }
     };
-    const get = () => downloads
+    const get = () => virtual ? virtual : downloads
       ? { id: "__downloads__", name: "Músicas baixadas", desc: "", tracks: downloadTracks() }
       : D.getPlaylists().find(p => p.id === id);
     const opened = get();
-    if (opened && !downloads) remember({ type: "p", id: opened.id, name: opened.name, cover: opened.cover || "" });
+    if (opened && !fixa) remember({ type: "p", id: opened.id, name: opened.name, cover: opened.cover || "" });
     const save = mutate => {
-      if (downloads) return;
+      if (fixa) return;
       const all = D.getPlaylists(); const p = all.find(x => x.id === id); if (!p) return;
       mutate(p); D.savePlaylists(all); opts.onChange?.();
     };
     const dls = {};                              // id → progresso do download desta página
     let dlQueue = [], dlBusy = null;
 
+    // mesmo desenho do artista e do álbum: capa limpa; embaixo nome (+ descrição e "N músicas · tempo"), aleatório e
+    // play à direita; ações da playlist numa linha discreta abaixo. Na lista, cada música com a SUA capa
+    // (diferente do álbum: as músicas não são do mesmo disco)
+    const editavel = fixa ? "" : ' contenteditable="plaintext-only" spellcheck="false"';
     el.innerHTML = `<div class="hero"></div>
-      <div class="ph">
-        <div class="name" ${downloads ? "" : 'contenteditable="plaintext-only" spellcheck="false" data-ph="Nome da playlist"'}></div>
-        ${downloads ? "" : '<div class="desc" contenteditable="plaintext-only" spellcheck="false" data-ph="Adicione uma descrição"></div>'}
-        <div class="sub"></div>
-      </div>
-      <div class="acts">
+      <div class="art-topo">
+        <div class="art-txt">
+          <div class="art-linha"><div class="name"${editavel}${fixa ? "" : ' data-ph="Nome da playlist"'}></div></div>
+          ${downloads ? "" : `<div class="desc"${editavel}${fixa ? "" : ' data-ph="Adicione uma descrição"'}></div>`}
+          <div class="sub"></div>
+        </div>
         <button class="big" data-a="play" aria-label="Tocar">${I.play}</button>
-        <button class="ab" data-a="shuffle" aria-label="Aleatório">${I.shuffle}</button>
+      </div>
+      <div class="pl-acoes">
         <button class="ab" data-a="dl" aria-label="Baixar playlist">${I.dl}<svg class="ring" viewBox="0 0 36 36"><circle cx="18" cy="18" r="15.9" pathLength="100"/></svg></button>
-        <span class="sp"></span>
-        ${downloads ? `<button class="ab" data-a="edit" aria-label="Editar músicas">${I.edit}</button>` : `<button class="ab" data-a="img" aria-label="Trocar capa">${I.img}</button>
+        <button class="ab" data-a="compartilhar" aria-label="Compartilhar playlist">${I.compartilhar}</button>
+        ${virtual ? `<button class="ab" data-a="salvar" aria-label="Salvar nas suas playlists">${I.add || "+"}</button>`
+          : downloads ? `<button class="ab" data-a="edit" aria-label="Editar músicas">${I.edit}</button>` : `<button class="ab" data-a="img" aria-label="Trocar capa">${I.img}</button>
         <button class="ab" data-a="edit" aria-label="Editar playlist">${I.edit}</button>`}
       </div>
       <div class="list"></div>
-      ${downloads ? "" : '<input type="file" accept="image/*" hidden>'}`;
+      ${fixa ? "" : '<input type="file" accept="image/*" hidden>'}`;
     addBack(page);
+    gestoAleatorio(page, virtual ? "mix" : "pl:" + (downloads ? "__downloads__" : id));
+    setTimeout(() => { if (!page.closing) window.SounosTips?.offer("playlist"); }, 450);
     const $ = s => el.querySelector(s);
     const nameEl = $(".name"), descEl = $(".desc"), list = $(".list"), file = $("input[type=file]");
 
     function hero(p) {
       const h = $(".hero");
-      if (p.cover) h.innerHTML = `<div class="img" style="background-image:url('${p.cover}')"></div>`;
+      if (virtual?.hero) { if (!h.childElementCount) h.innerHTML = virtual.hero(); }
+      else if (p.cover) h.innerHTML = `<div class="img" style="background-image:url('${p.cover.replace(/'/g, "%27")}')"></div>`;
       else if (p.tracks.length) {
         const four = [0, 1, 2, 3].map(i => p.tracks[Math.min(i, p.tracks.length - 1)]);
         h.innerHTML = `<div class="mosaic">${four.map(t => `<i style="background-image:${cover(t, true)}"></i>`).join("")}</div>`;
@@ -272,16 +352,16 @@ window.SounosPages = (() => {
       $("[data-a=play]").disabled = !p.tracks.length;
       const done = downloaded();
       const edits = p.tracks.length ? p.tracks.map((t, i) => rowHtml(t, i,
-        `${done[t.id] ? `<span class="dl" aria-label="Baixada">${I.baixada}</span>` : ""}<button class="rm" aria-label="${downloads ? "Remover música baixada" : "Tirar da playlist"}">${I.rm}</button>${downloads ? "" : `<button class="grip" aria-label="Arrastar para ordenar">${I.grip}</button>`}`, true)).join("") : "";
-      const del = downloads ? "" : '<button class="del">Apagar playlist</button>';
+        `${done[t.id] ? `<span class="dl" aria-label="Baixada">${I.baixada}</span>` : ""}${virtual ? "" : `<button class="rm" aria-label="${downloads ? "Remover música baixada" : "Tirar da playlist"}">${I.rm}</button>`}${fixa ? "" : `<button class="grip" aria-label="Arrastar para ordenar">${I.grip}</button>`}`, !virtual)).join("") : "";
+      const del = fixa ? "" : '<button class="del">Apagar playlist</button>';
       list.innerHTML = p.tracks.length
-        ? edits + del
+        ? '<div class="sec">Músicas</div>' + edits + del
         : downloads ? '<div class="note">Baixe músicas para adicioná-las aqui.</div>'
           : `<div class="note">Playlist vazia.<br>No player, toque no + para adicionar a música que está tocando.</div>${del}`;
       markNow(); renderDl();
     }
     const downloaded = () => { try { return Sounos.call("getDownloads") || {}; } catch { return {}; } };
-    function markNow() { const id = nowId(); list.querySelectorAll(".tr").forEach(r => r.classList.toggle("now", r.dataset.id === id)); }
+    function markNow() { const id = nowId(); list.querySelectorAll(".tr").forEach(r => r.classList.toggle("now", r.dataset.id === id)); pintaPlay(page); }
     function renderDl() {
       const p = get(); if (!p) return;
       const done = downloaded(), b = $("[data-a=dl]");
@@ -309,7 +389,7 @@ window.SounosPages = (() => {
     // nome e descrição: editáveis direto na página
     const saveText = () => save(p => { p.name = nameEl.textContent.trim() || "Nova playlist"; p.desc = descEl.textContent.trim(); });
     let textT = 0;
-    if (!downloads) [nameEl, descEl].forEach(x => {
+    if (!fixa) [nameEl, descEl].forEach(x => {
       x.addEventListener("blur", saveText);
       x.addEventListener("input", () => { clearTimeout(textT); textT = setTimeout(saveText, 400); });
       x.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); x.blur(); } });
@@ -318,15 +398,26 @@ window.SounosPages = (() => {
     el.addEventListener("click", e => {
       const a = e.target.closest("[data-a]")?.dataset.a;
       const p = get(); if (!p) return;
-      const context = { type: "playlist", id: downloads ? "__downloads__" : id, name: p.name };
-      if (a === "play") return playFrom(p.tracks, 0, context);
-      if (a === "shuffle") return playFrom(p.tracks, 0, context, true);
+      const context = virtual ? { type: "mix", name: p.name } : { type: "playlist", id: downloads ? "__downloads__" : id, name: p.name };
+      if (a === "salvar") {
+        const b = e.target.closest("[data-a]"); if (b.classList.contains("done")) return;
+        b.classList.add("done"); b.innerHTML = I.done || "✓";
+        return virtual.salvar?.();
+      }
+      if (a === "play") return playFrom(p.tracks, 0, context, modoDoPlay(page));
       if (a === "dl") {
         const done = downloaded();
         dlQueue = p.tracks.filter(t => !done[t.id] && dls[t.id] !== 1 && t.id !== dlBusy);
         if (!dlBusy) nextDl(); renderDl(); return;
       }
       if (a === "img") return file?.click();
+      if (a === "compartilhar") {
+        if (!p.tracks.length) return;
+        const nome = p.name || "Playlist";
+        return window.SonusCartao?.abrir({ tipo: "playlist", titulo: nome, n: p.tracks.length, dur: p.tracks.reduce((s, t) => s + (t.dur || 0), 0),
+          faixas: p.tracks.map(t => ({ titulo: t.title, artista: Sounos.artistLine?.(t) || handle(t.artist || ""), capaUrl: Sounos.coverUrl(t, false, true) })),
+          link: SounosCompartilhar.playlistLink(nome, p.tracks) });
+      }
       if (a === "edit") { el.classList.toggle("editing"); $("[data-a=edit]").classList.toggle("on", el.classList.contains("editing")); disarm(); return; }
       const del = e.target.closest(".del");
       if (del) {                                 // dois toques: o primeiro arma, o segundo apaga
@@ -335,6 +426,9 @@ window.SounosPages = (() => {
       }
       const rm = e.target.closest(".rm");
       if (rm) {
+        // dois toques rápidos no "−": a lista sobe e o segundo cairia na música de baixo
+        if (performance.now() - (page.ultimoRemover || 0) < 350) return;
+        page.ultimoRemover = performance.now();
         const i = +rm.closest(".tr").dataset.i;
         if (downloads) {
           const t = p.tracks[i]; if (t) Sounos.call("removeDownload", { id: t.id });
@@ -344,7 +438,7 @@ window.SounosPages = (() => {
       }
       if (e.target.closest(".grip")) return;
       const row = e.target.closest(".tr");
-      if (row && !el.classList.contains("editing")) playFrom(p.tracks, +row.dataset.i, context);
+      if (row && !el.classList.contains("editing")) playFrom(p.tracks, +row.dataset.i, context, modoDaLinha(page));
     });
     const disarm = () => { const d = $(".del"); if (d) { d.classList.remove("armed"); d.textContent = "Apagar playlist"; } };
 
@@ -395,31 +489,39 @@ window.SounosPages = (() => {
   }
 
   function openDownloads() { return openPlaylist("__downloads__", { downloads: true }); }
+  // Seu Mix aberto como playlist (não é da pessoa até ela tocar no "+"): v = { name, desc, tracks, hero(), salvar() }
+  function openMix(v) { return openPlaylist("__mix__", { virtual: v }); }
 
   // ---------- álbum ----------
   function openAlbum(url, name, artist, thumb) {
+    const chave = "album:" + (url || key(name) + "|" + key(artist));
+    if (voltarPara(chave)) return stack.find(p => p.chave === chave);
     const page = mount("album");
+    page.chave = chave;
+    Sounos.call("registrar", { tipo: "abriuAlbum", dados: { album: name || "", artista: artist || "" } });
     const el = page.el;
     let songs = [];
     const albumCover = (n, t) => t ? `url('${Sounos.coverUrl({ id: "album:" + (key(n) || "x"), name: n, artist, thumb: t }, false, true)}')` : `linear-gradient(135deg,${Sounos.hashColors(n).join(",")})`;
     el.innerHTML = `<div class="hero"><div class="img" style="background-image:${albumCover(name, thumb)}"></div></div>
       <div class="art-topo">
-        <div class="art-txt"><div class="art-linha"><div class="name"></div></div><div class="sub"></div></div>
-        <button class="ab" data-a="shuffle" aria-label="Aleatório">${I.shuffle}</button>
+        <div class="art-txt"><div class="art-linha"><div class="name"></div></div>
+          <div class="art-acoes"><div class="sub"></div><button class="ab compart" data-a="compartilhar" aria-label="Compartilhar álbum">${I.compartilhar}</button></div></div>
         <button class="big" data-a="play" aria-label="Tocar" disabled>${I.play}</button>
       </div>
       <div class="list"><div class="sec">Músicas</div><div class="songs">${'<div class="sk"></div>'.repeat(6)}</div></div>`;
     addBack(page);
+    gestoAleatorio(page, "album:" + url);
+    setTimeout(() => { if (!page.closing) window.SounosTips?.offer("album"); }, 450);
     const $ = s => el.querySelector(s);
     $(".name").textContent = name;
-    $(".sub").textContent = handle(artist);
+    $(".sub").innerHTML = Sounos.artistLink(handle(artist));   // o nome do artista abre a página dele
     const applyAlbum = r => {
       if (page.closing) return;
-      if (r.error) { $(".songs").innerHTML = `<div class="note">Não deu para carregar agora.</div>`; return; }
+      if (r.error) { if (!songs.length) $(".songs").innerHTML = `<div class="note">Não deu para carregar agora.</div>`; return; }
       name = r.name || name; artist = r.artist || artist; songs = r.items || [];
       $(".name").textContent = name;
-      $(".sub").textContent = `${handle(artist)}${songs.length ? ` · ${count(songs.length)}` : ""}`;
-      if (r.thumb) $(".hero").innerHTML = `<div class="img" style="background-image:${albumCover(name, r.thumb)}"></div>`;
+      $(".sub").innerHTML = `${Sounos.artistLink(handle(artist))}${songs.length ? ` · ${count(songs.length)}` : ""}`;
+      if (r.thumb) { thumb = r.thumb; $(".hero").innerHTML = `<div class="img" style="background-image:${albumCover(name, r.thumb)}"></div>`; }
       $("[data-a=play]").disabled = !songs.length;
       $(".songs").innerHTML = songs.length ? songs.map((t, i) => rowHtml(t, i)).join("") : `<div class="note">Nenhuma música encontrada.</div>`;
       markNow();
@@ -434,22 +536,19 @@ window.SounosPages = (() => {
     el.addEventListener("click", e => {
       const a = e.target.closest("[data-a]")?.dataset.a;
       const ctx = { type: "album", name };
-      // Play/aleatório da capa usa só as músicas do álbum; o repetir selecionado continua valendo.
+      if (a === "compartilhar") return window.SonusCartao?.abrir({ tipo: "album", titulo: name, artista: artist, n: songs.length,
+        capaUrl: thumb ? Sounos.coverUrl({ id: "album:" + (key(name) || "x"), name, artist, thumb }, false, true) : "",
+        link: SounosCompartilhar.albumLink(name, artist, url, thumb) });
+      // Play da capa usa só as músicas do álbum, no modo aleatório do player (arrastar o play troca); o repetir continua valendo.
       if (a === "play") {
         if (!songs.length) return;
         const state = syncPagePlayback(page, "album", name);
         if (state.matches) return Sounos.call(state.playing ? "pause" : "play");
-        return playFrom(songs, 0, ctx, false);
-      }
-      if (a === "shuffle") {
-        if (!songs.length) return;
-        return playFrom(songs, 0, ctx, true);
+        return playFrom(songs, 0, ctx, modoDoPlay(page));
       }
       // música específica: com repetir (álbum ou faixa) fica no álbum; no aleatório vira rádio a partir dela
       const row = e.target.closest(".tr"); if (!row) return;
-      const s = st(), i = +row.dataset.i;
-      if (s.shuffle && s.repeat === "off") { Sounos.call("playSingle", { track: songs[i], context: { type: "radio" } }); window.openPlayer?.(); }
-      else playFrom(songs, i, ctx);
+      playFrom(songs, +row.dataset.i, ctx, modoDaLinha(page));
     });
     return page;
   }
@@ -466,18 +565,17 @@ window.SounosPages = (() => {
       <div class="sub">${count(list.length)} · baixadas${Sounos.call("getOffline").offline && list.length ? " e em cache" : ""}</div></div>
       <div class="acts">
         <button class="big" data-a="play" aria-label="Tocar" ${list.length ? "" : "disabled"}>${I.play}</button>
-        <button class="ab" data-a="shuffle" aria-label="Aleatório" ${list.length ? "" : "disabled"}>${I.shuffle}</button>
       </div>
       <div class="list">${list.length ? list.map((t, i) => rowHtml(t, i)).join("") : '<div class="note">Baixe músicas ou conecte à internet para encontrar músicas em cache.</div>'}</div>`;
     addBack(page);
-    const markNow = () => { const id = nowId(); el.querySelectorAll(".tr").forEach(r => r.classList.toggle("now", r.dataset.id === id)); };
+    gestoAleatorio(page, "mine");
+    const markNow = () => { const id = nowId(); el.querySelectorAll(".tr").forEach(r => r.classList.toggle("now", r.dataset.id === id)); pintaPlay(page); };
     page.markNow = markNow;
     el.addEventListener("click", e => {
       const action = e.target.closest("[data-a]")?.dataset.a;
-      if (action === "play") return playFrom(list, 0, { type: "mine" });
-      if (action === "shuffle") return playFrom(list, 0, { type: "mine" }, true);
+      if (action === "play") return playFrom(list, 0, { type: "mine" }, modoDoPlay(page));
       const row = e.target.closest(".tr");
-      if (row) playFrom(list, +row.dataset.i, { type: "mine" });
+      if (row) playFrom(list, +row.dataset.i, { type: "mine" }, modoDaLinha(page));
     });
     markNow();
     return page;
@@ -491,7 +589,11 @@ window.SounosPages = (() => {
     window.__sonusArtistIntentAt = 0;
     const photoUrl = Sounos.coverUrl({ id: "artist:" + (key(name) || "x"), name, thumb: artistInfo.thumb || "" });
     remember({ type: "a", name, thumb: artistInfo.thumb || "", url: artistInfo.url || "" });
+    if (voltarPara("artist:" + key(name))) return stack.find(p => p.chave === "artist:" + key(name));
     const page = mount("artist");
+    page.chave = "artist:" + key(name);
+    Sounos.call("registrar", { tipo: "abriuArtista", dados: { artista: name } });          // diário do motor (só no celular)
+    page.el.dataset.artista = name;                // o nome dele, nesta página, não vira link (o tratador de toque ignora)
     const el = page.el;
     let songs = [], albums = [], mostrar = 5, artistThumb = artistInfo.thumb || "", artistCatalogSignature = "";
     const localCatalog = readArtistPageCache(name);
@@ -499,7 +601,7 @@ window.SounosPages = (() => {
     el.innerHTML = `<div class="hero" style="background:var(--surface)"><div class="img" style="background-image:url('${photoUrl.replace(/'/g, "%27")}')"></div></div>
       <div class="art-topo">
         <div class="art-txt">
-          <div class="art-linha"><div class="name">${esc(handle(name))}</div><button class="ab follow" data-a="follow" aria-label="Seguir artista"></button></div>
+          <div class="art-linha"><div class="name">${esc(handle(name))}</div><div class="art-acoes"><button class="ab follow" data-a="follow" aria-label="Seguir artista"></button><button class="ab compart" data-a="compartilhar" aria-label="Compartilhar artista">${I.compartilhar}</button></div></div>
         </div>
         <button class="big" data-a="play" aria-label="Tocar" disabled>${I.play}</button>
       </div>
@@ -508,6 +610,7 @@ window.SounosPages = (() => {
         <button class="all-songs" hidden>Ver mais</button>
         <div class="albums"></div></div>`;
     addBack(page);
+    gestoAleatorio(page);                      // artista: sempre abre no play (não lembra)
     const $ = s => el.querySelector(s);
     const followingKey = key(name);
     const readFollowing = () => {
@@ -542,9 +645,11 @@ window.SounosPages = (() => {
     };
     paintFollow();
 
+    let canalUrl = artistInfo.url || "";               // canal do artista (para compartilhar o perfil certo)
     const applyArtist = r => {
+      if (r?.url) canalUrl = r.url;
       if (page.closing) return;
-      if (r.error) { $(".songs").innerHTML = `<div class="note">Não deu para carregar agora.</div>`; return; }
+      if (r.error) { if (!songs.length) $(".songs").innerHTML = `<div class="note">Não deu para carregar agora.</div>`; return; }   // com a lista do cache na tela, o erro de rede não a apaga
       const signature = (r.items || []).map(t => t.id).join("\u0000");
       if (signature && signature === artistCatalogSignature) return;
       artistCatalogSignature = signature;
@@ -563,9 +668,12 @@ window.SounosPages = (() => {
     const applyAlbums = r => {
       if (page.closing || r.error) return;
       const target = key(name);
+      // mesmo artista também com "e"/"&"/"and"/"+" trocados ("Henrique e Juliano" = "Henrique & Juliano"), como no app
+      const semCon = n => key(String(n || "").replace(/\s+(?:e|&|and|y|\+)\s+|\s*[&+]\s*/gi, " "));
+      const alvoSemCon = semCon(name);
       const seenUrls = new Set(), seenNameCovers = new Set();
       albums = (r.items || []).filter(a => {
-        if (!target || key(a.artist) !== target) return false;
+        if (!target || (key(a.artist) !== target && semCon(a.artist) !== alvoSemCon)) return false;
         const albumUrl = a.url ? canonicalUrl(a.url) : "";
         const thumb = a.thumb ? imageKey(a.thumb) : "";
         const nameCover = thumb ? `${key(a.name)}|${thumb}` : "";
@@ -578,7 +686,7 @@ window.SounosPages = (() => {
       setTimeout(() => { if (!page.closing) window.SounosTips?.offer("artist-albums"); }, 450);
       $(".albums").innerHTML = `<div class="sec">Álbuns</div><div class="s-hrow">` + albums.map((a, i) => {
         const u = a.thumb ? Sounos.coverUrl({ id: "album:" + (key(a.name) || "x"), name: a.name, artist: a.artist, thumb: a.thumb }).replace(/'/g, "%27") : "";
-        return `<button class="s-album" data-album="${i}"><div class="pic" style="background:${u ? `url('${u}') center/cover,` : ""} linear-gradient(135deg,${Sounos.hashColors(a.name).join(",")})"></div><div class="n">${esc(a.name)}</div><div class="a">${handle(a.artist)}</div></button>`;
+        return `<button class="s-album" data-album="${i}"><div class="pic" style="background:${u ? `url('${u}') center/cover,` : ""} linear-gradient(135deg,${Sounos.hashColors(a.name).join(",")})"></div><div class="n">${esc(a.name)}</div><div class="a">${esc(handle(a.artist))}</div></button>`;
       }).join("") + `</div>`;
     };
     page.cacheOff = [
@@ -596,7 +704,17 @@ window.SounosPages = (() => {
       });
     });
     // A busca de álbuns é independente das músicas, para a página aparecer sem esperar ambas.
-    Sounos.ask("searchAlbums", { q: name }).then(applyAlbums);
+    // Álbuns = a discografia do próprio artista (canal no YouTube Music). Antes era uma busca de texto pelo nome: para
+    // artista grande ela traz discos de OUTROS com o nome no título ("Café & Djavan") e, filtrados, não sobrava nenhum.
+    // Álbuns e EPs; singles só se o artista tiver menos de 2 álbuns. Sem discografia, a busca de texto fica de reserva.
+    Sounos.ask("artistReleases", { name, url: canalUrl }).then(r => {
+      if (page.closing) return;
+      const itens = (r?.items || []).filter(x => x.url);
+      const albunsEps = itens.filter(x => !/single/i.test(x.kind || ""));
+      const lista = (albunsEps.length >= 2 ? albunsEps : itens).map(x => ({ name: x.title, artist: name, url: x.url, thumb: x.thumb || "" }));
+      if (lista.length) applyAlbums({ items: lista });
+      else Sounos.ask("searchAlbums", { q: name }).then(applyAlbums);
+    });
 
     function markNow() { const id = nowId(); el.querySelectorAll(".tr").forEach(r => r.classList.toggle("now", r.dataset.id === id)); syncPagePlayback(page, "artist", name); }
     page.markNow = markNow;
@@ -610,8 +728,11 @@ window.SounosPages = (() => {
     el.addEventListener("click", e => {
       const a = e.target.closest("[data-a]")?.dataset.a;
       const ctx = { type: "artist", name };
-      // no artista tudo toca em aleatório (por isso não há botão de aleatório): o play embaralha o catálogo inteiro
-      if (a === "play") return togglePagePlayback(page, "artist", name, all(), ctx, true);
+      // play = catálogo no modo aleatório do player (arrastar o play para baixo troca o modo, como no player)
+      if (a === "play") return togglePagePlayback(page, "artist", name, all(), ctx);
+      if (a === "compartilhar") return window.SonusCartao?.abrir({ tipo: "artista", titulo: handle(name), musicas: all().slice(0, 3).map(t => t.title),
+        fotoUrl: Sounos.coverUrl({ id: "artist:" + (key(name) || "x"), name, thumb: artistThumb || artistInfo.thumb || "" }, false, true),
+        link: SounosCompartilhar.artistaLink(handle(name), canalUrl, artistThumb) });
       if (a === "follow") {
         const list = readFollowing(), index = list.findIndex(x => x.key === followingKey);
         if (index >= 0) list.splice(index, 1);
@@ -626,15 +747,16 @@ window.SounosPages = (() => {
       if (e.target.closest(".all-songs")) { const antes = mostrar; mostrar += 10; return drawSongs(antes); }
       const album = e.target.closest("[data-album]"); if (album) { const x = albums[+album.dataset.album]; return openAlbum(x.url, x.name, x.artist, x.thumb); }
       const row = e.target.closest(".tr"); if (!row) return;
-      // a música tocada vem primeiro; depois o resto do catálogo do artista, embaralhado
+      // a música tocada vem primeiro; depois o resto do catálogo do artista, no modo aleatório do player
+      // (antes ligava o aleatório sempre e ele ficava ligado nas outras telas)
       const t = songs[+row.dataset.i];
       const lista = [t, ...all().filter(x => x.id !== t.id)];
-      playFrom(lista, 0, ctx, "aleatorio");
+      playFrom(lista, 0, ctx, modoDaLinha(page));
     });
     markNow();
     return page;
   }
 
-  const api = { attach, openPlaylist, openDownloads, openMine, openArtist, openAlbum, isOpen: () => stack.length > 0, closeTop: () => close(stack[stack.length - 1]) };
+  const api = { attach, openPlaylist, openDownloads, openMix, openMine, openArtist, openAlbum, isOpen: () => stack.length > 0, closeTop: () => close(stack[stack.length - 1]) };
   return api;
 })();

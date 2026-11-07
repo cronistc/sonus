@@ -1,5 +1,6 @@
 package app.sounos.player
 
+import app.sounos.widget.Widgets
 import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
@@ -45,6 +46,11 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
     enum class Repeat { OFF, ALL, ONE }
 
     private val main = Handler(Looper.getMainLooper())
+    // Gravações (histórico, músicas no cache, sessão): cada uma relê e regrava uma lista inteira em JSON (centenas de
+    // músicas) — na linha principal custavam ~100 ms a cada troca de música e travavam a tela. Aqui, numa fila só (em
+    // ordem: uma sessão antiga nunca sobrescreve a nova).
+    private val gravacoes = Dispatchers.IO.limitedParallelism(1)
+    private fun grava(trabalho: () -> Unit) { CoroutineScope(gravacoes).launch { runCatching(trabalho).onFailure { android.util.Log.w("Sonus", "gravação falhou", it) } } }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate + CoroutineExceptionHandler { _, e -> android.util.Log.e("Sonus", "tarefa em segundo plano falhou", e) })
     val engine = AudioEngine(this)
 
@@ -83,9 +89,10 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
 
     private val prefetcher = QueuePrefetcher(app.resolver, app.audio, app.covers, onNextReady = { r ->
         // a próxima ficou inteira em disco: mede o volume dela agora, para tocar já equilibrada
-        app.library.markCached(r.track)
+        grava { app.library.markCached(r.track) }
+        main.post { aquecerProxima() }                    // inteira no celular: já pode ser aquecida
         if (app.library.gain(r.track.id) == null) app.io.launch {
-            Loudness.analyzeFile(app.audio.file(r.track.id))?.let { app.library.setGain(r.track.id, it) }
+            Loudness.analyzeFile(app.audio.file(r.track.id))?.let { app.library.setGain(r.track.id, it); main.post { aquecerProxima() } }   // volume novo: reaquece
         }
     }, onCacheChanged = { emit("library", JSONObject()) })
 
@@ -102,7 +109,15 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
         listeners.toList().forEach { it(name, payload) }
     }
     fun notifyLibraryChanged() = emit("library", JSONObject())
-    private fun emitState() { emit("state", state()); PlaybackService.update(app) }
+    // Vários estados seguidos (uma troca de música emitia 5, cada um com a fila inteira, ~90 KB) viram UM: o estado
+    // é montado 30 ms depois, já com tudo o que mudou. A interface parava para tratar cada um (engasgo no próximo/anterior).
+    private var estadoPendente = false
+    private val enviaEstado = Runnable { estadoPendente = false; emit("state", state()); PlaybackService.atualizarTudo(app) }
+    private fun emitState() {
+        if (estadoPendente) return
+        estadoPendente = true
+        main.postDelayed(enviaEstado, 30)
+    }
 
     val currentTrack: Track? get() = queue.getOrNull(index)
     val isPlaying get() = engine.isPlaying
@@ -119,8 +134,21 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
 
     // pending = ainda procurando (a tela não deve concluir "sem letra" e sair do modo letra)
     @Volatile private var lyricsPending = false
-    fun lyricsJson(): JSONObject = JSONObject().put("id", lyricsFor ?: JSONObject.NULL).put("lyrics", lyrics?.toJson() ?: JSONObject.NULL)
-        .put("pending", lyricsPending)
+    fun letraChegando() = lyricsPending
+    /** Já se sabe se a música atual tem letra (carregada ou procurada e não achada)? Recém-aberto, ainda não. */
+    fun letraConhecida() = lyricsFor == currentTrack?.id && !lyricsPending
+    /** A letra sincronizada da música atual (null: sem letra, ainda chegando ou só texto corrido) — widgets. */
+    fun letraSincronizada(): List<Pair<Double, String>>? =
+        if (lyricsFor == currentTrack?.id) lyrics?.synced?.takeIf { it.isNotEmpty() } else null
+
+    fun lyricsJson(): JSONObject {
+        // app aberto com a música da sessão anterior, pausada: a letra só era buscada ao tocar (startCurrent) e a tela
+        // ficava em "…" para sempre. Pediu a letra e a da música atual ainda não veio: busca agora.
+        val t = currentTrack
+        if (t != null && lyricsFor != t.id && !lyricsPending) loadLyrics(t, token)
+        return JSONObject().put("id", lyricsFor ?: JSONObject.NULL).put("lyrics", lyrics?.toJson() ?: JSONObject.NULL)
+            .put("pending", lyricsPending)
+    }
 
     // ---------------- comandos ----------------
     fun playQueue(list: List<Track>, start: Int, ctx: JSONObject, shufflePrepared: Boolean = false, shuffleMode: Boolean? = null) {
@@ -164,7 +192,7 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
         if (!online && !isAvailableOffline(t)) { skipUnavailableOffline(); return }
         if (currentUsesCache && !app.audio.isFreshComplete(t.id)) { startCurrent(resumeAtMs); return }
         if (current == null) { startCurrent(resumeAtMs); return }
-        if (!requestFocus()) return
+        if (!requestFocus()) { emitState(); return }            // foco negado (ligação): a tela volta para "pausado"
         currentTrack?.takeUnless { app.library.isDownloaded(it.id) }?.let { app.audio.markHeard(it.id) }
         engine.play(); emitState(); ticker()
     }
@@ -174,12 +202,28 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
     /** Como a música atual vai terminar quando a próxima começar (para o motor de entendimento). */
     private var fimPendente = "trocou"
 
+    /** Como a escuta começou (para o diário do motor): aleatório, repetir, por onde sai o som, rede, se estava baixada. */
+    private fun anotarEstado(t: Track) = runCatching {
+        val am = app.getSystemService(android.media.AudioManager::class.java)
+        val tipos = am.getDevices(android.media.AudioManager.GET_DEVICES_OUTPUTS).map { it.type }.toSet()
+        val saida = when {
+            tipos.any { it == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP || it == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_SCO } -> "bluetooth"
+            tipos.any { it == android.media.AudioDeviceInfo.TYPE_WIRED_HEADPHONES || it == android.media.AudioDeviceInfo.TYPE_WIRED_HEADSET || it == android.media.AudioDeviceInfo.TYPE_USB_HEADSET } -> "fone"
+            else -> "altoFalante"
+        }
+        val cm = app.getSystemService(android.net.ConnectivityManager::class.java)
+        val rede = when { cm.activeNetwork == null -> "semRede"; cm.isActiveNetworkMetered -> "dados"; else -> "wifi" }
+        app.motor.estadoDaEscuta(JSONObject().put("aleatorio", shuffle).put("repetir", repeat.name.lowercase())
+            .put("saida", saida).put("rede", rede).put("baixada", app.library.downloadedMeta().has(t.id))
+            .put("volume", am.getStreamVolume(android.media.AudioManager.STREAM_MUSIC).toDouble() / am.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC).coerceAtLeast(1)))
+    }
+
     /** afterError: a faixa não carregou — pula de verdade, mesmo com "repetir uma" (repetir uma faixa quebrada travava o player). */
     fun next(auto: Boolean = false, afterError: Boolean = false) {
         if (index < 0) return
         fimPendente = when { afterError -> "erro"; auto -> "completa"; else -> "pulou" }
         if (auto && repeat == Repeat.ONE && !afterError) {
-            app.motor.terminou(durationMs, durationMs, "completa"); currentTrack?.let { app.motor.comecou(it, context) }
+            app.motor.terminou(durationMs, durationMs, "completa"); currentTrack?.let { app.motor.comecou(it, context); anotarEstado(it) }
             engine.seekTo(0); engine.play(); return
         }
         when {
@@ -194,6 +238,7 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
     }
 
     fun prev() {
+        if (queue.isEmpty()) return                       // sem fila: o índice fica -1 (antes virava 0, estado incoerente)
         if (engine.positionMs() > 3000 || repeat == Repeat.ONE) { engine.seekTo(0); emitState(); return }
         fimPendente = "voltou"
         index = if (index > 0) index - 1 else if (repeat == Repeat.ALL) queue.lastIndex else 0
@@ -278,6 +323,12 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
     // ---------------- tocar a música atual ----------------
     private fun startCurrent(startMs: Long = 0) {
         val t = currentTrack ?: return
+        // pulou a música anterior sem ela ter volume guardado: guarda o medido se ouviu pelo menos metade dela
+        current?.track?.id?.takeIf { it != t.id && app.library.gain(it) == null }?.let { anterior ->
+            val seg = engine.segundosMedidos()
+            if (durationMs > 0 && seg * 1000 >= durationMs / 2) engine.measuredGainDb()?.let { g -> grava { app.library.setGain(anterior, g) } }
+        }
+        engine.palpiteGanho = app.library.palpiteGanho()
         if (!online && !isAvailableOffline(t)) { skipUnavailableOffline(); return }
         app.motor.trocando(t.id, positionMs(), durationMs, fimPendente); fimPendente = "trocou"
         app.audio.protectedIds = (upcoming().map { it.id } + t.id).toSet()
@@ -285,8 +336,14 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
         loading = true; buffering = false; playWhenReady = true; seekWhenReadyMs = -1; current = null; currentUsesCache = false; durationMs = t.durationSec * 1000
         fillJob?.cancel()
         engine.release()
-        app.covers.local(t.id)?.let { colors = CoverColors.of(it) }
+        // cores da capa: lidas em segundo plano (arquivos das capas + cálculo); chegam numa atualização de estado logo depois
+        app.io.launch { app.covers.local(t.id)?.let { f -> val c = CoverColors.of(f); main.post { if (my == token) { colors = c; emitState() } } } }
         emitState()
+        // cores do fundo: ler a capa do disco levava ~25 ms na linha principal
+        scope.launch {
+            val c = withContext(Dispatchers.IO) { runCatching { app.covers.local(t.id)?.let(CoverColors::of) }.getOrNull() }
+            if (c != null && my == token) { colors = c; emitState() }
+        }
         scope.launch {
             try {
                 val downloaded = app.library.isDownloaded(t.id)
@@ -307,8 +364,7 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
                     downloaded -> AudioEngine.Source.LocalFile(app.library.downloadFile(t.id).path)
                     app.audio.isFreshComplete(t.id) -> {
                         currentUsesCache = true
-                        app.library.markCached(track)
-                        emit("library", JSONObject())
+                        grava { app.library.markCached(track); main.post { emit("library", JSONObject()) } }
                         AudioEngine.Source.LocalFile(app.audio.file(t.id).path)
                     }
                     else -> {
@@ -335,8 +391,9 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
                 }
                 requestFocus()
                 engine.load(source, startMs, playWhenReady = playWhenReady, knownGainDb = app.library.gain(t.id))
-                app.library.addHistory(track, context)
-                app.motor.comecou(track, context)
+                val ctx = JSONObject(context.toString())
+                grava { app.library.addHistory(track, ctx) }
+                app.motor.comecou(track, context); anotarEstado(track)
                 launch(Dispatchers.IO) {                                   // capa (fica guardada) + cores do fundo
                     runCatching {
                         app.covers.get(track, pin = app.library.isDownloaded(track.id), large = true) { android.util.Log.i("Sonus", "cover $it") }
@@ -345,6 +402,8 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
                     }
                 }
                 loadLyrics(track, my)
+                // letra da próxima já fica guardada: na troca ela aparece na hora (antes só começava a procurar ao tocar)
+                upcoming().firstOrNull()?.let { nx -> launch(Dispatchers.IO) { runCatching { if (app.lyrics.cached(nx) == null) app.lyrics.get(nx) } } }
                 if (isRadio() && index >= queue.size - 2) topUpRadio()
                 computeSuggestions()
                 updatePrefetch()
@@ -381,7 +440,7 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
         if (lyrics != null) return
         scope.launch {
             val l = runCatching { app.lyrics.get(t) }.getOrNull()
-            if (my == token) { lyrics = l; lyricsFor = t.id; lyricsPending = false; emit("lyrics", lyricsJson()) }
+            if (my == token) { lyrics = l; lyricsFor = t.id; lyricsPending = false; emit("lyrics", lyricsJson()); main.post { Widgets.atualizar(app) } }
         }
     }
 
@@ -606,9 +665,66 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
         else -> queue.drop(index + 1).take(3)
     }
 
-    private fun updatePrefetch() = prefetcher.onQueueChanged(
-        upcoming().filterNot { app.library.isDownloaded(it.id) }, quality(), keep = currentTrack?.id, allowPrefetch = online,
-    )
+    private fun updatePrefetch() {
+        prefetcher.onQueueChanged(upcoming().filterNot { app.library.isDownloaded(it.id) }, quality(), keep = currentTrack?.id, allowPrefetch = online)
+        capasGrandesDaFila()
+        aquecerProxima()
+    }
+
+    // Próxima música aquecida no motor (AudioEngine.aquecer): a que o "próxima" tocaria, se já estiver inteira no celular.
+    // Espera 1,5 s depois da última mudança (não disputa com a troca em andamento); a fila mudou, recomeça.
+    private val aquece = Runnable {
+        val prox = when { index + 1 < queue.size -> queue[index + 1]; repeat == Repeat.ALL -> queue.firstOrNull(); else -> null }
+        if (prox == null || prox.id == currentTrack?.id) { engine.descartarAquecida(); return@Runnable }
+        app.io.launch {
+            val caminho = when {
+                app.library.isDownloaded(prox.id) -> app.library.downloadFile(prox.id).path
+                app.audio.isFreshComplete(prox.id) -> app.audio.file(prox.id).path
+                else -> null
+            }
+            // ainda sem volume medido (ex.: música baixada): mede o arquivo inteiro agora, em segundo plano, antes de aquecer
+            val ganho = app.library.gain(prox.id) ?: caminho?.takeIf { medindo.add(prox.id) }?.let {
+                try { Loudness.analyzeFile(java.io.File(it))?.also { g -> app.library.setGain(prox.id, g) } } finally { medindo.remove(prox.id) }
+            }
+            main.post {
+                val ainda = when { index + 1 < queue.size -> queue[index + 1]; repeat == Repeat.ALL -> queue.firstOrNull(); else -> null }
+                if (ainda?.id != prox.id) return@post
+                if (caminho == null) engine.descartarAquecida() else engine.aquecer(AudioEngine.Source.LocalFile(caminho), ganho)
+            }
+        }
+    }
+    private val medindo = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()   // volumes sendo medidos agora
+    private fun aquecerProxima() { main.removeCallbacks(aquece); main.postDelayed(aquece, 1500) }
+
+    // Capa GRANDE (a do player, ~150 KB) da fila, por grupos: as 2 próximas juntas e já; depois as 8 seguintes e então
+    // o resto, sempre 2 de cada vez e com respiros (a rede fica para o áudio e as capinhas da tela). Nos dados móveis,
+    // só as 10 próximas — uma janela que anda junto com a música. Já guardada: passa direto (sem rede).
+    private var capasFila: Job? = null
+    private var capasFilaChave = ""
+    private fun capasGrandesDaFila() {
+        if (!online || index < 0) return
+        val depois = queue.drop(index + 1) + if (repeat == Repeat.ALL) queue.take(index) else emptyList()
+        val cm = app.getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+        val lista = if (cm.isActiveNetworkMetered) depois.take(10) else depois
+        val chave = lista.joinToString("|") { it.id }
+        if (chave == capasFilaChave && capasFila?.isActive == true) return
+        capasFilaChave = chave
+        capasFila?.cancel()
+        if (lista.isEmpty()) return
+        capasFila = app.io.launch {
+            suspend fun grupo(faixas: List<Track>) = faixas.chunked(2).forEach { par ->
+                par.map { t -> launch { runCatching { app.covers.get(t, pin = false, large = true) } } }.forEach { it.join() }
+            }
+            grupo(lista.take(2))
+            kotlinx.coroutines.delay(3000)
+            grupo(lista.drop(2).take(8))
+            kotlinx.coroutines.delay(5000)
+            lista.drop(10).chunked(2).forEach { par ->
+                par.map { t -> launch { runCatching { app.covers.get(t, pin = false, large = true) } } }.forEach { it.join() }
+                kotlinx.coroutines.delay(400)
+            }
+        }
+    }
 
     private fun quality(): AudioQuality = when (app.library.settings().optString("quality", "auto")) {
         "high" -> AudioQuality.HIGH
@@ -650,12 +766,17 @@ class PlayerController(private val app: SounosApp) : AudioEngine.Callbacks {
     private fun requestFocus() = audioManager.requestAudioFocus(focusRequest) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
 
     // ---------------- sessão (continuar de onde parou) ----------------
+    // retrato da fila agora; montar o JSON e gravar ficam em segundo plano (com fila longa levava ~100 ms na linha principal)
     fun saveSession() {
         app.motor.marcar(positionMs(), durationMs)
         if (index < 0) return
-        app.library.saveSession(JSONObject().put("queue", Json.tracks(queue)).put("original", Json.tracks(original))
-            .put("index", index).put("pos", positionMs()).put("context", context)
-            .put("repeat", repeat.name).put("shuffle", shuffle))
+        // retrato da fila agora (na linha principal, barato); o JSON e a gravação vão para a fila de gravações
+        val q = queue.toList(); val o = original.toList(); val i = index; val pos = positionMs(); val ctx = context.toString()
+        val rep = repeat.name; val sh = shuffle
+        grava {
+            app.library.saveSession(JSONObject().put("queue", Json.tracks(q)).put("original", Json.tracks(o))
+                .put("index", i).put("pos", pos).put("context", JSONObject(ctx)).put("repeat", rep).put("shuffle", sh))
+        }
     }
 
     private fun restoreSession() {

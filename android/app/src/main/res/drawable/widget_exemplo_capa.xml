@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- capa de exemplo da prévia dos widgets (desenho próprio: pôr do sol e ondas sonoras) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android" xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="120dp" android:height="120dp" android:viewportWidth="120" android:viewportHeight="120">
+    <path android:pathData="M0,0h120v120h-120z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="linear" android:startX="0" android:startY="0" android:endX="0" android:endY="120"
+                android:startColor="#FF8A4C" android:centerColor="#E8457A" android:endColor="#5B2BB5" />
+        </aapt:attr>
+    </path>
+    <path android:fillColor="#FFD27A" android:pathData="M60,70m-26,0a26,26 0,1 1,52 0a26,26 0,1 1,-52 0" />
+    <path android:fillColor="#2A1458" android:fillAlpha="0.55" android:pathData="M0,78 C20,70 40,86 60,78 C80,70 100,86 120,78 V120 H0 Z" />
+    <path android:fillColor="#1A0B3D" android:fillAlpha="0.7" android:pathData="M0,92 C20,84 40,100 60,92 C80,84 100,100 120,92 V120 H0 Z" />
+    <path android:fillColor="#FFFFFF" android:fillAlpha="0.85" android:pathData="M18,24h4v14h-4z M26,18h4v26h-4z M34,26h4v10h-4z M42,21h4v20h-4z" />
+</vector>

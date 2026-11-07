@@ -1,0 +1,67 @@
+/* Módulo Compartilhar (cartao.js): a imagem para compartilhar — prévia em cima, folha embaixo (modelos, cores, ações).
+   A folha é criada pelo cartao.js dentro da tela que pediu (player ou páginas). */
+.sheet.lc { position: absolute; inset: 0; z-index: 90; background: rgba(0,0,0,.5); backdrop-filter: blur(10px);
+         display: flex; flex-direction: column; opacity: 0; pointer-events: none; transition: opacity .32s ease; color: #fff; }
+.sheet.lc.open { opacity: 1; pointer-events: auto; }
+/* fechadas = fora do desenho (senão o WebView continua pintando camadas de tela cheia invisíveis) */
+.sheet.lc:not(.open) { visibility: hidden; transition: opacity .28s ease .04s, visibility 0s .32s; }
+.lc-fechar { position: absolute; top: calc(12px + var(--sb-topo)); right: 12px; z-index: 2; width: 44px; height: 44px; border-radius: 22px;
+             background: rgba(255,255,255,.14); color: #fff; display: grid; place-items: center; }
+.lc-prev { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: calc(16px + var(--sb-topo)) 24px 16px; }
+/* palco: a imagem atual e, na troca de modelo/cor, a anterior por cima saindo (mesma célula da grade) */
+.lc-palco { width: 100%; height: 100%; display: grid; grid-template: 100% / 100%; place-items: center; }
+.lc-palco > * { grid-area: 1 / 1; }
+.lc-prev canvas { width: auto; height: auto; max-width: 100%; max-height: 100%; border-radius: 20px; box-shadow: 0 24px 60px rgba(0,0,0,.55); }
+/* a imagem entra crescendo quando fica pronta (fontes e capas carregadas) e sai encolhendo ao fechar */
+#lcPrevia { opacity: 0; transform: translateY(34px) scale(.88); will-change: transform, opacity;
+            transition: opacity .38s ease, transform .6s cubic-bezier(.2,1.15,.3,1); }
+.sheet.lc.open #lcPrevia.pronta { opacity: 1; transform: none; }
+.sheet.lc:not(.open) #lcPrevia { transition: opacity .2s ease, transform .26s cubic-bezier(.4,0,1,1); transform: translateY(16px) scale(.94); }
+.lc-velha { pointer-events: none; }
+/* enquanto prepara: um cartão vazio pulsando no lugar da imagem */
+.lc-espera { width: min(62%, 300px); aspect-ratio: 3 / 4; border-radius: 20px; background: rgba(255,255,255,.08);
+             animation: lcPulsa 1.1s ease-in-out infinite alternate; transition: opacity .25s; }
+.lc-espera.some { opacity: 0; }
+@keyframes lcPulsa { from { opacity: .45; transform: scale(.98); } to { opacity: 1; transform: none; } }
+.lc-prev canvas.objeto { border-radius: 0; box-shadow: none; }      /* Ingresso, Fita: o objeto solto (a sombra já vem no desenho) */
+.lc-folha { flex-shrink: 0; padding: 12px 0 calc(22px + var(--sb-base)); border-radius: 26px 26px 0 0;
+            background: color-mix(in srgb, var(--c1) 18%, rgba(16,14,14,.95)); box-shadow: 0 -12px 40px rgba(0,0,0,.35);
+            transform: translateY(105%); transition: transform .48s cubic-bezier(.22,1.1,.36,1); will-change: transform; }
+.sheet.lc:not(.open) .lc-folha { transition: transform .26s cubic-bezier(.4,0,1,1); }
+.sheet.lc.open .lc-folha { transform: none; }
+.lc-pega { width: 36px; height: 4px; border-radius: 2px; background: rgba(255,255,255,.3); margin: 0 auto 12px; }
+.lc-rot { padding: 0 20px; font-size: calc(var(--fs) * 12px); font-weight: 600; color: rgba(255,255,255,.7); }
+.lc-modelos { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; padding: 10px 20px 4px; }
+.lc-modelos::-webkit-scrollbar { display: none; }
+/* modelos: só o nome, em pílulas (escolhido = branco) */
+.lc-modelos button { flex-shrink: 0; height: 40px; padding: 0 16px; border-radius: 20px; background: rgba(255,255,255,.12);
+                     color: #fff; font-size: calc(var(--fs) * 13px); font-weight: 600; white-space: nowrap; }
+.lc-modelos button.on { background: #fff; color: #141416; font-weight: 700; }
+.lc-modelos button, .lc-cores button { transition: background .22s ease, color .22s ease, box-shadow .22s ease, transform .18s ease; }
+.lc-modelos button:active { transform: scale(.93); }
+/* modelos e cores entram em sequência (--i = posição) */
+.lc-modelos button.entra, .lc-cores button.entra { animation: lcEntra .42s cubic-bezier(.2,1.1,.3,1) both; animation-delay: calc(var(--i, 0) * 35ms + 120ms); }
+@keyframes lcEntra { from { opacity: 0; transform: translateY(12px) scale(.9); } }
+.lc-linha { display: flex; align-items: center; gap: 12px; padding: 12px 20px 0; }
+.lc-linha .lc-rot { padding: 0; width: 34px; }
+.lc-cores { display: flex; gap: 12px; flex-wrap: wrap; }
+.lc-cores button { width: 34px; height: 34px; border-radius: 17px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.25); }
+.lc-cores button.on { box-shadow: 0 0 0 2px rgba(0,0,0,.45), 0 0 0 4px #fff; transform: scale(1.08); }
+.lc-cores button:active { transform: scale(.88); }
+.lc-acoes { display: flex; gap: 10px; padding: 16px 20px 0; }
+.lc-redondo { flex-shrink: 0; width: 54px; height: 54px; border-radius: 27px; background: rgba(255,255,255,.12); color: #fff; display: grid; place-items: center; }
+.lc-redondo.feito { background: rgba(255,255,255,.3); }
+.lc-redondo, .lc-enviar, .lc-fechar { transition: transform .16s ease, background .22s ease; }
+.lc-redondo:active, .lc-enviar:active, .lc-fechar:active { transform: scale(.92); }
+.lc-redondo.feito svg { animation: lcPula .42s cubic-bezier(.2,1.6,.4,1) both; }
+@keyframes lcPula { from { transform: scale(.3); opacity: 0; } }
+.lc-enviar { flex: 1; height: 54px; border-radius: 27px; background: #fff; color: #141416; display: flex; align-items: center; justify-content: center;
+             gap: 8px; font-size: calc(var(--fs) * 16px); font-weight: 700; }
+.lc-redondo svg, .lc-enviar svg, .lc-fechar svg { width: 22px; height: 22px; }
+
+
+/* quem desligou as animações do Android: tudo aparece sem movimento */
+@media (prefers-reduced-motion: reduce) {
+  .sheet.lc, .sheet.lc *, #lcPrevia { transition-duration: .01s !important; animation: none !important; }
+  #lcPrevia, .sheet.lc:not(.open) #lcPrevia { transform: none; }
+}
