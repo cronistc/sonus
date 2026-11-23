@@ -6,6 +6,13 @@
       "alt": "Aviso de teste (Claude)",
       "inicio": 1795462629598,
       "fim": 1795463723785
+    },
+    {
+      "id": "09fa719da39",
+      "img": "https://raw.githubusercontent.com/cronistc/sonus/avisos/img/09fa719da39.webp",
+      "alt": "Aviso de teste",
+      "inicio": 1795463737757,
+      "fim": 1795470937757
     }
   ]
 }
